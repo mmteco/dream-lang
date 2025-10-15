@@ -13,6 +13,7 @@ type llvm_type =
   | TuplePtr  (* 元组指针 *)
   | DictPtr   (* 字典指针 dict[int,int] *)
   | DictStrPtr (* 字符串键字典指针 dict[string,int] *)
+  | UnionPtr   (* Union 类型指针 *)
 
 type llvm_value = string
 
@@ -44,6 +45,7 @@ let rec llvm_type_to_string = function
   | TuplePtr -> "i32*"  (* 元组指针表示为i32* *)
   | DictPtr -> "i8*"    (* 字典指针表示为i8* *)
   | DictStrPtr -> "i8*" (* 字符串键字典指针也表示为i8* *)
+  | UnionPtr -> "%union_t*"  (* Union 类型指针 *)
 
 let mangle_name name =
   "@" ^ String.map (fun c -> if c = '_' then '_' else c) name
@@ -59,6 +61,8 @@ type context = {
   mutable dynarray_vars: (string * string) list;
   (* 函数签名表: 函数名 -> 返回类型 *)
   mutable function_signatures: (string * llvm_type) list;
+  (* 函数参数类型表: 函数名 -> 参数类型列表 *)
+  mutable function_param_types: (string * llvm_type list) list;
 }
 
 let create_context () = {
@@ -68,6 +72,7 @@ let create_context () = {
   var_renames = [];
   dynarray_vars = [];
   function_signatures = [];
+  function_param_types = [];
 }
 
 let add_variable ctx name ty =
@@ -93,11 +98,12 @@ let rec type_expr_to_llvm_type = function
   | TList ty -> DynArray (type_expr_to_llvm_type ty)
   | TTuple _ -> TuplePtr
   | TDict _ -> DictPtr
+  | TUnion _ -> UnionPtr  (* Union 类型映射为 union_t* *)
   | TVar _ -> I32
   | TOption _ -> Ptr I32
   | TResult _ -> Ptr I32
   | TEnum _ -> I32
-  | TNone | TFunc _ | TUnion _ | TGeneric _ -> I32
+  | TNone | TFunc _ | TGeneric _ -> I32
 
 let gen_binop = function
   | Add -> "add"
@@ -113,6 +119,39 @@ let gen_binop = function
   | Gte -> "icmp sge"
   | And -> "and"
   | Or -> "or"
+
+(* 装箱：将具体类型值包装为 union_t* *)
+let box_to_union buf value src_type =
+  let result = fresh_temp () in
+  (match src_type with
+   | I32 ->
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_int(i32 %s)\n" result value
+   | I1 ->
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_bool(i1 %s)\n" result value
+   | Ptr I32 ->
+       (* 字符串类型 *)
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_string(i8* %s)\n" result value
+   | _ ->
+       (* 其他类型暂不支持 *)
+       Printf.bprintf buf "  ; TODO: box type %s to union\n" (llvm_type_to_string src_type);
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_none()\n" result);
+  (result, UnionPtr)
+
+(* 拆箱：从 union_t* 提取具体类型的值 *)
+let unbox_from_union buf union_val target_type =
+  let result = fresh_temp () in
+  (match target_type with
+   | I32 ->
+       Printf.bprintf buf "  %s = call i32 @union_get_int(%%union_t* %s)\n" result union_val
+   | I1 ->
+       Printf.bprintf buf "  %s = call i1 @union_get_bool(%%union_t* %s)\n" result union_val
+   | Ptr I32 ->
+       (* 字符串类型 *)
+       Printf.bprintf buf "  %s = call i8* @union_get_string(%%union_t* %s)\n" result union_val
+   | _ ->
+       Printf.bprintf buf "  ; TODO: unbox union to type %s\n" (llvm_type_to_string target_type);
+       Printf.bprintf buf "  %s = add i32 0, 0  ; placeholder\n" result);
+  (result, target_type)
 
 let rec gen_expr buf ctx = function
   | EInt (n, _) ->
@@ -424,6 +463,9 @@ let rec gen_expr buf ctx = function
       (match t with
        | I32 ->
            Printf.bprintf buf "  call void @print_int(i32 %s)\n" v;
+       | UnionPtr ->
+           (* Union 类型：调用 union_print_value *)
+           Printf.bprintf buf "  call void @union_print_value(%%union_t* %s)\n" v;
        | _ ->
            Printf.bprintf buf "  ; print not implemented for this type\n");
       ("0", Void)
@@ -506,6 +548,27 @@ let rec gen_expr buf ctx = function
 
   | ECall (EVar (fname, _), args, _) ->
       let arg_vals = List.map (gen_expr buf ctx) args in
+
+      (* 查询函数的参数类型 *)
+      let param_types =
+        try List.assoc fname ctx.function_param_types
+        with Not_found -> []
+      in
+
+      (* 检查并装箱参数 *)
+      let boxed_arg_vals = List.mapi (fun i (v, t) ->
+        if i < List.length param_types then
+          let expected_type = List.nth param_types i in
+          (* 如果期望的是 union 类型,但实际不是,则装箱 *)
+          if expected_type = UnionPtr && t <> UnionPtr then begin
+            Printf.bprintf buf "  ; Boxing argument %d to union\n" i;
+            box_to_union buf v t
+          end else
+            (v, t)
+        else
+          (v, t)
+      ) arg_vals in
+
       let result = fresh_temp () in
       (* 查询函数签名获取返回类型 *)
       let ret_type =
@@ -524,7 +587,7 @@ let rec gen_expr buf ctx = function
             Printf.bprintf buf "%s* %s" (llvm_type_to_string t) v
         | _ ->
             Printf.bprintf buf "%s %s" (llvm_type_to_string t) v
-      ) arg_vals;
+      ) boxed_arg_vals;
       Buffer.add_string buf ")\n";
       (result, ret_type)
 
@@ -1194,44 +1257,256 @@ let rec gen_expr buf ctx = function
         ) args in
         (List.hd arg_vals, I32)
 
+  | EMatch (scrut, cases, _) ->
+      (* 生成被匹配的值 *)
+      let (scrut_v, scrut_t) = gen_expr buf ctx scrut in
+
+      (* 创建基本块标签 *)
+      let case_labels = List.mapi (fun i _ ->
+        (fresh_label ("match.case" ^ string_of_int i),
+         fresh_label ("match.body" ^ string_of_int i))
+      ) cases in
+      let end_label = fresh_label "match.end" in
+      let default_label = fresh_label "match.default" in
+
+      (* 为phi节点准备结果 *)
+      let result_temp = fresh_temp () in
+      let phi_incoming = ref [] in
+
+      (* 生成第一个case的跳转 *)
+      (match case_labels with
+       | (first_case, _) :: _ -> Printf.bprintf buf "  br label %%%s\n" first_case
+       | [] -> Printf.bprintf buf "  br label %%%s\n" default_label);
+
+      (* 生成每个case *)
+      List.iteri (fun i ((pat, body_expr), (case_label, body_label)) ->
+        Printf.bprintf buf "\n%s:\n" case_label;
+
+        (* 生成模式匹配条件 *)
+        let match_cond = gen_pattern_test buf ctx pat scrut_v scrut_t in
+
+        (* 确定下一个case的标签 *)
+        let next_label =
+          if i + 1 < List.length case_labels then
+            fst (List.nth case_labels (i + 1))
+          else
+            default_label
+        in
+
+        Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n"
+          match_cond body_label next_label;
+
+        Printf.bprintf buf "\n%s:\n" body_label;
+
+        (* 保存当前变量表 *)
+        let saved_vars = ctx.variables in
+
+        (* 绑定模式变量 *)
+        gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+
+        (* 生成body表达式 *)
+        let (body_v, _body_t) = gen_expr buf ctx body_expr in
+        phi_incoming := (body_v, body_label) :: !phi_incoming;
+
+        Printf.bprintf buf "  br label %%%s\n" end_label;
+
+        (* 恢复变量表 *)
+        ctx.variables <- saved_vars
+      ) (List.combine cases case_labels);
+
+      (* 默认分支（不应该到达，但为了安全） *)
+      Printf.bprintf buf "\n%s:\n" default_label;
+      Printf.bprintf buf "  ; no pattern matched - unreachable\n";
+      Printf.bprintf buf "  unreachable\n";
+
+      (* 结束块和phi节点 *)
+      Printf.bprintf buf "\n%s:\n" end_label;
+      let result_type = match cases with
+        | (_, e) :: _ ->
+            (* 需要一个临时的上下文来推断类型 *)
+            let temp_buf = Buffer.create 256 in
+            snd (gen_expr temp_buf ctx e)
+        | [] -> I32
+      in
+
+      if List.length !phi_incoming > 0 then begin
+        Printf.bprintf buf "  %s = phi %s " result_temp (llvm_type_to_string result_type);
+        List.iteri (fun i (v, label) ->
+          if i > 0 then Printf.bprintf buf ", ";
+          Printf.bprintf buf "[%s, %%%s]" v label
+        ) (List.rev !phi_incoming);
+        Printf.bprintf buf "\n"
+      end;
+
+      (result_temp, result_type)
+
   | _ ->
       Buffer.add_string buf "  ; unsupported expression\n";
       ("0", I32)
 
-let rec gen_statement buf ctx = function
-  | SLet (name, _, value, _) ->
-      let (v, t) = gen_expr buf ctx value in
+(* 生成模式匹配测试条件 *)
+and gen_pattern_test buf ctx pat scrut_v scrut_t =
+  match pat with
+  | PInt n ->
+      (match scrut_t with
+       | UnionPtr ->
+           (* Union 类型：检查是否为 int 且值匹配 *)
+           let is_int = fresh_temp () in
+           Printf.bprintf buf "  %s = call i1 @union_is_int(%%union_t* %s)\n" is_int scrut_v;
+           let int_val = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @union_get_int(%%union_t* %s)\n" int_val scrut_v;
+           let val_match = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp eq i32 %s, %d\n" val_match int_val n;
+           let cond = fresh_temp () in
+           Printf.bprintf buf "  %s = and i1 %s, %s\n" cond is_int val_match;
+           cond
+       | _ ->
+           let cond = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp eq i32 %s, %d\n" cond scrut_v n;
+           cond)
+  | PBool b ->
+      (match scrut_t with
+       | UnionPtr ->
+           (* Union 类型：检查是否为 bool 且值匹配 *)
+           let is_bool = fresh_temp () in
+           Printf.bprintf buf "  %s = call i1 @union_is_bool(%%union_t* %s)\n" is_bool scrut_v;
+           let bool_val = fresh_temp () in
+           Printf.bprintf buf "  %s = call i1 @union_get_bool(%%union_t* %s)\n" bool_val scrut_v;
+           let b_val = if b then "1" else "0" in
+           let val_match = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp eq i1 %s, %s\n" val_match bool_val b_val;
+           let cond = fresh_temp () in
+           Printf.bprintf buf "  %s = and i1 %s, %s\n" cond is_bool val_match;
+           cond
+       | _ ->
+           let cond = fresh_temp () in
+           let b_val = if b then "1" else "0" in
+           Printf.bprintf buf "  %s = icmp eq i1 %s, %s\n" cond scrut_v b_val;
+           cond)
+  | PString s ->
+      (match scrut_t with
+       | UnionPtr ->
+           (* Union 类型：检查是否为 string 且值匹配 *)
+           let is_string = fresh_temp () in
+           Printf.bprintf buf "  %s = call i1 @union_is_string(%%union_t* %s)\n" is_string scrut_v;
+           let str_val = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8* @union_get_string(%%union_t* %s)\n" str_val scrut_v;
+
+           incr string_counter;
+           let str_name = Printf.sprintf "@.str%d" !string_counter in
+           let escaped_str = String.escaped s in
+           let str_len = String.length s + 1 in
+           ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
+           let ptr_temp = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+             ptr_temp str_len str_len str_name;
+           let cmp_result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @string_compare(i8* %s, i8* %s)\n"
+             cmp_result str_val ptr_temp;
+           let val_match = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp eq i32 %s, 0\n" val_match cmp_result;
+           let cond = fresh_temp () in
+           Printf.bprintf buf "  %s = and i1 %s, %s\n" cond is_string val_match;
+           cond
+       | _ ->
+           (* 字符串比较需要调用string_compare *)
+           incr string_counter;
+           let str_name = Printf.sprintf "@.str%d" !string_counter in
+           let escaped_str = String.escaped s in
+           let str_len = String.length s + 1 in
+           ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
+           let ptr_temp = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+             ptr_temp str_len str_len str_name;
+           let cmp_result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @string_compare(i8* %s, i8* %s)\n"
+             cmp_result scrut_v ptr_temp;
+           let cond = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp eq i32 %s, 0\n" cond cmp_result;
+           cond)
+  | PWildcard ->
+      "1"  (* 通配符总是匹配 *)
+  | PVar _ ->
+      "1"  (* 变量模式总是匹配 *)
+  | PEnumVariant (_enum_name, _variant_name, _) ->
+      (* 简化处理：目前假设枚举用整数表示 *)
+      "1"
+  | _ ->
+      Printf.bprintf buf "  ; unsupported pattern type\n";
+      "0"
+
+(* 生成模式变量绑定 *)
+and gen_pattern_bindings buf ctx pat scrut_v scrut_t =
+  match pat with
+  | PVar name ->
+      (* 注意：这里不拆箱，保持 union_t* 类型 *)
       let local = "%" ^ name in
-      (match t with
+      Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string scrut_t);
+      Printf.bprintf buf "  store %s %s, %s* %s\n"
+        (llvm_type_to_string scrut_t) scrut_v (llvm_type_to_string scrut_t) local;
+      add_variable ctx name scrut_t
+  | PTuple pats ->
+      (* 元组解包 *)
+      List.iteri (fun i p ->
+        match p with
+        | PVar name ->
+            let elem_temp = fresh_temp () in
+            Printf.bprintf buf "  %s = call i32 @tuple_get(i8* %s, i32 %d)\n"
+              elem_temp scrut_v i;
+            let local = "%" ^ name in
+            Printf.bprintf buf "  %s = alloca i32\n" local;
+            Printf.bprintf buf "  store i32 %s, i32* %s\n" elem_temp local;
+            add_variable ctx name I32
+        | _ -> ()
+      ) pats
+  | _ -> ()  (* 其他模式不需要绑定变量 *)
+
+let rec gen_statement buf ctx = function
+  | SLet (name, type_ann, value, _) ->
+      let (v, t) = gen_expr buf ctx value in
+
+      (* 检查是否需要装箱为 union *)
+      let (final_v, final_t) =
+        match type_ann with
+        | Some (TUnion _) when t <> UnionPtr ->
+            (* 类型注解是 union，但值不是 union_t*，需要装箱 *)
+            Printf.bprintf buf "  ; Boxing value to union\n";
+            box_to_union buf v t
+        | _ ->
+            (v, t)
+      in
+
+      let local = "%" ^ name in
+      (match final_t with
        | Array (n, elem_t) ->
            (* 数组类型需要逐元素复制 *)
-           Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string t);
+           Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string final_t);
            for i = 0 to n - 1 do
              let src_ptr = fresh_temp () in
              let dst_ptr = fresh_temp () in
              let value_temp = fresh_temp () in
              Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 %d\n"
-               src_ptr (llvm_type_to_string t) (llvm_type_to_string t) v i;
+               src_ptr (llvm_type_to_string final_t) (llvm_type_to_string final_t) final_v i;
              Printf.bprintf buf "  %s = load %s, %s* %s\n"
                value_temp (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) src_ptr;
              Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 %d\n"
-               dst_ptr (llvm_type_to_string t) (llvm_type_to_string t) local i;
+               dst_ptr (llvm_type_to_string final_t) (llvm_type_to_string final_t) local i;
              Printf.bprintf buf "  store %s %s, %s* %s\n"
                (llvm_type_to_string elem_t) value_temp (llvm_type_to_string elem_t) dst_ptr
            done;
-           add_variable ctx name t
+           add_variable ctx name final_t
        | DynArray _ ->
            (* 动态数组需要创建一个局部指针变量来存储 *)
            Printf.bprintf buf "  ; %s = dynamic array (already allocated by EList)\n" name;
-           Printf.bprintf buf "  %s = alloca %s*\n" local (llvm_type_to_string t);
+           Printf.bprintf buf "  %s = alloca %s*\n" local (llvm_type_to_string final_t);
            Printf.bprintf buf "  store %s* %s, %s** %s\n"
-             (llvm_type_to_string t) v (llvm_type_to_string t) local;
-           add_variable ctx name t
+             (llvm_type_to_string final_t) final_v (llvm_type_to_string final_t) local;
+           add_variable ctx name final_t
        | _ ->
-           Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string t);
+           Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string final_t);
            Printf.bprintf buf "  store %s %s, %s* %s\n"
-             (llvm_type_to_string t) v (llvm_type_to_string t) local;
-           add_variable ctx name t)
+             (llvm_type_to_string final_t) final_v (llvm_type_to_string final_t) local;
+           add_variable ctx name final_t)
 
   | SLetPat (pat, value, _) ->
       let (v, t) = gen_expr buf ctx value in
@@ -1325,12 +1600,21 @@ let rec gen_statement buf ctx = function
 
   | SReturn (Some e, _) ->
       let (v, t) = gen_expr buf ctx e in
-      (match t with
+      (* 检查是否需要装箱为 union *)
+      let (final_v, final_t) = match ctx.function_type with
+        | Some UnionPtr when t <> UnionPtr ->
+            (* 函数返回 union 但值不是 union,需要装箱 *)
+            Printf.bprintf buf "  ; Boxing return value to union\n";
+            box_to_union buf v t
+        | _ ->
+            (v, t)
+      in
+      (match final_t with
        | DynArray _ | Array _ ->
            (* 数组类型返回指针 (EVar已经load过了) *)
-           Printf.bprintf buf "  ret %s* %s\n" (llvm_type_to_string t) v
+           Printf.bprintf buf "  ret %s* %s\n" (llvm_type_to_string final_t) final_v
        | _ ->
-           Printf.bprintf buf "  ret %s %s\n" (llvm_type_to_string t) v)
+           Printf.bprintf buf "  ret %s %s\n" (llvm_type_to_string final_t) final_v)
 
   | SReturn (None, _) ->
       Buffer.add_string buf "  ret void\n"
@@ -1593,6 +1877,81 @@ let rec gen_statement buf ctx = function
   | SEnum (_name, _type_params, _variants, _) ->
       Buffer.add_string buf "  ; enum definition (no code generated)\n"
 
+  | SMatch (scrut, cases, _) ->
+      (* 生成被匹配的值 *)
+      let (scrut_v, scrut_t) = gen_expr buf ctx scrut in
+
+      (* 创建基本块标签 *)
+      let case_labels = List.mapi (fun i _ ->
+        (fresh_label ("match.case" ^ string_of_int i),
+         fresh_label ("match.body" ^ string_of_int i))
+      ) cases in
+      let end_label = fresh_label "match.end" in
+      let default_label = fresh_label "match.default" in
+
+      (* 生成第一个case的跳转 *)
+      (match case_labels with
+       | (first_case, _) :: _ -> Printf.bprintf buf "  br label %%%s\n" first_case
+       | [] -> Printf.bprintf buf "  br label %%%s\n" default_label);
+
+      (* 生成每个case *)
+      List.iteri (fun i ((pat, body_stmts), (case_label, body_label)) ->
+        Printf.bprintf buf "\n%s:\n" case_label;
+
+        (* 生成模式匹配条件 *)
+        let match_cond = gen_pattern_test buf ctx pat scrut_v scrut_t in
+
+        (* 确定下一个case的标签 *)
+        let next_label =
+          if i + 1 < List.length case_labels then
+            fst (List.nth case_labels (i + 1))
+          else
+            default_label
+        in
+
+        Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n"
+          match_cond body_label next_label;
+
+        Printf.bprintf buf "\n%s:\n" body_label;
+
+        (* 保存当前变量表 *)
+        let saved_vars = ctx.variables in
+
+        (* 绑定模式变量 *)
+        gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+
+        (* 生成body语句 *)
+        List.iter (gen_statement buf ctx) body_stmts;
+
+        (* 如果最后一条语句不是 return,才生成跳转到 end_label *)
+        let has_return = match List.rev body_stmts with
+          | SReturn _ :: _ -> true
+          | _ -> false
+        in
+        if not has_return then
+          Printf.bprintf buf "  br label %%%s\n" end_label;
+
+        (* 恢复变量表 *)
+        ctx.variables <- saved_vars
+      ) (List.combine cases case_labels);
+
+      (* 默认分支（不应该到达，但为了安全） *)
+      Printf.bprintf buf "\n%s:\n" default_label;
+      Printf.bprintf buf "  ; no pattern matched - unreachable\n";
+      Printf.bprintf buf "  unreachable\n";
+
+      (* 结束块 - 检查是否所有分支都有 return *)
+      let all_have_return = List.for_all (fun (_, body_stmts) ->
+        match List.rev body_stmts with
+        | SReturn _ :: _ -> true
+        | _ -> false
+      ) cases in
+
+      Printf.bprintf buf "\n%s:\n" end_label;
+      if all_have_return then
+        (* 所有分支都有 return,end 块不可达 *)
+        Printf.bprintf buf "  unreachable\n"
+
   | _ ->
       Buffer.add_string buf "  ; unsupported statement\n"
 
@@ -1606,6 +1965,17 @@ let gen_function buf ctx name params ret_ty body =
     | Some t -> type_expr_to_llvm_type t
     | None -> I32
   in
+
+  (* 设置当前函数返回类型到 context *)
+  ctx.function_type <- Some ret_type;
+
+  (* 收集参数类型并存储到 context *)
+  let param_types = List.map (fun (_, pty) ->
+    match pty with
+    | Some t -> type_expr_to_llvm_type t
+    | None -> I32
+  ) params in
+  ctx.function_param_types <- (name, param_types) :: ctx.function_param_types;
 
   (* 对于数组和动态数组返回类型,返回指针 *)
   let ret_type_str = match ret_type with
@@ -1653,12 +2023,32 @@ let gen_function buf ctx name params ret_ty body =
 
   List.iter (gen_statement buf ctx) body;
 
-  let needs_return = match List.rev body with
-    | SReturn _ :: _ -> false
-    | _ -> true
+  (* 检查是否需要默认 return *)
+  let rec has_return_stmt = function
+    | SReturn _ -> true
+    | SMatch (_, cases, _) ->
+        (* match 的所有分支都有 return *)
+        List.for_all (fun (_, body_stmts) ->
+          List.exists has_return_stmt body_stmts
+        ) cases
+    | SIf (_, then_body, _, Some else_body, _) ->
+        (* if-else 两个分支都有 return *)
+        List.exists has_return_stmt then_body && List.exists has_return_stmt else_body
+    | _ -> false
   in
-  if needs_return then
-    Printf.bprintf buf "  ret %s 0\n" (llvm_type_to_string ret_type);
+
+  let needs_return = match List.rev body with
+    | [] -> true
+    | last :: _ -> not (has_return_stmt last)
+  in
+
+  (if needs_return then
+    match ret_type with
+    | UnionPtr ->
+        (* Union 返回类型默认返回 null *)
+        Buffer.add_string buf "  ret %union_t* null\n"
+    | _ ->
+        Printf.bprintf buf "  ret %s 0\n" (llvm_type_to_string ret_type));
 
   Buffer.add_string buf "}\n"
 
@@ -1669,6 +2059,10 @@ let gen_program program =
   let buf = create 8192 in
 
   Buffer.add_string buf "; Dream Language - LLVM IR Output\n\n";
+
+  (* Type definitions *)
+  Buffer.add_string buf "; Union type definition\n";
+  Buffer.add_string buf "%union_t = type { i32, i64 }\n\n";
 
   (* Runtime functions *)
   Buffer.add_string buf "declare void @print_int(i32)\n";
@@ -1754,6 +2148,26 @@ let gen_program program =
   Buffer.add_string buf "declare i32 @tuple_get(i8*, i32)\n";
   Buffer.add_string buf "declare i32 @tuple_size(i8*)\n";
   Buffer.add_string buf "declare void @tuple_free(i8*)\n\n";
+
+  (* Union functions *)
+  Buffer.add_string buf "; Union functions\n";
+  Buffer.add_string buf "declare %union_t* @union_create_int(i32)\n";
+  Buffer.add_string buf "declare %union_t* @union_create_float(double)\n";
+  Buffer.add_string buf "declare %union_t* @union_create_string(i8*)\n";
+  Buffer.add_string buf "declare %union_t* @union_create_bool(i1)\n";
+  Buffer.add_string buf "declare %union_t* @union_create_none()\n";
+  Buffer.add_string buf "declare i1 @union_is_int(%union_t*)\n";
+  Buffer.add_string buf "declare i1 @union_is_float(%union_t*)\n";
+  Buffer.add_string buf "declare i1 @union_is_string(%union_t*)\n";
+  Buffer.add_string buf "declare i1 @union_is_bool(%union_t*)\n";
+  Buffer.add_string buf "declare i1 @union_is_none(%union_t*)\n";
+  Buffer.add_string buf "declare i32 @union_get_int(%union_t*)\n";
+  Buffer.add_string buf "declare double @union_get_float(%union_t*)\n";
+  Buffer.add_string buf "declare i8* @union_get_string(%union_t*)\n";
+  Buffer.add_string buf "declare i1 @union_get_bool(%union_t*)\n";
+  Buffer.add_string buf "declare void @union_free(%union_t*)\n";
+  Buffer.add_string buf "declare %union_t* @union_clone(%union_t*)\n";
+  Buffer.add_string buf "declare void @union_print_value(%union_t*)\n\n";
 
   let ctx = create_context () in
   let code_buf = create 8192 in

@@ -21,7 +21,7 @@
 %token PLUS MINUS TIMES DIV MOD
 %token EQ NEQ LT GT LTE GTE
 %token AND OR NOT
-%token ASSIGN ARROW PIPE
+%token ASSIGN ARROW PIPE UNDERSCORE
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
 %token COMMA COLON SEMICOLON DOT
 %token INDENT DEDENT NEWLINE
@@ -113,7 +113,9 @@ else_opt:
 
 case_list:
   | { [] }
-  | CASE p = pattern COLON newline_sep INDENT body = statement_list DEDENT rest = case_list
+  | CASE p = pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
+      { (p, body) :: rest }
+  | p = pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
       { (p, body) :: rest }
 
 class_member_list:
@@ -158,6 +160,7 @@ pattern:
   | s = STRING { PString s }
   | b = BOOL { PBool b }
   | NONE { PNone }
+  | UNDERSCORE { PWildcard }
   | name = IDENT { PVar name }
   | LPAREN patterns = separated_list(COMMA, pattern) RPAREN { PTuple patterns }
   | LBRACKET patterns = separated_list(COMMA, pattern) RBRACKET { PList patterns }
@@ -190,7 +193,15 @@ type_expr:
     }
   | LBRACKET ty = type_expr RBRACKET { TList ty }
   | LPAREN tys = separated_list(COMMA, type_expr) RPAREN { TTuple tys }
-  | ty1 = type_expr PIPE ty2 = type_expr { TUnion [ty1; ty2] }
+  | ty1 = type_expr PIPE ty2 = type_expr {
+      (* 扁平化嵌套的TUnion: int | string | bool -> TUnion [int; string; bool] *)
+      let flatten_union t =
+        match t with
+        | TUnion ts -> ts
+        | _ -> [t]
+      in
+      TUnion (flatten_union ty1 @ flatten_union ty2)
+    }
 
 expr:
   | n = INT { EInt (n, { line = 0; column = 0 }) }

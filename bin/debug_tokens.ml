@@ -63,6 +63,7 @@ let tok_to_string = function
   | Parser.SELF -> "SELF"
   | Parser.SUPER -> "SUPER"
   | Parser.SEMICOLON -> "SEMICOLON"
+  | Parser.UNDERSCORE -> "UNDERSCORE"
 
 let () =
   if Array.length Sys.argv < 2 then begin

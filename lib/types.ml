@@ -127,11 +127,22 @@ let rec unify t1 t2 =
       let ret_subst = unify (apply_subst param_subst r1) (apply_subst param_subst r2) in
       compose_subst ret_subst param_subst
   | (TyUnion ts1, TyUnion ts2) when List.length ts1 = List.length ts2 ->
+      (* 严格的union统一：两边成员必须一一对应 *)
       List.fold_left2
         (fun subst t1 t2 ->
           let s = unify (apply_subst subst t1) (apply_subst subst t2) in
           compose_subst s subst)
         empty_subst ts1 ts2
+  | (t, TyUnion ts) | (TyUnion ts, t) ->
+      (* 单个类型与union统一：如果类型是union的某个成员则成功 *)
+      let rec try_unify_with_members = function
+        | [] -> failwith (Printf.sprintf "%s is not compatible with union %s"
+                          (ty_to_string t) (ty_to_string (TyUnion ts)))
+        | member :: rest ->
+            try unify t member
+            with Failure _ -> try_unify_with_members rest
+      in
+      try_unify_with_members ts
   | _ ->
       failwith (Printf.sprintf "Cannot unify %s and %s" (ty_to_string t1) (ty_to_string t2))
 

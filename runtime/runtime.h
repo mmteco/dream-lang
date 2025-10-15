@@ -6,6 +6,7 @@
 #include "dict.h"
 #include "tuple.h"
 #include "dynarray.h"
+#include "union.h"
 
 void print_int(int value);
 

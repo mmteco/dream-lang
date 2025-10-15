@@ -70,6 +70,7 @@ rule token = parse
   | float as f { update_pos lexbuf; FLOAT (float_of_string f) }
   | '"' { update_pos lexbuf; read_string (Buffer.create 16) lexbuf }
   | "'" { update_pos lexbuf; read_single_string (Buffer.create 16) lexbuf }
+  | '_' { update_pos lexbuf; UNDERSCORE }
   | ident as id {
       update_pos lexbuf;
       try Hashtbl.find keyword_table id

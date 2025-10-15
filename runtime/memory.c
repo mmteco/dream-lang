@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdatomic.h>
 #include <pthread.h>
 #include <assert.h>
@@ -23,6 +24,7 @@ typedef enum {
     OBJ_STRING,
     OBJ_DICT,
     OBJ_TUPLE,
+    OBJ_UNION,
 } ObjectType;
 
 // 对象作用域
@@ -412,6 +414,32 @@ void gc_release(void* object) {
                 }
                 break;
             }
+            case OBJ_UNION: {
+                // Union 类型的清理（释放字符串内存）
+                typedef enum {
+                    UNION_INT,
+                    UNION_FLOAT,
+                    UNION_STRING,
+                    UNION_BOOL,
+                    UNION_NONE,
+                } UnionTag;
+
+                typedef struct {
+                    UnionTag tag;
+                    union {
+                        int32_t as_int;
+                        double as_float;
+                        char* as_string;
+                        bool as_bool;
+                    } value;
+                } union_t;
+
+                union_t* u = (union_t*)obj_data;
+                if (u->tag == UNION_STRING && u->value.as_string != NULL) {
+                    free(u->value.as_string);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -705,6 +733,32 @@ void gc_cleanup() {
                 DynArrayData* arr = (DynArrayData*)object;
                 if (arr->data != NULL) {
                     free(arr->data);
+                }
+                break;
+            }
+            case OBJ_UNION: {
+                // Union 类型的清理（释放字符串内存）
+                typedef enum {
+                    UNION_INT,
+                    UNION_FLOAT,
+                    UNION_STRING,
+                    UNION_BOOL,
+                    UNION_NONE,
+                } UnionTag;
+
+                typedef struct {
+                    UnionTag tag;
+                    union {
+                        int32_t as_int;
+                        double as_float;
+                        char* as_string;
+                        bool as_bool;
+                    } value;
+                } union_t;
+
+                union_t* u = (union_t*)object;
+                if (u->tag == UNION_STRING && u->value.as_string != NULL) {
+                    free(u->value.as_string);
                 }
                 break;
             }

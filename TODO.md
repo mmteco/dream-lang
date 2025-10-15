@@ -60,9 +60,58 @@
   - [x] 元组索引 `tuple[0]` ✅ (2025-10)
   - [x] 任意长度元组支持 ✅ (2025-10)
 
-- [ ] Match 表达式
-  - [ ] 模式匹配实现
+- [x] Match 表达式 ✅ **基础功能完成** (2025-10)
+  - [x] 模式匹配语法解析（case 关键字可选）
+  - [x] 通配符模式 `_`
+  - [x] 类型检查实现
+  - [x] LLVM 代码生成（整数、字符串、通配符、变量绑定）✅
+  - [x] match语句（SMatch）
+  - [x] match表达式（EMatch，带phi节点）
+  - [ ] 枚举变体精确匹配（需要tagged union）
+  - [ ] 守卫条件 `if` 子句
   - [ ] 穷尽性检查
+
+- [x] Union 类型 ✅ **完整功能完成** (2025-10)
+  - [x] 使用 `|` 语法：`int | string | bool`
+  - [x] 多类型union支持（自动扁平化嵌套）
+  - [x] 类型统一算法（子类型兼容性）
+  - [x] 函数参数union类型（编译时类型检查）✅
+  - [x] 变量声明union类型（编译时类型检查）✅
+  - [x] **Runtime 层 Tagged Union 实现（union.c/union.h）** ✅
+  - [x] **LLVM 代码生成器集成（装箱/拆箱）** ✅ (2025-10)
+  - [x] 自动装箱：类型注解为 union 时自动装箱 ✅
+  - [x] 完整的单元测试（test_union.c）✅
+  - [x] **Match 表达式与 union 集成** ✅ (2025-10)
+    - [x] 整数、字符串、布尔值模式匹配
+    - [x] 自动拆箱并类型检查（union_is_xxx + union_get_xxx）
+    - [x] 通配符模式支持
+  - [x] **Print 支持 union 类型** ✅ (2025-10)
+    - [x] union_print_value 运行时函数
+    - [x] 自动根据 tag 输出正确值
+  - [x] **函数参数 union 装箱** ✅ (2025-10)
+    - [x] 函数参数类型表（function_param_types）
+    - [x] 调用时自动检测并装箱
+    - [x] 避免重复装箱（已是 union 直接传递）
+    - [x] 多参数 union 支持
+  - [x] **函数返回值 union 装箱** ✅ (2025-10)
+    - [x] ctx.function_type 跟踪当前函数返回类型
+    - [x] SReturn 语句自动检测并装箱
+    - [x] Match 语句 return 分支优化
+    - [x] 完整测试（test_union_comprehensive.dm）
+  - [x] **GC 集成和内存优化** ✅ (2025-10)
+    - [x] OBJ_UNION 类型添加到 GC 系统
+    - [x] union_create_xxx 使用 gc_alloc 分配
+    - [x] 自动引用计数管理（union_retain/union_release）
+    - [x] 字符串内存自动清理（gc_release 时释放）
+    - [x] 内存池优化（64 字节池，批量分配）
+    - [x] 完整的单元测试（test_union_gc.c）
+    - [x] 零内存泄漏验证
+
+  **两种模式**：
+  1. **编译时类型特化**（默认）：零运行时开销，性能最优
+  2. **运行时多态**（显式类型注解）：支持真正的类型多态，有装箱开销
+
+  **当前状态**：所有核心功能已完成，生产可用 ✅
 
 - [ ] Lambda 表达式
   - [ ] 语法解析

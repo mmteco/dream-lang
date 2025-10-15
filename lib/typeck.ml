@@ -357,11 +357,56 @@ let rec infer_expr env = function
          report_error err;
          (TyUnknown, cond_subst))
 
-  | EMatch (_, _, pos) ->
-      let err = make_error (TypeError "Match not implemented") pos
-        "Match expressions not yet implemented" in
-      report_error err;
-      (TyUnknown, empty_subst)
+  | EMatch (scrut, cases, pos) ->
+      let (scrut_type, scrut_subst) = infer_expr env scrut in
+      let env' = apply_subst_to_env scrut_subst env in
+
+      (* 检查每个case分支 *)
+      let result_type = fresh_type_var () in
+      let rec check_cases combined_subst = function
+        | [] -> (result_type, combined_subst)
+        | (pat, expr) :: rest ->
+            (* 创建模式绑定的新环境 *)
+            let rec bind_pattern env pat expected_type =
+              match pat with
+              | PVar name -> add_binding name expected_type env
+              | PInt _ | PFloat _ | PString _ | PBool _ | PNone | PWildcard -> env
+              | PTuple pats ->
+                  (match expected_type with
+                   | TyTuple elem_types when List.length pats = List.length elem_types ->
+                       List.fold_left2 bind_pattern env pats elem_types
+                   | _ -> env)
+              | PList _ -> env  (* TODO: 实现列表模式 *)
+              | PType (_, _) -> env  (* TODO: 实现类型模式 *)
+              | PSome p ->
+                  (match expected_type with
+                   | TyOption t -> bind_pattern env p t
+                   | _ -> env)
+              | POk p ->
+                  (match expected_type with
+                   | TyResult (t, _) -> bind_pattern env p t
+                   | _ -> env)
+              | PErr p ->
+                  (match expected_type with
+                   | TyResult (_, t) -> bind_pattern env p t
+                   | _ -> env)
+              | PEnumVariant (_, _, pats) ->
+                  (* 枚举模式暂时不检查内部参数类型 *)
+                  List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
+            in
+            let case_env = bind_pattern env' pat (apply_subst combined_subst scrut_type) in
+            let (case_type, case_subst) = infer_expr case_env expr in
+            let combined = compose_subst case_subst combined_subst in
+            (try
+               let unify_subst = unify (apply_subst combined result_type) (apply_subst combined case_type) in
+               check_cases (compose_subst unify_subst combined) rest
+             with Failure msg ->
+               let err = make_error (TypeError msg) pos
+                 (Printf.sprintf "Match case has incompatible type: %s" msg) in
+               report_error err;
+               check_cases combined rest)
+      in
+      check_cases scrut_subst cases
 
   | EListComp (elem, var, iter, _cond_opt, pos) ->
       let (iter_type, iter_subst) = infer_expr env iter in
@@ -554,11 +599,49 @@ let rec check_statement env = function
          report_error err;
          (env, empty_subst))
 
-  | SMatch (_, _, pos) ->
-      let err = make_error (TypeError "Match not implemented") pos
-        "Match statements not yet implemented" in
-      report_error err;
-      (env, empty_subst)
+  | SMatch (scrut, cases, _pos) ->
+      let (scrut_type, scrut_subst) = infer_expr env scrut in
+      let env' = apply_subst_to_env scrut_subst env in
+
+      (* 检查每个case分支 *)
+      let rec check_cases combined_subst = function
+        | [] -> combined_subst
+        | (pat, body) :: rest ->
+            (* 创建模式绑定的新环境 *)
+            let rec bind_pattern env pat expected_type =
+              match pat with
+              | PVar name -> add_binding name expected_type env
+              | PInt _ | PFloat _ | PString _ | PBool _ | PNone | PWildcard -> env
+              | PTuple pats ->
+                  (match expected_type with
+                   | TyTuple elem_types when List.length pats = List.length elem_types ->
+                       List.fold_left2 bind_pattern env pats elem_types
+                   | _ -> env)
+              | PList _ -> env  (* TODO: 实现列表模式 *)
+              | PType (_, _) -> env  (* TODO: 实现类型模式 *)
+              | PSome p ->
+                  (match expected_type with
+                   | TyOption t -> bind_pattern env p t
+                   | _ -> env)
+              | POk p ->
+                  (match expected_type with
+                   | TyResult (t, _) -> bind_pattern env p t
+                   | _ -> env)
+              | PErr p ->
+                  (match expected_type with
+                   | TyResult (_, t) -> bind_pattern env p t
+                   | _ -> env)
+              | PEnumVariant (_, _, pats) ->
+                  (* 枚举模式暂时不检查内部参数类型 *)
+                  List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
+            in
+            let case_env = bind_pattern env' pat (apply_subst combined_subst scrut_type) in
+            let (_, case_subst) = check_statements case_env body in
+            let combined = compose_subst case_subst combined_subst in
+            check_cases combined rest
+      in
+      let final_subst = check_cases scrut_subst cases in
+      (env, final_subst)
 
   | SClass (_, _, _, _, pos) ->
       let err = make_error (TypeError "Classes not implemented") pos

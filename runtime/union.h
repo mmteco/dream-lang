@@ -1,0 +1,101 @@
+#ifndef DREAM_UNION_H
+#define DREAM_UNION_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+// Union 类型标签
+typedef enum {
+    UNION_INT,
+    UNION_FLOAT,
+    UNION_STRING,
+    UNION_BOOL,
+    UNION_NONE,
+} UnionTag;
+
+// Tagged Union 结构
+// 使用 tag 区分当前存储的类型
+// 使用 union 存储实际值（节省内存）
+typedef struct {
+    UnionTag tag;
+    union {
+        int32_t as_int;
+        double as_float;
+        char* as_string;
+        bool as_bool;
+    } value;
+} union_t;
+
+// ============================================================================
+// Union 创建函数
+// ============================================================================
+
+// 创建 int union
+union_t* union_create_int(int32_t value);
+
+// 创建 float union
+union_t* union_create_float(double value);
+
+// 创建 string union
+union_t* union_create_string(const char* value);
+
+// 创建 bool union
+union_t* union_create_bool(bool value);
+
+// 创建 None union
+union_t* union_create_none();
+
+// ============================================================================
+// Union 类型检查
+// ============================================================================
+
+// 检查 union 是否为特定类型
+bool union_is_int(union_t* u);
+bool union_is_float(union_t* u);
+bool union_is_string(union_t* u);
+bool union_is_bool(union_t* u);
+bool union_is_none(union_t* u);
+
+// ============================================================================
+// Union 值提取
+// ============================================================================
+
+// 提取 union 中的值（如果类型不匹配则返回默认值）
+int32_t union_get_int(union_t* u);
+double union_get_float(union_t* u);
+char* union_get_string(union_t* u);
+bool union_get_bool(union_t* u);
+
+// ============================================================================
+// Union 值提取（安全版本，类型不匹配时返回 false）
+// ============================================================================
+
+bool union_try_get_int(union_t* u, int32_t* out);
+bool union_try_get_float(union_t* u, double* out);
+bool union_try_get_string(union_t* u, char** out);
+bool union_try_get_bool(union_t* u, bool* out);
+
+// ============================================================================
+// Union 内存管理
+// ============================================================================
+
+// 释放 union（会释放字符串内存）
+void union_free(union_t* u);
+
+// 复制 union（深拷贝字符串）
+union_t* union_clone(union_t* u);
+
+// ============================================================================
+// Union 调试
+// ============================================================================
+
+// 打印 union 内容（调试用）
+void union_print(union_t* u);
+
+// 获取 union 类型名称
+const char* union_type_name(union_t* u);
+
+// 打印 union 的实际值（不带类型信息）
+void union_print_value(union_t* u);
+
+#endif // DREAM_UNION_H

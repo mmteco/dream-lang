@@ -14,6 +14,7 @@ typedef enum {
     OBJ_STRING,
     OBJ_DICT,
     OBJ_TUPLE,
+    OBJ_UNION,
 } ObjectType;
 
 // ============================================================================

@@ -52,6 +52,7 @@ type token =
   | ASSIGN
   | ARROW
   | PIPE
+  | UNDERSCORE
   | LPAREN
   | RPAREN
   | LBRACKET
