@@ -15,6 +15,7 @@ type ty =
   | TyGeneric of string * ty
   | TyOption of ty
   | TyResult of ty * ty
+  | TyEnum of string * ty list
   | TyUnknown
 
 let rec type_expr_to_ty = function
@@ -32,6 +33,7 @@ let rec type_expr_to_ty = function
   | TGeneric (name, t) -> TyGeneric (name, type_expr_to_ty t)
   | TOption t -> TyOption (type_expr_to_ty t)
   | TResult (ok, err) -> TyResult (type_expr_to_ty ok, type_expr_to_ty err)
+  | TEnum (name, params) -> TyEnum (name, List.map type_expr_to_ty params)
 
 let rec ty_to_string = function
   | TyInt -> "int"
@@ -51,6 +53,8 @@ let rec ty_to_string = function
   | TyGeneric (name, t) -> Printf.sprintf "%s[%s]" name (ty_to_string t)
   | TyOption t -> Printf.sprintf "Option[%s]" (ty_to_string t)
   | TyResult (ok, err) -> Printf.sprintf "Result[%s, %s]" (ty_to_string ok) (ty_to_string err)
+  | TyEnum (name, []) -> name
+  | TyEnum (name, params) -> Printf.sprintf "%s[%s]" name (String.concat ", " (List.map ty_to_string params))
   | TyUnknown -> "?"
 
 let rec occurs name = function

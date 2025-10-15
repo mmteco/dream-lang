@@ -12,7 +12,8 @@
       "Bash(timeout:*)",
       "Bash(echo:*)",
       "Bash(dream:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(dune exec:*)"
     ],
     "deny": [],
     "ask": []

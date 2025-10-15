@@ -341,6 +341,11 @@ let rec infer_expr env = function
          report_error err;
          (TyList TyUnknown, iter_subst))
 
+  | EEnumVariant (enum_name, _variant_name, args, _pos) ->
+      let (_arg_types, _arg_substs) = List.split (List.map (infer_expr env) args) in
+      let combined_subst = List.fold_left compose_subst empty_subst _arg_substs in
+      (TyEnum (enum_name, []), combined_subst)
+
 and apply_subst_to_env subst env =
   {env with bindings = Env.StringMap.map (apply_subst subst) env.bindings}
 
@@ -532,6 +537,11 @@ let rec check_statement env = function
       (env, empty_subst)
 
   | SImport (_, _) | SFromImport (_, _, _) -> (env, empty_subst)
+
+  | SEnum (name, _type_params, _variants, _) ->
+      let enum_type = TyEnum (name, []) in
+      let new_env = add_binding name enum_type env in
+      (new_env, empty_subst)
 
   | SIndexAssign (arr, idx, value, pos) ->
       let (arr_type, arr_subst) = infer_expr env arr in

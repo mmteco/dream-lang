@@ -11,6 +11,7 @@ let tok_to_string = function
   | Parser.CLASS -> "CLASS"
   | Parser.INTERFACE -> "INTERFACE"
   | Parser.IMPLEMENTS -> "IMPLEMENTS"
+  | Parser.ENUM -> "ENUM"
   | Parser.IF -> "IF"
   | Parser.ELSE -> "ELSE"
   | Parser.ELIF -> "ELIF"

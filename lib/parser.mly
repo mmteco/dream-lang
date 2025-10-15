@@ -7,7 +7,7 @@
     | ECall (_, _, p) | EList (_, p) | EDict (_, p) | ETuple (_, p)
     | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
     | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p)
-    | ESome (_, p) | EOk (_, p) | EErr (_, p) -> p
+    | ESome (_, p) | EOk (_, p) | EErr (_, p) | EEnumVariant (_, _, _, p) -> p
 %}
 
 %token <int> INT
@@ -15,7 +15,7 @@
 %token <string> STRING
 %token <bool> BOOL
 %token <string> IDENT
-%token LET DEF CLASS INTERFACE IMPLEMENTS
+%token LET DEF CLASS INTERFACE IMPLEMENTS ENUM
 %token IF ELSE ELIF MATCH CASE FOR WHILE RETURN
 %token IMPORT FROM AS ASYNC AWAIT NONE SOME OK ERR SELF SUPER IN
 %token PLUS MINUS TIMES DIV MOD
@@ -92,6 +92,10 @@ statement:
       { SClass (name, None, interfaces, members, { line = 0; column = 0 }) }
   | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
       { SInterface (name, members, { line = 0; column = 0 }) }
+  | ENUM name = IDENT COLON newline_sep INDENT variants = enum_variant_list DEDENT
+      { SEnum (name, [], variants, { line = 0; column = 0 }) }
+  | ENUM name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET COLON newline_sep INDENT variants = enum_variant_list DEDENT
+      { SEnum (name, type_params, variants, { line = 0; column = 0 }) }
   | IMPORT modules = separated_list(DOT, IDENT)
       { SImport (modules, { line = 0; column = 0 }) }
   | FROM module_name = IDENT IMPORT names = separated_list(COMMA, IDENT)
@@ -134,6 +138,16 @@ interface_member:
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr
       { IMethod (name, [], params, Some ret, { line = 0; column = 0 }) }
 
+enum_variant_list:
+  | { [] }
+  | v = enum_variant NEWLINE* vs = enum_variant_list { v :: vs }
+
+enum_variant:
+  | name = IDENT
+      { VSimple (name, { line = 0; column = 0 }) }
+  | name = IDENT LPAREN types = separated_list(COMMA, type_expr) RPAREN
+      { VTuple (name, types, { line = 0; column = 0 }) }
+
 param:
   | name = IDENT { (name, None) }
   | name = IDENT COLON ty = type_expr { (name, Some ty) }
@@ -151,6 +165,10 @@ pattern:
   | SOME LPAREN p = pattern RPAREN { PSome p }
   | OK LPAREN p = pattern RPAREN { POk p }
   | ERR LPAREN p = pattern RPAREN { PErr p }
+  | enum_name = IDENT DOT variant_name = IDENT LPAREN patterns = separated_list(COMMA, pattern) RPAREN
+      { PEnumVariant (enum_name, variant_name, patterns) }
+  | enum_name = IDENT DOT variant_name = IDENT
+      { PEnumVariant (enum_name, variant_name, []) }
 
 for_pattern:
   | name = IDENT { PVar name }
@@ -226,6 +244,10 @@ expr:
       { EOk (e, { line = 0; column = 0 }) }
   | ERR LPAREN e = expr RPAREN
       { EErr (e, { line = 0; column = 0 }) }
+  | enum_name = IDENT DOT variant_name = IDENT LPAREN args = separated_list(COMMA, expr) RPAREN
+      { EEnumVariant (enum_name, variant_name, args, { line = 0; column = 0 }) }
+  | enum_name = IDENT DOT variant_name = IDENT
+      { EEnumVariant (enum_name, variant_name, [], { line = 0; column = 0 }) }
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }

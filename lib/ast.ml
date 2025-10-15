@@ -14,6 +14,7 @@ type token =
   | CLASS
   | INTERFACE
   | IMPLEMENTS
+  | ENUM
   | IF
   | ELSE
   | ELIF
@@ -100,6 +101,7 @@ type type_expr =
   | TGeneric of string * type_expr
   | TOption of type_expr
   | TResult of type_expr * type_expr
+  | TEnum of string * type_expr list
 
 type expr =
   | EInt of int * position
@@ -124,6 +126,7 @@ type expr =
   | ESome of expr * position
   | EOk of expr * position
   | EErr of expr * position
+  | EEnumVariant of string * string * expr list * position
 
 and pattern =
   | PInt of int
@@ -139,6 +142,7 @@ and pattern =
   | PSome of pattern
   | POk of pattern
   | PErr of pattern
+  | PEnumVariant of string * string * pattern list
 
 type statement =
   | SExpr of expr * position
@@ -156,6 +160,7 @@ type statement =
   | SFromImport of string * string list * position
   | SAssign of string * expr * position
   | SIndexAssign of expr * expr * expr * position
+  | SEnum of string * string list * enum_variant list * position
 
 and class_member =
   | CField of string * type_expr * position
@@ -164,5 +169,9 @@ and class_member =
 and interface_member =
   | IField of string * type_expr * position
   | IMethod of string * string list * (string * type_expr option) list * type_expr option * position
+
+and enum_variant =
+  | VSimple of string * position
+  | VTuple of string * type_expr list * position
 
 type program = statement list

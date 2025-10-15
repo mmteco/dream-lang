@@ -25,6 +25,7 @@
         ("class", CLASS);
         ("interface", INTERFACE);
         ("implements", IMPLEMENTS);
+        ("enum", ENUM);
         ("if", IF);
         ("else", ELSE);
         ("elif", ELIF);

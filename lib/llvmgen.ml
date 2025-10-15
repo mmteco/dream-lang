@@ -96,6 +96,7 @@ let rec type_expr_to_llvm_type = function
   | TVar _ -> I32
   | TOption _ -> Ptr I32
   | TResult _ -> Ptr I32
+  | TEnum _ -> I32
   | TNone | TFunc _ | TUnion _ | TGeneric _ -> I32
 
 let gen_binop = function
@@ -1183,6 +1184,16 @@ let rec gen_expr buf ctx = function
       Buffer.add_string buf "  ; Err(value) - 暂时直接返回内部值\n";
       (v, t)
 
+  | EEnumVariant (_enum_name, _variant_name, args, _) ->
+      if List.length args = 0 then
+        ("0", I32)
+      else
+        let arg_vals = List.map (fun arg ->
+          let (v, _t) = gen_expr buf ctx arg in
+          v
+        ) args in
+        (List.hd arg_vals, I32)
+
   | _ ->
       Buffer.add_string buf "  ; unsupported expression\n";
       ("0", I32)
@@ -1578,6 +1589,9 @@ let rec gen_statement buf ctx = function
 
        | _ ->
            Printf.bprintf buf "  ; for loops only work with dynamic arrays\n")
+
+  | SEnum (_name, _type_params, _variants, _) ->
+      Buffer.add_string buf "  ; enum definition (no code generated)\n"
 
   | _ ->
       Buffer.add_string buf "  ; unsupported statement\n"
