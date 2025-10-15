@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "dynarray.h"
 
 // 对象类型定义（与 memory.c 保持一致）
 typedef enum {
@@ -14,13 +15,6 @@ typedef enum {
 extern void* gc_alloc(size_t size, ObjectType type);
 extern void gc_retain(void* object);
 extern void gc_release(void* object);
-
-// 动态数组结构
-typedef struct {
-    int capacity;
-    int length;
-    int* data;
-} dynarray_i32;
 
 // 创建新的动态数组（使用 GC 分配）
 dynarray_i32* create_dynarray_i32(int initial_capacity) {
@@ -238,4 +232,59 @@ void print_dynarray_i32(dynarray_i32* arr) {
         printf("%d", arr->data[i]);
     }
     printf("]\n");
+}
+
+// ============================================================================
+// dynarray_ptr 实现 (用于存储指针，自动适配32/64位)
+// ============================================================================
+
+dynarray_ptr* create_dynarray_ptr(int initial_capacity) {
+    dynarray_ptr* arr = (dynarray_ptr*)malloc(sizeof(dynarray_ptr));
+    if (!arr) return NULL;
+
+    if (initial_capacity < 4) initial_capacity = 4;
+
+    arr->capacity = initial_capacity;
+    arr->length = 0;
+    arr->data = (intptr_t*)malloc(sizeof(intptr_t) * initial_capacity);
+
+    if (!arr->data) {
+        free(arr);
+        return NULL;
+    }
+
+    return arr;
+}
+
+void free_dynarray_ptr(dynarray_ptr* arr) {
+    if (arr) {
+        if (arr->data) free(arr->data);
+        free(arr);
+    }
+}
+
+void append_ptr(dynarray_ptr* arr, intptr_t value) {
+    if (!arr) return;
+
+    // 扩容
+    if (arr->length >= arr->capacity) {
+        int new_capacity = arr->capacity * 2;
+        intptr_t* new_data = (intptr_t*)realloc(arr->data, sizeof(intptr_t) * new_capacity);
+        if (!new_data) return;
+        arr->data = new_data;
+        arr->capacity = new_capacity;
+    }
+
+    arr->data[arr->length++] = value;
+}
+
+intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index) {
+    if (!arr || index < 0 || index >= arr->length) {
+        return 0;
+    }
+    return arr->data[index];
+}
+
+int len_dynarray_ptr(dynarray_ptr* arr) {
+    return arr ? arr->length : 0;
 }

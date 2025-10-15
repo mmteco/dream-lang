@@ -67,4 +67,7 @@ let builtin_env =
   let env = add_binding "len" (TyFunc ([TyList (TyVar "T")], TyInt)) env in
   let env = add_binding "append" (TyFunc ([TyList (TyVar "T"); TyVar "T"], TyNone)) env in
   let env = add_binding "range" (TyFunc ([TyInt], TyList TyInt)) env in
+  let env = add_binding "dict_keys" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "K"))) env in
+  let env = add_binding "dict_values" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "V"))) env in
+  let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
   env

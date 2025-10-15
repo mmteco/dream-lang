@@ -6,7 +6,8 @@
       "Bash(_build/default/bin/main.exe:*)",
       "Bash(ocaml:*)",
       "Bash(clang:*)",
-      "Bash(make:*)"
+      "Bash(make:*)",
+      "Bash(dune clean:*)"
     ],
     "deny": [],
     "ask": []

@@ -9,6 +9,10 @@ type llvm_type =
   | Ptr of llvm_type
   | Array of int * llvm_type
   | DynArray of llvm_type  (* 动态数组: {capacity, length, data*} *)
+  | DynArrayPtr  (* 指针数组: {capacity, length, intptr_t*} - 用于存储指针 *)
+  | TuplePtr  (* 元组指针 *)
+  | DictPtr   (* 字典指针 dict[int,int] *)
+  | DictStrPtr (* 字符串键字典指针 dict[string,int] *)
 
 type llvm_value = string
 
@@ -34,6 +38,12 @@ let rec llvm_type_to_string = function
   | DynArray elem_t ->
       (* 动态数组结构: { i32 capacity, i32 length, elem_t* data } *)
       Printf.sprintf "{ i32, i32, %s* }" (llvm_type_to_string elem_t)
+  | DynArrayPtr ->
+      (* 指针数组结构: { i32 capacity, i32 length, i64* data } - i64用于64位指针 *)
+      "{ i32, i32, i64* }"
+  | TuplePtr -> "i32*"  (* 元组指针表示为i32* *)
+  | DictPtr -> "i8*"    (* 字典指针表示为i8* *)
+  | DictStrPtr -> "i8*" (* 字符串键字典指针也表示为i8* *)
 
 let mangle_name name =
   "@" ^ String.map (fun c -> if c = '_' then '_' else c) name
@@ -81,8 +91,8 @@ let rec type_expr_to_llvm_type = function
   | TFloat -> I32
   | TString -> Ptr I32
   | TList ty -> DynArray (type_expr_to_llvm_type ty)
-  | TTuple _ -> Ptr I32
-  | TDict _ -> Ptr I32
+  | TTuple _ -> TuplePtr
+  | TDict _ -> DictPtr
   | TVar _ -> I32
   | TOption _ -> Ptr I32
   | TResult _ -> Ptr I32
@@ -110,6 +120,17 @@ let rec gen_expr buf ctx = function
   | EBool (b, _) ->
       ((if b then "1" else "0" : llvm_value), I1)
 
+  | EString (s, _) ->
+      incr string_counter;
+      let str_name = Printf.sprintf "@.str%d" !string_counter in
+      let escaped_str = String.escaped s in
+      let str_len = String.length s + 1 in
+      ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
+      let ptr_temp = fresh_temp () in
+      Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+        ptr_temp str_len str_len str_name;
+      (ptr_temp, Ptr I32)
+
   | EVar (name, _) ->
       (match find_variable ctx name with
        | Some (Array _ as ty) ->
@@ -131,7 +152,7 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "  %s = load %s*, %s** %s\n"
              loaded_ptr (llvm_type_to_string ty) (llvm_type_to_string ty) local;
            (loaded_ptr, ty)
-       | Some (Ptr I32 as ty) ->
+       | Some ((TuplePtr | DictPtr | Ptr I32) as ty) ->
            let temp = fresh_temp () in
            let actual_name = match find_llvm_name ctx name with
              | Some renamed -> renamed
@@ -443,6 +464,45 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "  ; append() only works with dynamic arrays\n";
            ("0", Void))
 
+  | ECall (EVar ("dict_keys", _), [dict_expr], _) ->
+      let (dict_v, dict_t) = gen_expr buf ctx dict_expr in
+      (match dict_t with
+       | DictPtr | Ptr I32 ->
+           (* 调用 dict_keys 函数 *)
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call { i32, i32, i32* }* @dict_keys(i8* %s)\n"
+             result dict_v;
+           (result, DynArray I32)
+       | _ ->
+           Printf.bprintf buf "  ; dict_keys() only works with dictionaries\n";
+           ("0", I32))
+
+  | ECall (EVar ("dict_values", _), [dict_expr], _) ->
+      let (dict_v, dict_t) = gen_expr buf ctx dict_expr in
+      (match dict_t with
+       | DictPtr | Ptr I32 ->
+           (* 调用 dict_values 函数 *)
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call { i32, i32, i32* }* @dict_values(i8* %s)\n"
+             result dict_v;
+           (result, DynArray I32)
+       | _ ->
+           Printf.bprintf buf "  ; dict_values() only works with dictionaries\n";
+           ("0", I32))
+
+  | ECall (EVar ("dict_items", _), [dict_expr], _) ->
+      let (dict_v, dict_t) = gen_expr buf ctx dict_expr in
+      (match dict_t with
+       | DictPtr | Ptr I32 ->
+           (* 调用 dict_items 函数 - 返回 dynarray_ptr *)
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call { i32, i32, i64* }* @dict_items(i8* %s)\n"
+             result dict_v;
+           (result, DynArrayPtr)
+       | _ ->
+           Printf.bprintf buf "  ; dict_items() only works with dictionaries\n";
+           ("0", I32))
+
   | ECall (EVar (fname, _), args, _) ->
       let arg_vals = List.map (gen_expr buf ctx) args in
       let result = fresh_temp () in
@@ -484,13 +544,66 @@ let rec gen_expr buf ctx = function
 
       (dyn_arr, dyn_arr_type)
 
+  | EDict (pairs, _) ->
+      let initial_capacity = max 16 (List.length pairs * 2) in
+      let dict_ptr = fresh_temp () in
+
+      let (is_str_key, is_str_val) =
+        match pairs with
+        | [] -> (false, false)
+        | (key_expr, val_expr) :: _ ->
+            let k_is_str = (match key_expr with EString _ -> true | _ -> false) in
+            let v_is_str = (match val_expr with EString _ -> true | _ -> false) in
+            (k_is_str, v_is_str)
+      in
+
+      (* 生成创建字典的代码 - 使用统一的 dict_create(key_type, val_type, capacity) *)
+      let key_type = if is_str_key then 1 else 0 in  (* 0=DICT_KEY_INT, 1=DICT_KEY_STRING *)
+      let val_type = if is_str_val then 1 else 0 in  (* 0=DICT_VAL_INT, 1=DICT_VAL_STRING *)
+      Printf.bprintf buf "  %s = call i8* @dict_create(i32 %d, i32 %d, i32 %d)\n"
+        dict_ptr key_type val_type initial_capacity;
+
+      (* 填充字典 - 使用统一的类型特化函数 *)
+      List.iter (fun (key_expr, val_expr) ->
+        let (key_v, _) = gen_expr buf ctx key_expr in
+        let (val_v, _) = gen_expr buf ctx val_expr in
+        match (is_str_key, is_str_val) with
+        | (false, false) ->
+            Printf.bprintf buf "  call void @dict_set_int_int(i8* %s, i32 %s, i32 %s)\n" dict_ptr key_v val_v
+        | (false, true) ->
+            Printf.bprintf buf "  call void @dict_set_int_str(i8* %s, i32 %s, i8* %s)\n" dict_ptr key_v val_v
+        | (true, false) ->
+            Printf.bprintf buf "  call void @dict_set_str_int(i8* %s, i8* %s, i32 %s)\n" dict_ptr key_v val_v
+        | (true, true) ->
+            Printf.bprintf buf "  call void @dict_set_str_str(i8* %s, i8* %s, i8* %s)\n" dict_ptr key_v val_v
+      ) pairs;
+
+      (dict_ptr, if is_str_key then DictStrPtr else DictPtr)
+
+  | ETuple (elems, _) ->
+      (match elems with
+       | [e1; e2] ->
+           let (v1, _) = gen_expr buf ctx e1 in
+           let (v2, _) = gen_expr buf ctx e2 in
+           let tuple_ptr = fresh_temp () in
+           let tuple_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8* @create_tuple2_i32(i32 %s, i32 %s)\n"
+             tuple_i8 v1 v2;
+           Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n"
+             tuple_ptr tuple_i8;
+           (tuple_ptr, TuplePtr)
+       | _ ->
+           Printf.bprintf buf "  ; tuples with size != 2 not yet supported\n";
+           ("0", TuplePtr))
+
   | EIndex (arr, idx, _) ->
       let (arr_v, arr_t) = gen_expr buf ctx arr in
       let (idx_v, _) = gen_expr buf ctx idx in
-      let ptr_temp = fresh_temp () in
-      let result = fresh_temp () in
+
       (match arr_t with
        | Array (_, elem_t) ->
+           let ptr_temp = fresh_temp () in
+           let result = fresh_temp () in
            Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 %s\n"
              ptr_temp (llvm_type_to_string arr_t) (llvm_type_to_string arr_t) arr_v idx_v;
            Printf.bprintf buf "  %s = load %s, %s* %s\n"
@@ -508,16 +621,44 @@ let rec gen_expr buf ctx = function
              data_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr_field;
 
            (* 使用索引访问元素 *)
+           let ptr_temp = fresh_temp () in
+           let result = fresh_temp () in
            Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 %s\n"
              ptr_temp (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr idx_v;
            Printf.bprintf buf "  %s = load %s, %s* %s\n"
              result (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) ptr_temp;
            (result, elem_t)
+       | TuplePtr ->
+           (* 元组索引:调用 tuple2_i32_get *)
+           let tuple_i8 = fresh_temp () in
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 arr_v;
+           Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %s)\n"
+             result tuple_i8 idx_v;
+           (result, I32)
+       | DictPtr ->
+           (* 字典索引:调用 dict_get_int_int *)
+           let found_ptr = fresh_temp () in
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = alloca i32\n" found_ptr;
+           Printf.bprintf buf "  %s = call i32 @dict_get_int_int(i8* %s, i32 %s, i32* %s)\n"
+             result arr_v idx_v found_ptr;
+           (result, I32)
+       | DictStrPtr ->
+           (* 字符串键字典索引:调用 dict_get_str_int *)
+           let found_ptr = fresh_temp () in
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = alloca i32\n" found_ptr;
+           Printf.bprintf buf "  %s = call i32 @dict_get_str_int(i8* %s, i8* %s, i32* %s)\n"
+             result arr_v idx_v found_ptr;
+           (result, I32)
        | Ptr I32 ->
-           Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %s\n"
-             ptr_temp arr_v idx_v;
-           Printf.bprintf buf "  %s = load i32, i32* %s\n"
-             result ptr_temp;
+           (* 旧的 Ptr I32 类型,默认视为字典 *)
+           let found_ptr = fresh_temp () in
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = alloca i32\n" found_ptr;
+           Printf.bprintf buf "  %s = call i32 @dict_get_int_int(i8* %s, i32 %s, i32* %s)\n"
+             result arr_v idx_v found_ptr;
            (result, I32)
        | _ ->
            ("0", I32))
@@ -1074,6 +1215,36 @@ let rec gen_statement buf ctx = function
              (llvm_type_to_string t) v (llvm_type_to_string t) local;
            add_variable ctx name t)
 
+  | SLetPat (pat, value, _) ->
+      let (v, t) = gen_expr buf ctx value in
+      (* 从模式中提取变量并分配值 *)
+      let rec gen_pattern_bindings pat value_temp value_type =
+        match pat with
+        | PVar name ->
+            let local = "%" ^ name in
+            Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string value_type);
+            Printf.bprintf buf "  store %s %s, %s* %s\n"
+              (llvm_type_to_string value_type) value_temp (llvm_type_to_string value_type) local;
+            add_variable ctx name value_type
+        | PTuple pats ->
+            (* 对于元组,需要从元组中提取每个元素 *)
+            (match value_type with
+             | TuplePtr ->
+                 List.iteri (fun i p ->
+                   let elem_temp = fresh_temp () in
+                   let tuple_i8 = fresh_temp () in
+                   Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 value_temp;
+                   Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %d)\n"
+                     elem_temp tuple_i8 i;
+                   gen_pattern_bindings p elem_temp I32
+                 ) pats
+             | _ ->
+                 Printf.bprintf buf "  ; pattern type mismatch - expected tuple\n")
+        | _ ->
+            Printf.bprintf buf "  ; unsupported pattern in let binding\n"
+      in
+      gen_pattern_bindings pat v t
+
   | SAssign (name, value, _) ->
       let (v, t) = gen_expr buf ctx value in
       let local = "%" ^ name in
@@ -1081,37 +1252,54 @@ let rec gen_statement buf ctx = function
         (llvm_type_to_string t) v (llvm_type_to_string t) local
 
   | SIndexAssign (arr, idx, value, _) ->
+      (* 检查是否是字典赋值 *)
+      let is_dict = match arr with
+        | EVar _ ->
+            (* 检查变量类型,看是否是从字典字面量赋值来的 *)
+            (* 我们无法完全确定,所以使用 dict_set *)
+            (* 这里可以通过在 context 中添加字典变量跟踪来优化 *)
+            false  (* 暂时保守处理 *)
+        | EDict _ -> true
+        | _ -> false
+      in
+
       let (arr_v, arr_t) = gen_expr buf ctx arr in
       let (idx_v, _) = gen_expr buf ctx idx in
       let (value_v, _) = gen_expr buf ctx value in
-      (match arr_t with
-       | Array (_, _) ->
-           let ptr_temp = fresh_temp () in
-           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 %s\n"
-             ptr_temp (llvm_type_to_string arr_t) (llvm_type_to_string arr_t) arr_v idx_v;
-           Printf.bprintf buf "  store i32 %s, i32* %s\n" value_v ptr_temp
-       | DynArray elem_t ->
-           (* 从动态数组结构中提取 data 指针 *)
-           let data_ptr_field = fresh_temp () in
-           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 2\n"
-             data_ptr_field (llvm_type_to_string arr_t) (llvm_type_to_string arr_t) arr_v;
 
-           (* 加载 data 指针 *)
-           let data_ptr = fresh_temp () in
-           Printf.bprintf buf "  %s = load %s*, %s** %s\n"
-             data_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr_field;
+      if is_dict || arr_t = DictPtr || arr_t = DictStrPtr || arr_t = Ptr I32 then begin
+        (* 字典赋值：使用统一的类型特化函数 *)
+        if arr_t = DictStrPtr then
+          Printf.bprintf buf "  call void @dict_set_str_int(i8* %s, i8* %s, i32 %s)\n"
+            arr_v idx_v value_v
+        else
+          Printf.bprintf buf "  call void @dict_set_int_int(i8* %s, i32 %s, i32 %s)\n"
+            arr_v idx_v value_v
+      end else begin
+        (match arr_t with
+         | Array (_, _) ->
+             let ptr_temp = fresh_temp () in
+             Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 %s\n"
+               ptr_temp (llvm_type_to_string arr_t) (llvm_type_to_string arr_t) arr_v idx_v;
+             Printf.bprintf buf "  store i32 %s, i32* %s\n" value_v ptr_temp
+         | DynArray elem_t ->
+             (* 从动态数组结构中提取 data 指针 *)
+             let data_ptr_field = fresh_temp () in
+             Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 2\n"
+               data_ptr_field (llvm_type_to_string arr_t) (llvm_type_to_string arr_t) arr_v;
 
-           (* 使用索引定位元素 *)
-           let ptr_temp = fresh_temp () in
-           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 %s\n"
-             ptr_temp (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr idx_v;
-           Printf.bprintf buf "  store i32 %s, i32* %s\n" value_v ptr_temp
-       | Ptr I32 ->
-           let ptr_temp = fresh_temp () in
-           Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %s\n"
-             ptr_temp arr_v idx_v;
-           Printf.bprintf buf "  store i32 %s, i32* %s\n" value_v ptr_temp
-       | _ -> ())
+             (* 加载 data 指针 *)
+             let data_ptr = fresh_temp () in
+             Printf.bprintf buf "  %s = load %s*, %s** %s\n"
+               data_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr_field;
+
+             (* 使用索引定位元素 *)
+             let ptr_temp = fresh_temp () in
+             Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 %s\n"
+               ptr_temp (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr idx_v;
+             Printf.bprintf buf "  store i32 %s, i32* %s\n" value_v ptr_temp
+         | _ -> ())
+      end
 
   | SExpr (e, _) ->
       let _ = gen_expr buf ctx e in
@@ -1175,6 +1363,214 @@ let rec gen_statement buf ctx = function
       Printf.bprintf buf "  br label %%%s\n" loop_label;
 
       Printf.bprintf buf "\n%s:\n" end_label
+
+  | SFor (pat, iter, body, _) ->
+      let (iter_v, iter_t) = gen_expr buf ctx iter in
+      (match iter_t with
+       | DynArray elem_t ->
+           (* 获取动态数组的长度 *)
+           let len_ptr = fresh_temp () in
+           let len = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 1\n"
+             len_ptr (llvm_type_to_string iter_t) (llvm_type_to_string iter_t) iter_v;
+           Printf.bprintf buf "  %s = load i32, i32* %s\n" len len_ptr;
+
+           (* 获取数据指针 *)
+           let data_ptr_field = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 2\n"
+             data_ptr_field (llvm_type_to_string iter_t) (llvm_type_to_string iter_t) iter_v;
+           let data_ptr = fresh_temp () in
+           Printf.bprintf buf "  %s = load %s*, %s** %s\n"
+             data_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr_field;
+
+           (* 创建循环索引 *)
+           let index_ptr = fresh_temp () in
+           Printf.bprintf buf "  %s = alloca i32\n" index_ptr;
+           Printf.bprintf buf "  store i32 0, i32* %s\n" index_ptr;
+
+           let loop_label = fresh_label "for.loop" in
+           let body_label = fresh_label "for.body" in
+           let end_label = fresh_label "for.end" in
+
+           Printf.bprintf buf "  br label %%%s\n" loop_label;
+           Printf.bprintf buf "\n%s:\n" loop_label;
+
+           (* 检查循环条件 *)
+           let index_val = fresh_temp () in
+           Printf.bprintf buf "  %s = load i32, i32* %s\n" index_val index_ptr;
+           let cond = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp slt i32 %s, %s\n" cond index_val len;
+           Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n" cond body_label end_label;
+
+           Printf.bprintf buf "\n%s:\n" body_label;
+
+           (* 从数组中加载当前元素 *)
+           let elem_ptr = fresh_temp () in
+           let elem_val = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 %s\n"
+             elem_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr index_val;
+           Printf.bprintf buf "  %s = load %s, %s* %s\n"
+             elem_val (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) elem_ptr;
+
+           (* 保存原始变量表 *)
+           let saved_vars = ctx.variables in
+
+           (* 根据模式绑定变量 *)
+           let rec gen_for_pattern_bindings pat value_temp value_type =
+             match pat with
+             | PVar name ->
+                 let local = "%" ^ name in
+                 Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string value_type);
+                 Printf.bprintf buf "  store %s %s, %s* %s\n"
+                   (llvm_type_to_string value_type) value_temp (llvm_type_to_string value_type) local;
+                 add_variable ctx name value_type
+             | PTuple pats ->
+                 (* 元素是元组类型，需要提取各个字段 *)
+                 (match value_type with
+                  | I32 ->
+                      (* 假设这是一个 TuplePtr, 需要先转换为指针 *)
+                      (* 注意: dict_items 返回的动态数组的元素是 i32*, 实际上是元组指针 *)
+                      (* 这里我们需要将 i32 value 当作 TuplePtr 使用 *)
+                      List.iteri (fun i p ->
+                        let elem_temp = fresh_temp () in
+                        (* 需要将 i32 值转换为 i32* 指针 *)
+                        let tuple_ptr = fresh_temp () in
+                        Printf.bprintf buf "  %s = inttoptr i32 %s to i32*\n" tuple_ptr value_temp;
+                        let tuple_i8 = fresh_temp () in
+                        Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 tuple_ptr;
+                        Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %d)\n"
+                          elem_temp tuple_i8 i;
+                        gen_for_pattern_bindings p elem_temp I32
+                      ) pats
+                  | TuplePtr ->
+                      List.iteri (fun i p ->
+                        let elem_temp = fresh_temp () in
+                        let tuple_i8 = fresh_temp () in
+                        Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 value_temp;
+                        Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %d)\n"
+                          elem_temp tuple_i8 i;
+                        gen_for_pattern_bindings p elem_temp I32
+                      ) pats
+                  | _ ->
+                      Printf.bprintf buf "  ; pattern type mismatch in for loop\n")
+             | _ ->
+                 Printf.bprintf buf "  ; unsupported pattern in for loop\n"
+           in
+           gen_for_pattern_bindings pat elem_val elem_t;
+
+           (* 生成循环体 *)
+           List.iter (gen_statement buf ctx) body;
+
+           (* 递增索引 *)
+           let next_index = fresh_temp () in
+           Printf.bprintf buf "  %s = add i32 %s, 1\n" next_index index_val;
+           Printf.bprintf buf "  store i32 %s, i32* %s\n" next_index index_ptr;
+
+           Printf.bprintf buf "  br label %%%s\n" loop_label;
+           Printf.bprintf buf "\n%s:\n" end_label;
+
+           (* 恢复变量表 *)
+           ctx.variables <- saved_vars
+
+       | DynArrayPtr ->
+           (* 处理指针数组 (如 dict_items 返回的元组指针数组) *)
+           let len_ptr = fresh_temp () in
+           let len = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 1\n"
+             len_ptr (llvm_type_to_string iter_t) (llvm_type_to_string iter_t) iter_v;
+           Printf.bprintf buf "  %s = load i32, i32* %s\n" len len_ptr;
+
+           (* 获取数据指针 i64* *)
+           let data_ptr_field = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 2\n"
+             data_ptr_field (llvm_type_to_string iter_t) (llvm_type_to_string iter_t) iter_v;
+           let data_ptr = fresh_temp () in
+           Printf.bprintf buf "  %s = load i64*, i64** %s\n"
+             data_ptr data_ptr_field;
+
+           (* 创建循环索引 *)
+           let index_ptr = fresh_temp () in
+           Printf.bprintf buf "  %s = alloca i32\n" index_ptr;
+           Printf.bprintf buf "  store i32 0, i32* %s\n" index_ptr;
+
+           let loop_label = fresh_label "for.loop" in
+           let body_label = fresh_label "for.body" in
+           let end_label = fresh_label "for.end" in
+
+           Printf.bprintf buf "  br label %%%s\n" loop_label;
+           Printf.bprintf buf "\n%s:\n" loop_label;
+
+           (* 检查循环条件 *)
+           let index_val = fresh_temp () in
+           Printf.bprintf buf "  %s = load i32, i32* %s\n" index_val index_ptr;
+           let cond = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp slt i32 %s, %s\n" cond index_val len;
+           Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n" cond body_label end_label;
+
+           Printf.bprintf buf "\n%s:\n" body_label;
+
+           (* 从数组中加载当前元素 i64指针值 *)
+           let elem_ptr = fresh_temp () in
+           let elem_val = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr i64, i64* %s, i32 %s\n"
+             elem_ptr data_ptr index_val;
+           Printf.bprintf buf "  %s = load i64, i64* %s\n"
+             elem_val elem_ptr;
+
+           (* 保存原始变量表 *)
+           let saved_vars = ctx.variables in
+
+           (* 根据模式绑定变量 *)
+           let gen_for_pattern_bindings_ptr pat value_temp =
+             match pat with
+             | PVar name ->
+                 (* 对于简单变量,存储i64值 *)
+                 let local = "%" ^ name in
+                 Printf.bprintf buf "  %s = alloca i64\n" local;
+                 Printf.bprintf buf "  store i64 %s, i64* %s\n" value_temp local;
+                 add_variable ctx name I64
+             | PTuple pats ->
+                 (* 元组解包: value_temp是i64指针值,需要转换为tuple2_i32* *)
+                 List.iteri (fun i p ->
+                   let elem_temp = fresh_temp () in
+                   (* 将 i64 转换为指针 *)
+                   let tuple_ptr = fresh_temp () in
+                   Printf.bprintf buf "  %s = inttoptr i64 %s to i32*\n" tuple_ptr value_temp;
+                   let tuple_i8 = fresh_temp () in
+                   Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 tuple_ptr;
+                   Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %d)\n"
+                     elem_temp tuple_i8 i;
+                   (* 元组元素是i32 *)
+                   (match p with
+                    | PVar name ->
+                        let local = "%" ^ name in
+                        Printf.bprintf buf "  %s = alloca i32\n" local;
+                        Printf.bprintf buf "  store i32 %s, i32* %s\n" elem_temp local;
+                        add_variable ctx name I32
+                    | _ ->
+                        Printf.bprintf buf "  ; nested tuple patterns not yet supported\n")
+                 ) pats
+             | _ ->
+                 Printf.bprintf buf "  ; unsupported pattern in for loop\n"
+           in
+           gen_for_pattern_bindings_ptr pat elem_val;
+
+           (* 生成循环体 *)
+           List.iter (gen_statement buf ctx) body;
+
+           (* 递增索引 *)
+           let next_index = fresh_temp () in
+           Printf.bprintf buf "  %s = add i32 %s, 1\n" next_index index_val;
+           Printf.bprintf buf "  store i32 %s, i32* %s\n" next_index index_ptr;
+
+           Printf.bprintf buf "  br label %%%s\n" loop_label;
+           Printf.bprintf buf "\n%s:\n" end_label;
+
+           (* 恢复变量表 *)
+           ctx.variables <- saved_vars
+
+       | _ ->
+           Printf.bprintf buf "  ; for loops only work with dynamic arrays\n")
 
   | _ ->
       Buffer.add_string buf "  ; unsupported statement\n"
@@ -1300,7 +1696,38 @@ let gen_program program =
   Buffer.add_string buf "declare i32 @file_write(i8*, i8*)\n";
   Buffer.add_string buf "declare i32 @file_exists(i8*)\n";
   Buffer.add_string buf "declare i32 @file_append(i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @file_delete(i8*)\n\n";
+  Buffer.add_string buf "declare i32 @file_delete(i8*)\n";
+
+  (* Dictionary functions - Unified Generic API *)
+  Buffer.add_string buf "; Unified Generic Dictionary API\n";
+  Buffer.add_string buf "declare i8* @dict_create(i32, i32, i32)\n";
+  Buffer.add_string buf "declare void @dict_set_int_int(i8*, i32, i32)\n";
+  Buffer.add_string buf "declare void @dict_set_int_str(i8*, i32, i8*)\n";
+  Buffer.add_string buf "declare void @dict_set_int_ptr(i8*, i32, i8*)\n";
+  Buffer.add_string buf "declare void @dict_set_str_int(i8*, i8*, i32)\n";
+  Buffer.add_string buf "declare void @dict_set_str_str(i8*, i8*, i8*)\n";
+  Buffer.add_string buf "declare void @dict_set_str_ptr(i8*, i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @dict_get_int_int(i8*, i32, i32*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_int_str(i8*, i32, i32*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_int_ptr(i8*, i32, i32*)\n";
+  Buffer.add_string buf "declare i32 @dict_get_str_int(i8*, i8*, i32*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_str_str(i8*, i8*, i32*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_str_ptr(i8*, i8*, i32*)\n";
+  Buffer.add_string buf "declare i32 @dict_has_int(i8*, i32)\n";
+  Buffer.add_string buf "declare i32 @dict_has_str(i8*, i8*)\n";
+  Buffer.add_string buf "declare void @dict_remove_int(i8*, i32)\n";
+  Buffer.add_string buf "declare void @dict_remove_str(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @dict_size(i8*)\n";
+  Buffer.add_string buf "declare void @dict_free(i8*)\n";
+  Buffer.add_string buf "declare { i32, i32, i32* }* @dict_keys(i8*)\n";
+  Buffer.add_string buf "declare { i32, i32, i32* }* @dict_values(i8*)\n";
+  Buffer.add_string buf "declare { i32, i32, i64* }* @dict_items(i8*)\n\n";
+
+  (* Tuple functions *)
+  Buffer.add_string buf "; Tuple functions\n";
+  Buffer.add_string buf "declare i8* @create_tuple2_i32(i32, i32)\n";
+  Buffer.add_string buf "declare i32 @tuple2_i32_get(i8*, i32)\n";
+  Buffer.add_string buf "declare void @tuple2_i32_free(i8*)\n\n";
 
   let ctx = create_context () in
   let code_buf = create 8192 in

@@ -143,11 +143,12 @@ and pattern =
 type statement =
   | SExpr of expr * position
   | SLet of string * type_expr option * expr * position
+  | SLetPat of pattern * expr * position  (* 元组解包: let (a,b) = tuple *)
   | SDef of string * string list * (string * type_expr option) list * type_expr option * statement list * position
   | SReturn of expr option * position
   | SIf of expr * statement list * (expr * statement list) list * statement list option * position
   | SWhile of expr * statement list * position
-  | SFor of string * expr * statement list * position
+  | SFor of pattern * expr * statement list * position
   | SMatch of expr * (pattern * statement list) list * position
   | SClass of string * string option * string list * class_member list * position
   | SInterface of string * interface_member list * position

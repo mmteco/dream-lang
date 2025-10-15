@@ -54,6 +54,8 @@ statement:
       { SLet (name, None, value, get_expr_pos value) }
   | LET name = IDENT COLON ty = type_expr ASSIGN value = expr
       { SLet (name, Some ty, value, get_expr_pos value) }
+  | LET pat = pattern ASSIGN value = expr
+      { SLetPat (pat, value, get_expr_pos value) }
   | arr = expr LBRACKET idx = expr RBRACKET ASSIGN value = expr
       { SIndexAssign (arr, idx, value, get_expr_pos arr) }
   | name = IDENT ASSIGN value = expr
@@ -74,8 +76,8 @@ statement:
       { SIf (cond, then_body, elifs, else_part, get_expr_pos cond) }
   | WHILE cond = expr COLON NEWLINE INDENT body = statement_list DEDENT
       { SWhile (cond, body, get_expr_pos cond) }
-  | FOR var = IDENT IN iter = expr COLON NEWLINE INDENT body = statement_list DEDENT
-      { SFor (var, iter, body, get_expr_pos iter) }
+  | FOR pat = for_pattern IN iter = expr COLON NEWLINE INDENT body = statement_list DEDENT
+      { SFor (pat, iter, body, get_expr_pos iter) }
   | MATCH e = expr COLON NEWLINE INDENT cases = case_list DEDENT
       { SMatch (e, cases, get_expr_pos e) }
   | CLASS name = IDENT COLON NEWLINE INDENT members = class_member_list DEDENT
@@ -145,6 +147,10 @@ pattern:
   | SOME LPAREN p = pattern RPAREN { PSome p }
   | OK LPAREN p = pattern RPAREN { POk p }
   | ERR LPAREN p = pattern RPAREN { PErr p }
+
+for_pattern:
+  | name = IDENT { PVar name }
+  | LPAREN patterns = separated_list(COMMA, for_pattern) RPAREN { PTuple patterns }
 
 type_expr:
   | name = IDENT LBRACKET ty = type_expr RBRACKET {

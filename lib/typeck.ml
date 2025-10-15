@@ -214,9 +214,25 @@ let rec infer_expr env = function
                 (Printf.sprintf "Dictionary key type mismatch: %s" msg) in
               report_error err;
               (TyUnknown, combined_subst))
+       | TyTuple elem_types ->
+           (* 元组索引必须是整数常量 *)
+           (match idx with
+            | EInt (n, _) when n >= 0 && n < List.length elem_types ->
+                (List.nth elem_types n, combined_subst)
+            | EInt (n, _) ->
+                let err = make_error (TypeError "Index out of bounds") pos
+                  (Printf.sprintf "Tuple index %d out of range (tuple has %d elements)"
+                    n (List.length elem_types)) in
+                report_error err;
+                (TyUnknown, combined_subst)
+            | _ ->
+                let err = make_error (TypeError "Invalid tuple index") pos
+                  "Tuple index must be an integer constant" in
+                report_error err;
+                (TyUnknown, combined_subst))
        | _ ->
            let err = make_error (TypeError "Not indexable") pos
-             "Cannot index non-list/dict type" in
+             "Cannot index non-list/dict/tuple type" in
            report_error err;
            (TyUnknown, combined_subst))
 
@@ -357,6 +373,34 @@ let rec check_statement env = function
               let new_env = add_binding name expected_type env' in
               (new_env, value_subst)))
 
+  | SLetPat (pat, value, pos) ->
+      let (value_type, value_subst) = infer_expr env value in
+      let env' = apply_subst_to_env value_subst env in
+      (* 从模式中提取变量绑定并检查类型匹配 *)
+      let rec check_pattern env pat expected_type =
+        match pat with
+        | PVar name ->
+            let new_env = add_binding name expected_type env in
+            let locked_env = lock_binding name new_env in
+            locked_env
+        | PTuple pats ->
+            (match expected_type with
+             | TyTuple elem_types when List.length pats = List.length elem_types ->
+                 List.fold_left2 check_pattern env pats elem_types
+             | _ ->
+                 let err = make_error (TypeError "Pattern mismatch") pos
+                   (Printf.sprintf "Cannot unpack value into tuple pattern") in
+                 report_error err;
+                 env)
+        | _ ->
+            let err = make_error (TypeError "Unsupported pattern") pos
+              "Only variable and tuple patterns are supported in let bindings" in
+            report_error err;
+            env
+      in
+      let final_env = check_pattern env' pat (apply_subst value_subst value_type) in
+      (final_env, value_subst)
+
   | SAssign (name, value, pos) ->
       (match find_binding name env with
        | None ->
@@ -432,12 +476,35 @@ let rec check_statement env = function
          report_error err;
          (env, empty_subst))
 
-  | SFor (var, iter, body, pos) ->
+  | SFor (pat, iter, body, pos) ->
       let (iter_type, iter_subst) = infer_expr env iter in
       let elem_type = fresh_type_var () in
       (try
          let list_subst = unify (apply_subst iter_subst iter_type) (TyList elem_type) in
-         let loop_env = add_binding var (apply_subst list_subst elem_type) (apply_subst_to_env list_subst env) in
+         let env' = apply_subst_to_env list_subst env in
+         let final_elem_type = apply_subst list_subst elem_type in
+
+         (* 从模式中提取变量绑定并检查类型匹配 *)
+         let rec check_pattern_for env pat expected_type =
+           match pat with
+           | PVar name ->
+               add_binding name expected_type env
+           | PTuple pats ->
+               (match expected_type with
+                | TyTuple elem_types when List.length pats = List.length elem_types ->
+                    List.fold_left2 check_pattern_for env pats elem_types
+                | _ ->
+                    let err = make_error (TypeError "Pattern mismatch") pos
+                      (Printf.sprintf "Cannot unpack iterator elements into tuple pattern") in
+                    report_error err;
+                    env)
+           | _ ->
+               let err = make_error (TypeError "Unsupported pattern") pos
+                 "Only variable and tuple patterns are supported in for loops" in
+               report_error err;
+               env
+         in
+         let loop_env = check_pattern_for env' pat final_elem_type in
          let (_, _) = check_statements loop_env body in
          (env, compose_subst list_subst iter_subst)
        with Failure msg ->
@@ -482,9 +549,19 @@ let rec check_statement env = function
                 (Printf.sprintf "Index assignment type error: %s" msg) in
               report_error err;
               (env, empty_subst))
+       | TyDict (key_type, val_type) ->
+           (try
+              let _ = unify (apply_subst combined_subst idx_type) key_type in
+              let _ = unify (apply_subst combined_subst value_type) val_type in
+              (apply_subst_to_env combined_subst env, combined_subst)
+            with Failure msg ->
+              let err = make_error (TypeError msg) pos
+                (Printf.sprintf "Dictionary assignment type error: %s" msg) in
+              report_error err;
+              (env, empty_subst))
        | _ ->
            let err = make_error (TypeError "Not indexable") pos
-             "Cannot index-assign to non-list type" in
+             "Cannot index-assign to non-list/dict type" in
            report_error err;
            (env, empty_subst))
 

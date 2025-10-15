@@ -8,8 +8,31 @@ _build/
 *.cmo
 *.cmi
 *.cmx
+*.a
+*.so
 
 # 可执行文件
 examples/factorial
 examples/hello
 examples/quicksort
+examples/dynarray_full
+examples/z_test_*
+examples/*/
+
+# Runtime 测试可执行文件
+runtime/test_hash
+runtime/test_gc
+runtime/test_memory
+runtime/test_string_ops
+runtime/test_file_io
+
+# 临时文件
+*.swp
+*.swo
+*~
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.iml
