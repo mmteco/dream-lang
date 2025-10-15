@@ -55,13 +55,13 @@ f"x = {x}"          # 格式化字符串 (未实现)
 
 #### 布尔值
 ```python
-True
-False
+True   # 或 true（支持小写）
+False  # 或 false（支持小写）
 ```
 
 #### None
 ```python
-None
+None   # 或 none（支持小写）
 ```
 
 ### 运算符
@@ -131,8 +131,8 @@ let e: float = 2.718    # 显式类型注解
 
 #### bool - 布尔类型
 ```python
-let flag = True         # 类型推导为 bool
-let ready: bool = False # 显式类型注解
+let flag = True         # 类型推导为 bool（也可以用 true）
+let ready: bool = false # 显式类型注解（也可以用 False）
 ```
 
 #### string - 字符串类型

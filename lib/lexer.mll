@@ -40,11 +40,14 @@
         ("async", ASYNC);
         ("await", AWAIT);
         ("None", NONE);
+        ("none", NONE);
         ("Some", SOME);
         ("Ok", OK);
         ("Err", ERR);
         ("True", BOOL true);
+        ("true", BOOL true);
         ("False", BOOL false);
+        ("false", BOOL false);
         ("and", AND);
         ("or", OR);
         ("not", NOT);

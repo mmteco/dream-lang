@@ -5,39 +5,46 @@
 #include <string.h>
 
 // ============================================================================
-// Union 创建函数
+// Union 创建函数（使用 GC 内存分配）
 // ============================================================================
 
 union_t* union_create_int(int32_t value) {
-    union_t* u = (union_t*)malloc(sizeof(union_t));
+    union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
+    if (!u) return NULL;
     u->tag = UNION_INT;
     u->value.as_int = value;
     return u;
 }
 
 union_t* union_create_float(double value) {
-    union_t* u = (union_t*)malloc(sizeof(union_t));
+    union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
+    if (!u) return NULL;
     u->tag = UNION_FLOAT;
     u->value.as_float = value;
     return u;
 }
 
 union_t* union_create_string(const char* value) {
-    union_t* u = (union_t*)malloc(sizeof(union_t));
+    union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
+    if (!u) return NULL;
     u->tag = UNION_STRING;
+    // 字符串也通过 GC 分配（如果有 GC 字符串分配器）
+    // 目前仍使用 strdup，但在 union_free 中释放
     u->value.as_string = strdup(value);
     return u;
 }
 
 union_t* union_create_bool(bool value) {
-    union_t* u = (union_t*)malloc(sizeof(union_t));
+    union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
+    if (!u) return NULL;
     u->tag = UNION_BOOL;
     u->value.as_bool = value;
     return u;
 }
 
 union_t* union_create_none() {
-    union_t* u = (union_t*)malloc(sizeof(union_t));
+    union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
+    if (!u) return NULL;
     u->tag = UNION_NONE;
     return u;
 }
@@ -135,18 +142,23 @@ bool union_try_get_bool(union_t* u, bool* out) {
 }
 
 // ============================================================================
-// Union 内存管理
+// Union 内存管理（GC 集成）
 // ============================================================================
 
-void union_free(union_t* u) {
+void union_retain(union_t* u) {
     if (u == NULL) return;
+    gc_retain(u);
+}
 
-    // 释放字符串内存
-    if (u->tag == UNION_STRING && u->value.as_string != NULL) {
-        free(u->value.as_string);
-    }
+void union_release(union_t* u) {
+    if (u == NULL) return;
+    // 字符串内存会在 gc_release 的对象清理阶段自动释放
+    gc_release(u);
+}
 
-    free(u);
+void union_free(union_t* u) {
+    // union_free 是 union_release 的别名，为了向后兼容
+    union_release(u);
 }
 
 union_t* union_clone(union_t* u) {

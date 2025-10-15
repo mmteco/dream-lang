@@ -16,6 +16,7 @@
 - [x] 字典类型（int->int，FNV-1a 哈希）✅ (2025-10)
 - [x] 元组解包（let、for 循环）✅ (2025-10)
 - [x] Runtime 模块化（string_ops, file_ops, dict, tuple, dynarray, memory）✅ (2025-10)
+- [x] 小写布尔和None关键字（true/false/none 支持）✅ (2025-10)
 
 ---
 

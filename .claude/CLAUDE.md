@@ -6,6 +6,6 @@
 4. TODO.md 只保留这些列表项，不要加其他说明文字
 5. 每次任务结束之后
     1. 回到项目根目录
-    2. 同步更新 TODO.md BOOTSTRAP.md
+    2. 同步更新 TODO.md,BOOTSTRAP.md,SPEC.md
     3. 清理 examples 目录无用文件，尽量合并保留下来的ml文件
 6. 不要管 token 限制，以完成任务为首要目标

@@ -76,13 +76,20 @@ bool union_try_get_string(union_t* u, char** out);
 bool union_try_get_bool(union_t* u, bool* out);
 
 // ============================================================================
-// Union 内存管理
+// Union 内存管理（GC 集成）
 // ============================================================================
 
+// 增加 union 引用计数
+void union_retain(union_t* u);
+
+// 减少 union 引用计数（可能触发释放）
+void union_release(union_t* u);
+
 // 释放 union（会释放字符串内存）
+// 注意：这是 union_release 的别名，为了兼容性保留
 void union_free(union_t* u);
 
-// 复制 union（深拷贝字符串）
+// 复制 union（深拷贝字符串，新对象引用计数为 1）
 union_t* union_clone(union_t* u);
 
 // ============================================================================
