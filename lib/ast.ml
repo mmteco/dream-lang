@@ -28,6 +28,9 @@ type token =
   | ASYNC
   | AWAIT
   | NONE
+  | SOME
+  | OK
+  | ERR
   | SELF
   | SUPER
   | IN
@@ -95,6 +98,8 @@ type type_expr =
   | TFunc of type_expr list * type_expr
   | TUnion of type_expr list
   | TGeneric of string * type_expr
+  | TOption of type_expr
+  | TResult of type_expr * type_expr
 
 type expr =
   | EInt of int * position
@@ -116,6 +121,9 @@ type expr =
   | EIf of expr * expr * expr option * position
   | EMatch of expr * (pattern * expr) list * position
   | EListComp of expr * string * expr * expr option * position
+  | ESome of expr * position
+  | EOk of expr * position
+  | EErr of expr * position
 
 and pattern =
   | PInt of int
@@ -128,6 +136,9 @@ and pattern =
   | PList of pattern list
   | PType of string * type_expr
   | PWildcard
+  | PSome of pattern
+  | POk of pattern
+  | PErr of pattern
 
 type statement =
   | SExpr of expr * position

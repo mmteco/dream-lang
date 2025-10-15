@@ -6,7 +6,8 @@
     | ENone p | EVar (_, p) | EBinOp (_, _, _, p) | EUnOp (_, _, p)
     | ECall (_, _, p) | EList (_, p) | EDict (_, p) | ETuple (_, p)
     | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
-    | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p) -> p
+    | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p)
+    | ESome (_, p) | EOk (_, p) | EErr (_, p) -> p
 %}
 
 %token <int> INT
@@ -16,7 +17,7 @@
 %token <string> IDENT
 %token LET DEF CLASS INTERFACE IMPLEMENTS
 %token IF ELSE ELIF MATCH CASE FOR WHILE RETURN
-%token IMPORT FROM AS ASYNC AWAIT NONE SELF SUPER IN
+%token IMPORT FROM AS ASYNC AWAIT NONE SOME OK ERR SELF SUPER IN
 %token PLUS MINUS TIMES DIV MOD
 %token EQ NEQ LT GT LTE GTE
 %token AND OR NOT
@@ -141,6 +142,9 @@ pattern:
   | LPAREN patterns = separated_list(COMMA, pattern) RPAREN { PTuple patterns }
   | LBRACKET patterns = separated_list(COMMA, pattern) RBRACKET { PList patterns }
   | name = IDENT COLON ty = type_expr { PType (name, ty) }
+  | SOME LPAREN p = pattern RPAREN { PSome p }
+  | OK LPAREN p = pattern RPAREN { POk p }
+  | ERR LPAREN p = pattern RPAREN { PErr p }
 
 type_expr:
   | name = IDENT LBRACKET ty = type_expr RBRACKET {
@@ -206,6 +210,12 @@ expr:
       { EListComp (elem, var, iter, None, { line = 0; column = 0 }) }
   | LBRACKET elem = expr FOR var = IDENT IN iter = expr IF cond = expr RBRACKET
       { EListComp (elem, var, iter, Some cond, { line = 0; column = 0 }) }
+  | SOME LPAREN e = expr RPAREN
+      { ESome (e, { line = 0; column = 0 }) }
+  | OK LPAREN e = expr RPAREN
+      { EOk (e, { line = 0; column = 0 }) }
+  | ERR LPAREN e = expr RPAREN
+      { EErr (e, { line = 0; column = 0 }) }
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }

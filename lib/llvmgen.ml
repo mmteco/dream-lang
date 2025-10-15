@@ -84,6 +84,8 @@ let rec type_expr_to_llvm_type = function
   | TTuple _ -> Ptr I32
   | TDict _ -> Ptr I32
   | TVar _ -> I32
+  | TOption _ -> Ptr I32
+  | TResult _ -> Ptr I32
   | TNone | TFunc _ | TUnion _ | TGeneric _ -> I32
 
 let gen_binop = function
@@ -1018,6 +1020,21 @@ let rec gen_expr buf ctx = function
         result (llvm_type_to_string then_t) then_v then_label else_v else_label;
       (result, then_t)
 
+  | ESome (e, _) ->
+      let (v, t) = gen_expr buf ctx e in
+      Buffer.add_string buf "  ; Some(value) - 暂时直接返回内部值\n";
+      (v, t)
+
+  | EOk (e, _) ->
+      let (v, t) = gen_expr buf ctx e in
+      Buffer.add_string buf "  ; Ok(value) - 暂时直接返回内部值\n";
+      (v, t)
+
+  | EErr (e, _) ->
+      let (v, t) = gen_expr buf ctx e in
+      Buffer.add_string buf "  ; Err(value) - 暂时直接返回内部值\n";
+      (v, t)
+
   | _ ->
       Buffer.add_string buf "  ; unsupported expression\n";
       ("0", I32)
@@ -1257,7 +1274,33 @@ let gen_program program =
   Buffer.add_string buf "declare { i32, i32, i32* }* @create_dynarray_i32(i32)\n";
   Buffer.add_string buf "declare void @free_dynarray_i32({ i32, i32, i32* }*)\n";
   Buffer.add_string buf "declare { i32, i32, i32* }* @slice_dynarray_i32({ i32, i32, i32* }*, i32, i32)\n";
-  Buffer.add_string buf "declare { i32, i32, i32* }* @concat_dynarray_i32({ i32, i32, i32* }*, { i32, i32, i32* }*)\n\n";
+  Buffer.add_string buf "declare { i32, i32, i32* }* @concat_dynarray_i32({ i32, i32, i32* }*, { i32, i32, i32* }*)\n";
+
+  (* String functions *)
+  Buffer.add_string buf "; String functions\n";
+  Buffer.add_string buf "declare i32 @string_length(i8*)\n";
+  Buffer.add_string buf "declare i8 @string_char_at(i8*, i32)\n";
+  Buffer.add_string buf "declare i8* @string_concat(i8*, i8*)\n";
+  Buffer.add_string buf "declare i8* @string_substring(i8*, i32, i32)\n";
+  Buffer.add_string buf "declare i32 @string_find(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @string_compare(i8*, i8*)\n";
+  Buffer.add_string buf "declare i8* @string_upper(i8*)\n";
+  Buffer.add_string buf "declare i8* @string_lower(i8*)\n";
+  Buffer.add_string buf "declare i8* @string_strip(i8*)\n";
+  Buffer.add_string buf "declare i32 @string_starts_with(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @string_ends_with(i8*, i8*)\n";
+  Buffer.add_string buf "declare i8* @string_replace(i8*, i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @string_is_digit(i8)\n";
+  Buffer.add_string buf "declare i32 @string_is_alpha(i8)\n";
+  Buffer.add_string buf "declare i32 @string_is_whitespace(i8)\n";
+
+  (* File I/O functions *)
+  Buffer.add_string buf "; File I/O functions\n";
+  Buffer.add_string buf "declare i8* @file_read(i8*)\n";
+  Buffer.add_string buf "declare i32 @file_write(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @file_exists(i8*)\n";
+  Buffer.add_string buf "declare i32 @file_append(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @file_delete(i8*)\n\n";
 
   let ctx = create_context () in
   let code_buf = create 8192 in

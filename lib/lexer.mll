@@ -39,6 +39,9 @@
         ("async", ASYNC);
         ("await", AWAIT);
         ("None", NONE);
+        ("Some", SOME);
+        ("Ok", OK);
+        ("Err", ERR);
         ("True", BOOL true);
         ("False", BOOL false);
         ("and", AND);

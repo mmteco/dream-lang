@@ -16,6 +16,20 @@ let rec infer_expr env = function
   | EBool (_, _) -> (TyBool, empty_subst)
   | ENone _ -> (TyNone, empty_subst)
 
+  | ESome (e, _) ->
+      let (t, s) = infer_expr env e in
+      (TyOption t, s)
+
+  | EOk (e, _) ->
+      let (t, s) = infer_expr env e in
+      let err_var = fresh_type_var () in
+      (TyResult (t, err_var), s)
+
+  | EErr (e, _) ->
+      let (t, s) = infer_expr env e in
+      let ok_var = fresh_type_var () in
+      (TyResult (ok_var, t), s)
+
   | EVar (name, pos) ->
       (match find_binding name env with
        | Some ty -> (ty, empty_subst)
