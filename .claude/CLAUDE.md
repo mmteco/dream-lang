@@ -7,3 +7,4 @@
 5. 每次任务结束之后
    1. 同步更新 TODO.md BOOTSTRAP.md
    2. 清理 examples 目录无用文件，尽量合并保留下来的ml文件
+6. 不要管 token 限制，以完成任务为首要目标

@@ -13,7 +13,8 @@
       "Bash(echo:*)",
       "Bash(dream:*)",
       "Bash(cat:*)",
-      "Bash(dune exec:*)"
+      "Bash(dune exec:*)",
+      "Bash(./examples/test_generic:*)"
     ],
     "deny": [],
     "ask": []

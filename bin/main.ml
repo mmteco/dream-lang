@@ -33,7 +33,13 @@ let compile_to_llvm input_file =
 
   Typeck.typecheck ast;
 
-  let llvm_ir = Llvmgen.gen_program ast in
+  (* 获取收集到的泛型实例 *)
+  let generic_instances = Typeck.get_generic_instances () in
+
+  (* 执行单态化 *)
+  let mono_ast = Monomorphize.monomorphize ast generic_instances in
+
+  let llvm_ir = Llvmgen.gen_program mono_ast in
 
   let output_ll = Filename.remove_extension input_file ^ ".ll" in
   write_file output_ll llvm_ir;

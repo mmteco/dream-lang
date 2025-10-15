@@ -1,6 +1,6 @@
 (library
  (name dream_lib)
- (modules ast error types env lexer parser typeck llvmgen))
+ (modules ast error types env lexer parser typeck llvmgen monomorphize))
 
 (menhir
  (modules parser))

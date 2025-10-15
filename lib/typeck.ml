@@ -9,6 +9,22 @@ let fresh_type_var () =
   type_counter := !type_counter + 1;
   TyVar (Printf.sprintf "T%d" !type_counter)
 
+(* 泛型实例收集器 *)
+type generic_instance = {
+  func_name: string;
+  type_args: ty list;
+  call_pos: position;
+}
+
+let generic_instances = ref []
+
+let add_generic_instance func_name type_args pos =
+  generic_instances := { func_name; type_args; call_pos = pos } :: !generic_instances
+
+let get_generic_instances () = !generic_instances
+
+let clear_generic_instances () = generic_instances := []
+
 let rec infer_expr env = function
   | EInt (_, _) -> (TyInt, empty_subst)
   | EFloat (_, _) -> (TyFloat, empty_subst)
@@ -174,30 +190,50 @@ let rec infer_expr env = function
         (TyDict (first_kt, first_vt), combined_subst)
 
   | ECall (func, args, pos) ->
-      let (func_type, func_subst) = infer_expr env func in
-      let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
-      let combined_subst = List.fold_left compose_subst func_subst arg_substs in
-      let ret_type = fresh_type_var () in
-      let expected_func_type = TyFunc (arg_types, ret_type) in
-      (try
-         let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
-         (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
-       with Failure msg ->
-         (* 对于泛型函数调用，occurs check 失败是预期的，不报告为错误 *)
-         let has_prefix s prefix =
-           let len_s = String.length s in
-           let len_p = String.length prefix in
-           len_s >= len_p && String.sub s 0 len_p = prefix
-         in
-         if has_prefix msg "Occurs check failed" then
-           (* 泛型函数，返回未知类型但不报错 *)
-           (ret_type, combined_subst)
-         else begin
-           let err = make_error (TypeError msg) pos
-             (Printf.sprintf "Function call type error: %s" msg) in
-           report_error err;
-           (TyUnknown, combined_subst)
-         end)
+      (* 检查是否是泛型函数调用 *)
+      (match func with
+       | EVar (func_name, _) ->
+           (* 尝试查找函数类型 *)
+           let (func_type, func_subst) = infer_expr env func in
+           let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
+           let combined_subst = List.fold_left compose_subst func_subst arg_substs in
+           let concrete_arg_types = List.map (apply_subst combined_subst) arg_types in
+           let ret_type = fresh_type_var () in
+           let expected_func_type = TyFunc (arg_types, ret_type) in
+           (try
+              let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
+              (* 成功统一，可能是泛型函数 - 记录实例 *)
+              add_generic_instance func_name concrete_arg_types pos;
+              (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
+            with Failure msg ->
+              (* 对于泛型函数调用，occurs check 失败是预期的，不报告为错误 *)
+              let has_prefix s prefix =
+                let len_s = String.length s in
+                let len_p = String.length prefix in
+                len_s >= len_p && String.sub s 0 len_p = prefix
+              in
+              if has_prefix msg "Occurs check failed" then begin
+                (* 泛型函数，记录实例并返回 *)
+                add_generic_instance func_name concrete_arg_types pos;
+                (ret_type, combined_subst)
+              end else begin
+                let err = make_error (TypeError msg) pos
+                  (Printf.sprintf "Function call type error: %s" msg) in
+                report_error err;
+                (TyUnknown, combined_subst)
+              end)
+       | _ ->
+           (* 非直接函数调用 *)
+           let (func_type, func_subst) = infer_expr env func in
+           let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
+           let combined_subst = List.fold_left compose_subst func_subst arg_substs in
+           let ret_type = fresh_type_var () in
+           let expected_func_type = TyFunc (arg_types, ret_type) in
+           (try
+              let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
+              (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
+            with Failure _ ->
+              (TyUnknown, combined_subst)))
 
   | EIndex (arr, idx, pos) ->
       let (arr_type, arr_subst) = infer_expr env arr in
