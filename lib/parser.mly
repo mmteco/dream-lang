@@ -46,7 +46,11 @@ program:
 
 statement_list:
   | { [] }
-  | s = statement NEWLINE* ss = statement_list { s :: ss }
+  | s = statement newline_sep ss = statement_list { s :: ss }
+
+newline_sep:
+  | { () }
+  | NEWLINE newline_sep { () }
 
 statement:
   | e = expr { SExpr (e, get_expr_pos e) }
@@ -72,7 +76,7 @@ statement:
       { SReturn (None, { line = 0; column = 0 }) }
   | RETURN e = expr
       { SReturn (Some e, get_expr_pos e) }
-  | IF cond = expr COLON NEWLINE INDENT then_body = statement_list DEDENT elifs = elif_list else_part = else_opt
+  | IF cond = expr COLON NEWLINE INDENT then_body = statement_list DEDENT newline_sep elifs = elif_list else_part = else_opt
       { SIf (cond, then_body, elifs, else_part, get_expr_pos cond) }
   | WHILE cond = expr COLON NEWLINE INDENT body = statement_list DEDENT
       { SWhile (cond, body, get_expr_pos cond) }
@@ -95,7 +99,7 @@ statement:
 
 elif_list:
   | { [] }
-  | ELIF cond = expr COLON NEWLINE INDENT body = statement_list DEDENT rest = elif_list
+  | ELIF cond = expr COLON NEWLINE INDENT body = statement_list DEDENT newline_sep rest = elif_list
       { (cond, body) :: rest }
 
 else_opt:

@@ -2,3 +2,7 @@
  (name main)
  (public_name dream)
  (libraries dream_lib))
+
+(executable
+ (name debug_tokens)
+ (libraries dream_lib))

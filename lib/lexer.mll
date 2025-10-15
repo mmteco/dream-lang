@@ -153,7 +153,7 @@ and read_single_string buf = parse
     let current = List.hd !indent_stack in
     if spaces > current then begin
       indent_stack := spaces :: !indent_stack;
-      [INDENT]
+      ([INDENT], false)
     end else if spaces < current then begin
       let rec generate_dedents acc stack =
         match stack with
@@ -168,8 +168,8 @@ and read_single_string buf = parse
       in
       let (dedents, new_stack) = generate_dedents [] !indent_stack in
       indent_stack := new_stack;
-      dedents
-    end else []
+      (dedents, true)
+    end else ([], false)
 
   let tokenize_string source =
     line_num := 1;
@@ -194,17 +194,21 @@ and read_single_string buf = parse
         match peek_char lexbuf with
         | Some '\n' | Some '\r' | Some '#' | None ->
             let tok = token lexbuf in
-            if tok = EOF then List.rev (EOF :: acc)
-            else next_tokens (tok :: acc) true
+            if tok = EOF then begin
+              let (final_dedents, _) = handle_indent 0 in
+              List.rev (EOF :: final_dedents @ acc)
+            end else
+              next_tokens (tok :: acc) true
         | _ ->
-            let indent_tokens = handle_indent indent_level in
-            let acc_with_indents = List.fold_right (fun t a -> t :: a) indent_tokens acc in
+            let (indent_tokens, has_dedent) = handle_indent indent_level in
+            let tokens_to_add = if has_dedent then [NEWLINE] @ indent_tokens else indent_tokens in
+            let acc_with_indents = List.fold_right (fun t a -> t :: a) tokens_to_add acc in
             let tok = token lexbuf in
             next_tokens (tok :: acc_with_indents) (tok = NEWLINE)
       end else begin
         let tok = token lexbuf in
         if tok = EOF then begin
-          let final_dedents = handle_indent 0 in
+          let (final_dedents, _) = handle_indent 0 in
           List.rev (EOF :: final_dedents @ acc)
         end else
           next_tokens (tok :: acc) (tok = NEWLINE)

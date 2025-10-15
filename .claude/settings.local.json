@@ -4,10 +4,15 @@
       "Bash(mkdir:*)",
       "Bash(dune build:*)",
       "Bash(_build/default/bin/main.exe:*)",
+      "Bash(_build/default/bin/debug_tokens.exe:*)",
       "Bash(ocaml:*)",
       "Bash(clang:*)",
       "Bash(make:*)",
-      "Bash(dune clean:*)"
+      "Bash(dune clean:*)",
+      "Bash(timeout:*)",
+      "Bash(echo:*)",
+      "Bash(dream:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
