@@ -45,8 +45,8 @@ program:
   | stmts = statement_list EOF { stmts }
 
 statement_list:
-  | { [] }
-  | s = statement newline_sep ss = statement_list { s :: ss }
+  | newline_sep { [] }
+  | newline_sep s = statement newline_sep ss = statement_list { s :: ss }
 
 newline_sep:
   | { () }
@@ -64,33 +64,33 @@ statement:
       { SIndexAssign (arr, idx, value, get_expr_pos arr) }
   | name = IDENT ASSIGN value = expr
       { SAssign (name, value, get_expr_pos value) }
-  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON NEWLINE INDENT body = statement_list DEDENT
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
       { SDef (name, [], params, None, body, { line = 0; column = 0 }) }
-  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON NEWLINE INDENT body = statement_list DEDENT
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
       { SDef (name, [], params, Some ret, body, { line = 0; column = 0 }) }
-  | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN COLON NEWLINE INDENT body = statement_list DEDENT
+  | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
       { SDef (name, type_params, params, None, body, { line = 0; column = 0 }) }
-  | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON NEWLINE INDENT body = statement_list DEDENT
+  | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
       { SDef (name, type_params, params, Some ret, body, { line = 0; column = 0 }) }
   | RETURN
       { SReturn (None, { line = 0; column = 0 }) }
   | RETURN e = expr
       { SReturn (Some e, get_expr_pos e) }
-  | IF cond = expr COLON NEWLINE INDENT then_body = statement_list DEDENT newline_sep elifs = elif_list else_part = else_opt
+  | IF cond = expr COLON newline_sep INDENT then_body = statement_list DEDENT newline_sep elifs = elif_list else_part = else_opt
       { SIf (cond, then_body, elifs, else_part, get_expr_pos cond) }
-  | WHILE cond = expr COLON NEWLINE INDENT body = statement_list DEDENT
+  | WHILE cond = expr COLON newline_sep INDENT body = statement_list DEDENT
       { SWhile (cond, body, get_expr_pos cond) }
-  | FOR pat = for_pattern IN iter = expr COLON NEWLINE INDENT body = statement_list DEDENT
+  | FOR pat = for_pattern IN iter = expr COLON newline_sep INDENT body = statement_list DEDENT
       { SFor (pat, iter, body, get_expr_pos iter) }
-  | MATCH e = expr COLON NEWLINE INDENT cases = case_list DEDENT
+  | MATCH e = expr COLON newline_sep INDENT cases = case_list DEDENT
       { SMatch (e, cases, get_expr_pos e) }
-  | CLASS name = IDENT COLON NEWLINE INDENT members = class_member_list DEDENT
+  | CLASS name = IDENT COLON newline_sep INDENT members = class_member_list DEDENT
       { SClass (name, None, [], members, { line = 0; column = 0 }) }
-  | CLASS name = IDENT LPAREN base = IDENT RPAREN COLON NEWLINE INDENT members = class_member_list DEDENT
+  | CLASS name = IDENT LPAREN base = IDENT RPAREN COLON newline_sep INDENT members = class_member_list DEDENT
       { SClass (name, Some base, [], members, { line = 0; column = 0 }) }
-  | CLASS name = IDENT IMPLEMENTS interfaces = separated_list(COMMA, IDENT) COLON NEWLINE INDENT members = class_member_list DEDENT
+  | CLASS name = IDENT IMPLEMENTS interfaces = separated_list(COMMA, IDENT) COLON newline_sep INDENT members = class_member_list DEDENT
       { SClass (name, None, interfaces, members, { line = 0; column = 0 }) }
-  | INTERFACE name = IDENT COLON NEWLINE INDENT members = interface_member_list DEDENT
+  | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
       { SInterface (name, members, { line = 0; column = 0 }) }
   | IMPORT modules = separated_list(DOT, IDENT)
       { SImport (modules, { line = 0; column = 0 }) }
@@ -99,17 +99,17 @@ statement:
 
 elif_list:
   | { [] }
-  | ELIF cond = expr COLON NEWLINE INDENT body = statement_list DEDENT newline_sep rest = elif_list
+  | ELIF cond = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = elif_list
       { (cond, body) :: rest }
 
 else_opt:
   | { None }
-  | ELSE COLON NEWLINE INDENT body = statement_list DEDENT
+  | ELSE COLON newline_sep INDENT body = statement_list DEDENT
       { Some body }
 
 case_list:
   | { [] }
-  | CASE p = pattern COLON NEWLINE INDENT body = statement_list DEDENT rest = case_list
+  | CASE p = pattern COLON newline_sep INDENT body = statement_list DEDENT rest = case_list
       { (p, body) :: rest }
 
 class_member_list:
@@ -119,9 +119,9 @@ class_member_list:
 class_member:
   | name = IDENT COLON ty = type_expr
       { CField (name, ty, { line = 0; column = 0 }) }
-  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON NEWLINE INDENT body = statement_list DEDENT
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
       { CMethod (name, [], params, None, body, { line = 0; column = 0 }) }
-  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON NEWLINE INDENT body = statement_list DEDENT
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
       { CMethod (name, [], params, Some ret, body, { line = 0; column = 0 }) }
 
 interface_member_list:
