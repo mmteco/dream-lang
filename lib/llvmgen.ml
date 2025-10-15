@@ -581,20 +581,27 @@ let rec gen_expr buf ctx = function
       (dict_ptr, if is_str_key then DictStrPtr else DictPtr)
 
   | ETuple (elems, _) ->
-      (match elems with
-       | [e1; e2] ->
-           let (v1, _) = gen_expr buf ctx e1 in
-           let (v2, _) = gen_expr buf ctx e2 in
-           let tuple_ptr = fresh_temp () in
-           let tuple_i8 = fresh_temp () in
-           Printf.bprintf buf "  %s = call i8* @create_tuple2_i32(i32 %s, i32 %s)\n"
-             tuple_i8 v1 v2;
-           Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n"
-             tuple_ptr tuple_i8;
-           (tuple_ptr, TuplePtr)
-       | _ ->
-           Printf.bprintf buf "  ; tuples with size != 2 not yet supported\n";
-           ("0", TuplePtr))
+      let size = List.length elems in
+      if size = 0 then begin
+        Printf.bprintf buf "  ; empty tuple not supported\n";
+        ("0", TuplePtr)
+      end else begin
+        (* 统一使用 tuple_t 处理所有元组 *)
+        let tuple_i8 = fresh_temp () in
+        let tuple_ptr = fresh_temp () in
+        Printf.bprintf buf "  %s = call i8* @tuple_create(i32 %d)\n" tuple_i8 size;
+
+        (* 填充元组元素 *)
+        List.iteri (fun i elem ->
+          let (v, _) = gen_expr buf ctx elem in
+          Printf.bprintf buf "  call void @tuple_set(i8* %s, i32 %d, i32 %s)\n"
+            tuple_i8 i v
+        ) elems;
+
+        (* 转换为 i32* 以符合 TuplePtr 类型 *)
+        Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" tuple_ptr tuple_i8;
+        (tuple_ptr, TuplePtr)
+      end
 
   | EIndex (arr, idx, _) ->
       let (arr_v, arr_t) = gen_expr buf ctx arr in
@@ -629,11 +636,11 @@ let rec gen_expr buf ctx = function
              result (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) ptr_temp;
            (result, elem_t)
        | TuplePtr ->
-           (* 元组索引:调用 tuple2_i32_get *)
+           (* 元组索引:调用 tuple_get *)
            let tuple_i8 = fresh_temp () in
            let result = fresh_temp () in
            Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 arr_v;
-           Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %s)\n"
+           Printf.bprintf buf "  %s = call i32 @tuple_get(i8* %s, i32 %s)\n"
              result tuple_i8 idx_v;
            (result, I32)
        | DictPtr ->
@@ -1727,7 +1734,12 @@ let gen_program program =
   Buffer.add_string buf "; Tuple functions\n";
   Buffer.add_string buf "declare i8* @create_tuple2_i32(i32, i32)\n";
   Buffer.add_string buf "declare i32 @tuple2_i32_get(i8*, i32)\n";
-  Buffer.add_string buf "declare void @tuple2_i32_free(i8*)\n\n";
+  Buffer.add_string buf "declare void @tuple2_i32_free(i8*)\n";
+  Buffer.add_string buf "declare i8* @tuple_create(i32)\n";
+  Buffer.add_string buf "declare void @tuple_set(i8*, i32, i32)\n";
+  Buffer.add_string buf "declare i32 @tuple_get(i8*, i32)\n";
+  Buffer.add_string buf "declare i32 @tuple_size(i8*)\n";
+  Buffer.add_string buf "declare void @tuple_free(i8*)\n\n";
 
   let ctx = create_context () in
   let code_buf = create 8192 in
