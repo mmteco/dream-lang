@@ -220,7 +220,7 @@ const char* union_type_name(union_t* u) {
         case UNION_FLOAT: return "float";
         case UNION_STRING: return "string";
         case UNION_BOOL: return "bool";
-        case UNION_NONE: return "None";
+        case UNION_NONE: return "none";
         default: return "unknown";
     }
 }
@@ -228,28 +228,28 @@ const char* union_type_name(union_t* u) {
 // 打印 union 的实际值（不带类型信息）
 void union_print_value(union_t* u) {
     if (u == NULL) {
-        printf("(null)");
+        printf("(null)\n");
         return;
     }
 
     switch (u->tag) {
         case UNION_INT:
-            printf("%d", u->value.as_int);
+            printf("%d\n", u->value.as_int);
             break;
         case UNION_FLOAT:
-            printf("%f", u->value.as_float);
+            printf("%f\n", u->value.as_float);
             break;
         case UNION_STRING:
-            printf("%s", u->value.as_string);
+            printf("%s\n", u->value.as_string);
             break;
         case UNION_BOOL:
-            printf("%s", u->value.as_bool ? "True" : "False");
+            printf("%s\n", u->value.as_bool ? "true" : "false");
             break;
         case UNION_NONE:
-            printf("None");
+            printf("None\n");
             break;
         default:
-            printf("(unknown)");
+            printf("(unknown)\n");
             break;
     }
 }

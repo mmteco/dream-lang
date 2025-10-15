@@ -59,6 +59,8 @@ type context = {
   (* 跟踪动态分配的对象,需要在作用域结束时释放 *)
   (* 存储 (变量名, LLVM临时变量名) *)
   mutable dynarray_vars: (string * string) list;
+  (* 跟踪 GC 分配的对象（union 等），需要在作用域结束时释放 *)
+  mutable gc_objects: string list;  (* 存储临时变量名 *)
   (* 函数签名表: 函数名 -> 返回类型 *)
   mutable function_signatures: (string * llvm_type) list;
   (* 函数参数类型表: 函数名 -> 参数类型列表 *)
@@ -71,6 +73,7 @@ let create_context () = {
   string_literals = [];
   var_renames = [];
   dynarray_vars = [];
+  gc_objects = [];
   function_signatures = [];
   function_param_types = [];
 }
@@ -121,7 +124,7 @@ let gen_binop = function
   | Or -> "or"
 
 (* 装箱：将具体类型值包装为 union_t* *)
-let box_to_union buf value src_type =
+let box_to_union buf ctx value src_type =
   let result = fresh_temp () in
   (match src_type with
    | I32 ->
@@ -135,6 +138,8 @@ let box_to_union buf value src_type =
        (* 其他类型暂不支持 *)
        Printf.bprintf buf "  ; TODO: box type %s to union\n" (llvm_type_to_string src_type);
        Printf.bprintf buf "  %s = call %%union_t* @union_create_none()\n" result);
+  (* 记录 GC 对象以便后续释放 *)
+  ctx.gc_objects <- result :: ctx.gc_objects;
   (result, UnionPtr)
 
 (* 拆箱：从 union_t* 提取具体类型的值 *)
@@ -463,6 +468,8 @@ let rec gen_expr buf ctx = function
       (match t with
        | I32 ->
            Printf.bprintf buf "  call void @print_int(i32 %s)\n" v;
+       | I1 ->
+           Printf.bprintf buf "  call void @print_bool(i1 %s)\n" v;
        | UnionPtr ->
            (* Union 类型：调用 union_print_value *)
            Printf.bprintf buf "  call void @union_print_value(%%union_t* %s)\n" v;
@@ -562,7 +569,7 @@ let rec gen_expr buf ctx = function
           (* 如果期望的是 union 类型,但实际不是,则装箱 *)
           if expected_type = UnionPtr && t <> UnionPtr then begin
             Printf.bprintf buf "  ; Boxing argument %d to union\n" i;
-            box_to_union buf v t
+            box_to_union buf ctx v t
           end else
             (v, t)
         else
@@ -1471,7 +1478,7 @@ let rec gen_statement buf ctx = function
         | Some (TUnion _) when t <> UnionPtr ->
             (* 类型注解是 union，但值不是 union_t*，需要装箱 *)
             Printf.bprintf buf "  ; Boxing value to union\n";
-            box_to_union buf v t
+            box_to_union buf ctx v t
         | _ ->
             (v, t)
       in
@@ -1605,7 +1612,7 @@ let rec gen_statement buf ctx = function
         | Some UnionPtr when t <> UnionPtr ->
             (* 函数返回 union 但值不是 union,需要装箱 *)
             Printf.bprintf buf "  ; Boxing return value to union\n";
-            box_to_union buf v t
+            box_to_union buf ctx v t
         | _ ->
             (v, t)
       in
@@ -2042,6 +2049,14 @@ let gen_function buf ctx name params ret_ty body =
     | last :: _ -> not (has_return_stmt last)
   in
 
+  (* TODO: 在返回前释放所有 GC 对象（需要更复杂的生命周期分析）
+     暂时依赖 gc_cleanup 清理所有泄漏对象 *)
+  (*
+  List.iter (fun obj ->
+    Buffer.add_string buf ("  call void @gc_release(i8* bitcast(%union_t* " ^ obj ^ " to i8*))\n")
+  ) (List.rev ctx.gc_objects);
+  *)
+
   (if needs_return then
     match ret_type with
     | UnionPtr ->
@@ -2066,6 +2081,7 @@ let gen_program program =
 
   (* Runtime functions *)
   Buffer.add_string buf "declare void @print_int(i32)\n";
+  Buffer.add_string buf "declare void @print_bool(i1)\n";
   Buffer.add_string buf "declare i32 @printf(i8*, ...)\n";
 
   (* Memory management functions *)
@@ -2206,6 +2222,13 @@ let gen_program program =
       | SDef _ -> ()
       | stmt -> gen_statement code_buf ctx stmt
     ) program;
+    (* TODO: 在返回前释放所有 GC 对象（需要更复杂的生命周期分析）
+       暂时依赖 gc_cleanup 清理所有泄漏对象 *)
+    (*
+    List.iter (fun obj ->
+      Buffer.add_string code_buf ("  call void @gc_release(i8* bitcast(%union_t* " ^ obj ^ " to i8*))\n")
+    ) (List.rev ctx.gc_objects);
+    *)
     Buffer.add_string code_buf "  ret i32 0\n}\n"
   end;
 
