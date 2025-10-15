@@ -1,3 +1,15 @@
 _opam/
 _build/
-examples/
+*.opam
+
+# 编译生成的文件
+*.ll
+*.o
+*.cmo
+*.cmi
+*.cmx
+
+# 可执行文件
+examples/factorial
+examples/hello
+examples/quicksort

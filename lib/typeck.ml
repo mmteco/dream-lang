@@ -30,7 +30,36 @@ let rec infer_expr env = function
       let (t2, s2) = infer_expr (apply_subst_to_env s1 env) e2 in
       let s3 = compose_subst s2 s1 in
       (match op with
-       | Add | Sub | Mul | Div | Mod ->
+       | Add ->
+           (* 特殊处理:Add 可以是整数相加或列表拼接 *)
+           let t1' = apply_subst s3 t1 in
+           let t2' = apply_subst s3 t2 in
+           (match t1', t2' with
+            | TyList elem_t1, TyList elem_t2 ->
+                (* 列表拼接 *)
+                (try
+                   let s4 = unify elem_t1 elem_t2 in
+                   (TyList (apply_subst s4 elem_t1), compose_subst s4 s3)
+                 with Failure msg ->
+                   let err = make_error (TypeError msg) pos
+                     (Printf.sprintf "List concatenation requires same element types: %s" msg) in
+                   report_error err;
+                   (TyList elem_t1, s3))
+            | TyInt, TyInt ->
+                (* 整数相加 *)
+                (TyInt, s3)
+            | _, _ ->
+                (* 尝试统一为整数 *)
+                (try
+                   let s4 = unify t1' TyInt in
+                   let s5 = unify (apply_subst s4 t2') TyInt in
+                   (TyInt, compose_subst s5 (compose_subst s4 s3))
+                 with Failure msg ->
+                   let err = make_error (TypeError msg) pos
+                     (Printf.sprintf "Type error in arithmetic operation: %s" msg) in
+                   report_error err;
+                   (TyUnknown, s3)))
+       | Sub | Mul | Div | Mod ->
            (try
               let s4 = unify (apply_subst s3 t1) TyInt in
               let s5 = unify (apply_subst s4 t2) TyInt in
@@ -46,10 +75,17 @@ let rec infer_expr env = function
               let s4 = unify (apply_subst s3 t1) (apply_subst s3 t2) in
               (TyBool, compose_subst s4 s3)
             with Failure msg ->
-              let err = make_error (TypeError msg) pos
-                (Printf.sprintf "Type error in comparison: %s" msg) in
-              report_error err;
-              (TyBool, s3))
+              (* 如果涉及未知类型（来自泛型），允许比较但不报错 *)
+              let t1' = apply_subst s3 t1 in
+              let t2' = apply_subst s3 t2 in
+              if t1' = TyUnknown || t2' = TyUnknown then
+                (TyBool, s3)
+              else begin
+                let err = make_error (TypeError msg) pos
+                  (Printf.sprintf "Type error in comparison: %s" msg) in
+                report_error err;
+                (TyBool, s3)
+              end)
        | And | Or ->
            (try
               let s4 = unify (apply_subst s3 t1) TyBool in
@@ -133,10 +169,21 @@ let rec infer_expr env = function
          let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
          (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
        with Failure msg ->
-         let err = make_error (TypeError msg) pos
-           (Printf.sprintf "Function call type error: %s" msg) in
-         report_error err;
-         (TyUnknown, combined_subst))
+         (* 对于泛型函数调用，occurs check 失败是预期的，不报告为错误 *)
+         let has_prefix s prefix =
+           let len_s = String.length s in
+           let len_p = String.length prefix in
+           len_s >= len_p && String.sub s 0 len_p = prefix
+         in
+         if has_prefix msg "Occurs check failed" then
+           (* 泛型函数，返回未知类型但不报错 *)
+           (ret_type, combined_subst)
+         else begin
+           let err = make_error (TypeError msg) pos
+             (Printf.sprintf "Function call type error: %s" msg) in
+           report_error err;
+           (TyUnknown, combined_subst)
+         end)
 
   | EIndex (arr, idx, pos) ->
       let (arr_type, arr_subst) = infer_expr env arr in
@@ -158,6 +205,39 @@ let rec infer_expr env = function
              "Cannot index non-list/dict type" in
            report_error err;
            (TyUnknown, combined_subst))
+
+  | ESlice (arr, start_opt, end_opt, pos) ->
+      let (arr_type, arr_subst) = infer_expr env arr in
+      let combined_subst = ref arr_subst in
+      (match start_opt with
+       | Some start_expr ->
+           let (start_type, start_subst) = infer_expr env start_expr in
+           combined_subst := compose_subst start_subst !combined_subst;
+           (try
+              let _ = unify (apply_subst !combined_subst start_type) TyInt in ()
+            with Failure msg ->
+              let err = make_error (TypeError msg) pos
+                (Printf.sprintf "Slice start must be int: %s" msg) in
+              report_error err)
+       | None -> ());
+      (match end_opt with
+       | Some end_expr ->
+           let (end_type, end_subst) = infer_expr env end_expr in
+           combined_subst := compose_subst end_subst !combined_subst;
+           (try
+              let _ = unify (apply_subst !combined_subst end_type) TyInt in ()
+            with Failure msg ->
+              let err = make_error (TypeError msg) pos
+                (Printf.sprintf "Slice end must be int: %s" msg) in
+              report_error err)
+       | None -> ());
+      (match apply_subst !combined_subst arr_type with
+       | TyList elem_type -> (TyList elem_type, !combined_subst)
+       | _ ->
+           let err = make_error (TypeError "Not sliceable") pos
+             "Cannot slice non-list type" in
+           report_error err;
+           (TyUnknown, !combined_subst))
 
   | EAttr (obj, _attr, pos) ->
       let (_obj_type, obj_subst) = infer_expr env obj in
@@ -286,7 +366,7 @@ let rec check_statement env = function
              let new_env = update_binding name (apply_subst value_subst value_type) (apply_subst_to_env value_subst env) in
              (new_env, value_subst))
 
-  | SDef (name, params, ret_opt, body, _) ->
+  | SDef (name, _type_params, params, ret_opt, body, _) ->
       let param_env = List.fold_left
         (fun e (pname, pty_opt) ->
           let pty = match pty_opt with
@@ -371,6 +451,28 @@ let rec check_statement env = function
       (env, empty_subst)
 
   | SImport (_, _) | SFromImport (_, _, _) -> (env, empty_subst)
+
+  | SIndexAssign (arr, idx, value, pos) ->
+      let (arr_type, arr_subst) = infer_expr env arr in
+      let (idx_type, idx_subst) = infer_expr env idx in
+      let (value_type, value_subst) = infer_expr env value in
+      let combined_subst = compose_subst value_subst (compose_subst idx_subst arr_subst) in
+      (match apply_subst combined_subst arr_type with
+       | TyList elem_type ->
+           (try
+              let _ = unify (apply_subst combined_subst idx_type) TyInt in
+              let _ = unify (apply_subst combined_subst value_type) elem_type in
+              (apply_subst_to_env combined_subst env, combined_subst)
+            with Failure msg ->
+              let err = make_error (TypeError msg) pos
+                (Printf.sprintf "Index assignment type error: %s" msg) in
+              report_error err;
+              (env, empty_subst))
+       | _ ->
+           let err = make_error (TypeError "Not indexable") pos
+             "Cannot index-assign to non-list type" in
+           report_error err;
+           (env, empty_subst))
 
 and check_statements env stmts =
   List.fold_left

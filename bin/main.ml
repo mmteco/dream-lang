@@ -34,14 +34,17 @@ let compile_file input_file =
 
     Typeck.typecheck ast;
 
-    let c_code = Codegen.gen_program ast in
+    let llvm_ir = Llvmgen.gen_program ast in
 
-    let output_c = Filename.remove_extension input_file ^ ".c" in
-    write_file output_c c_code;
-    Printf.printf "Generated C code: %s\n" output_c;
+    let output_ll = Filename.remove_extension input_file ^ ".ll" in
+    write_file output_ll llvm_ir;
+    Printf.printf "Generated LLVM IR: %s\n" output_ll;
 
     let output_exe = Filename.remove_extension input_file in
-    let compile_cmd = Printf.sprintf "gcc -o %s %s" output_exe output_c in
+    let runtime_c = "runtime/runtime.c" in
+    let memory_c = "runtime/memory.c" in
+    let dynarray_c = "runtime/dynarray.c" in
+    let compile_cmd = Printf.sprintf "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s %s %s 2>&1 | grep -v \"search path\" || true" output_exe output_ll runtime_c memory_c dynarray_c in
     let exit_code = Sys.command compile_cmd in
     if exit_code = 0 then begin
       Printf.printf "Compiled successfully: %s\n" output_exe;

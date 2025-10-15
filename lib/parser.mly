@@ -5,7 +5,7 @@
     | EInt (_, p) | EFloat (_, p) | EString (_, p) | EBool (_, p)
     | ENone p | EVar (_, p) | EBinOp (_, _, _, p) | EUnOp (_, _, p)
     | ECall (_, _, p) | EList (_, p) | EDict (_, p) | ETuple (_, p)
-    | EIndex (_, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
+    | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
     | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p) -> p
 %}
 
@@ -53,12 +53,18 @@ statement:
       { SLet (name, None, value, get_expr_pos value) }
   | LET name = IDENT COLON ty = type_expr ASSIGN value = expr
       { SLet (name, Some ty, value, get_expr_pos value) }
+  | arr = expr LBRACKET idx = expr RBRACKET ASSIGN value = expr
+      { SIndexAssign (arr, idx, value, get_expr_pos arr) }
   | name = IDENT ASSIGN value = expr
       { SAssign (name, value, get_expr_pos value) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON NEWLINE INDENT body = statement_list DEDENT
-      { SDef (name, params, None, body, { line = 0; column = 0 }) }
+      { SDef (name, [], params, None, body, { line = 0; column = 0 }) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON NEWLINE INDENT body = statement_list DEDENT
-      { SDef (name, params, Some ret, body, { line = 0; column = 0 }) }
+      { SDef (name, [], params, Some ret, body, { line = 0; column = 0 }) }
+  | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN COLON NEWLINE INDENT body = statement_list DEDENT
+      { SDef (name, type_params, params, None, body, { line = 0; column = 0 }) }
+  | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON NEWLINE INDENT body = statement_list DEDENT
+      { SDef (name, type_params, params, Some ret, body, { line = 0; column = 0 }) }
   | RETURN
       { SReturn (None, { line = 0; column = 0 }) }
   | RETURN e = expr
@@ -107,9 +113,9 @@ class_member:
   | name = IDENT COLON ty = type_expr
       { CField (name, ty, { line = 0; column = 0 }) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON NEWLINE INDENT body = statement_list DEDENT
-      { CMethod (name, params, None, body, { line = 0; column = 0 }) }
+      { CMethod (name, [], params, None, body, { line = 0; column = 0 }) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON NEWLINE INDENT body = statement_list DEDENT
-      { CMethod (name, params, Some ret, body, { line = 0; column = 0 }) }
+      { CMethod (name, [], params, Some ret, body, { line = 0; column = 0 }) }
 
 interface_member_list:
   | { [] }
@@ -119,7 +125,7 @@ interface_member:
   | name = IDENT COLON ty = type_expr
       { IField (name, ty, { line = 0; column = 0 }) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr
-      { IMethod (name, params, Some ret, { line = 0; column = 0 }) }
+      { IMethod (name, [], params, Some ret, { line = 0; column = 0 }) }
 
 param:
   | name = IDENT { (name, None) }
@@ -137,6 +143,12 @@ pattern:
   | name = IDENT COLON ty = type_expr { PType (name, ty) }
 
 type_expr:
+  | name = IDENT LBRACKET ty = type_expr RBRACKET {
+      (* 支持 list[T] 语法 *)
+      match name with
+      | "list" -> TList ty
+      | _ -> TVar name  (* 暂时忽略泛型参数 *)
+    }
   | IDENT { match $1 with
       | "int" -> TInt
       | "float" -> TFloat
@@ -176,6 +188,8 @@ expr:
       { EAttr (obj, attr, get_expr_pos obj) }
   | arr = expr LBRACKET idx = expr RBRACKET
       { EIndex (arr, idx, get_expr_pos arr) }
+  | arr = expr LBRACKET start = slice_start COLON end_opt = slice_end RBRACKET
+      { ESlice (arr, start, end_opt, get_expr_pos arr) }
   | LBRACKET elems = separated_list(COMMA, expr) RBRACKET
       { EList (elems, { line = 0; column = 0 }) }
   | LBRACE pairs = separated_list(COMMA, dict_pair) RBRACE
@@ -195,3 +209,11 @@ expr:
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }
+
+slice_start:
+  | { None }
+  | e = expr { Some e }
+
+slice_end:
+  | { None }
+  | e = expr { Some e }

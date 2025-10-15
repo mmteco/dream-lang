@@ -110,6 +110,7 @@ type expr =
   | EDict of (expr * expr) list * position
   | ETuple of expr list * position
   | EIndex of expr * expr * position
+  | ESlice of expr * expr option * expr option * position
   | EAttr of expr * string * position
   | ELambda of (string * type_expr option) list * expr * position
   | EIf of expr * expr * expr option * position
@@ -131,7 +132,7 @@ and pattern =
 type statement =
   | SExpr of expr * position
   | SLet of string * type_expr option * expr * position
-  | SDef of string * (string * type_expr option) list * type_expr option * statement list * position
+  | SDef of string * string list * (string * type_expr option) list * type_expr option * statement list * position
   | SReturn of expr option * position
   | SIf of expr * statement list * (expr * statement list) list * statement list option * position
   | SWhile of expr * statement list * position
@@ -142,13 +143,14 @@ type statement =
   | SImport of string list * position
   | SFromImport of string * string list * position
   | SAssign of string * expr * position
+  | SIndexAssign of expr * expr * expr * position
 
 and class_member =
   | CField of string * type_expr * position
-  | CMethod of string * (string * type_expr option) list * type_expr option * statement list * position
+  | CMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
 
 and interface_member =
   | IField of string * type_expr * position
-  | IMethod of string * (string * type_expr option) list * type_expr option * position
+  | IMethod of string * string list * (string * type_expr option) list * type_expr option * position
 
 type program = statement list

@@ -65,5 +65,6 @@ let builtin_env =
   let env = empty_env in
   let env = add_binding "print" (TyFunc ([TyVar "T"], TyNone)) env in
   let env = add_binding "len" (TyFunc ([TyList (TyVar "T")], TyInt)) env in
+  let env = add_binding "append" (TyFunc ([TyList (TyVar "T"); TyVar "T"], TyNone)) env in
   let env = add_binding "range" (TyFunc ([TyInt], TyList TyInt)) env in
   env

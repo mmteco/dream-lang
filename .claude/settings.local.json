@@ -3,7 +3,10 @@
     "allow": [
       "Bash(mkdir:*)",
       "Bash(dune build:*)",
-      "Bash(_build/default/bin/main.exe:*)"
+      "Bash(_build/default/bin/main.exe:*)",
+      "Bash(ocaml:*)",
+      "Bash(clang:*)",
+      "Bash(make:*)"
     ],
     "deny": [],
     "ask": []
