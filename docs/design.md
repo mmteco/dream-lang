@@ -159,33 +159,6 @@ Dream 支持 Go 风格的隐式接口实现。如果一个结构体实现了接�
 
 **示例:** 见 `test/test_implicit_interface.dm`
 
-```python
-# 接口定义
-interface Animal:
-    name: str
-    def speak(self) -> str
-
-# 类实现
-class Dog implements Animal:
-    name: str
-    breed: str
-    
-    def __init__(self, name: str, breed: str):
-        self.name = name
-        self.breed = breed
-    
-    def speak(self) -> str:
-        return "Woof!"
-
-# 继承
-class Puppy(Dog):
-    age: int
-    
-    def __init__(self, name: str, breed: str, age: int):
-        super().__init__(name, breed)
-        self.age = age
-```
-
 ### 7. 模式匹配
 
 Dream 支持强大的模式匹配功能，包括值匹配、类型匹配和解构匹配。
@@ -274,7 +247,7 @@ let model = load_onnx("model.onnx")
 let output = model.infer(input)
 
 # RAG 系统
-class RAGSystem:
+struct RAGSystem:
     db: VectorDB
     llm: LLM
     
@@ -294,7 +267,7 @@ class RAGSystem:
 - [x] 项目搭建（Dune 配置）
 - [ ] Token 定义（ast.ml）
 - [ ] 词法分析器（lexer.mll）
-  - 关键字：let, def, class, if, else, match, case, return, import
+  - 关键字：let, def, if, else, match, case, return, import
   - 标识符和字面量
   - 运算符和分隔符
   - 缩进处理（INDENT/DEDENT token）

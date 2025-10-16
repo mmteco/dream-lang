@@ -12,12 +12,7 @@ _build/
 *.so
 
 # 可执行文件
-examples/factorial
-examples/hello
-examples/quicksort
-examples/dynarray_full
-examples/z_test_*
-examples/*/
+test/test_core
 
 # Runtime 测试可执行文件
 runtime/test_hash

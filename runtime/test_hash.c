@@ -126,7 +126,7 @@ void test_string_hash_distribution() {
         "algorithm", "data", "structure", "search", "sort",
         "insert", "delete", "update", "select", "query",
         "key", "value", "pair", "tuple", "record",
-        "function", "method", "class", "object", "instance",
+        "function", "method", "object", "instance",
         "variable", "constant", "parameter", "argument", "return"
     };
 

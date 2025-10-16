@@ -8,7 +8,6 @@ let tok_to_string = function
   | Parser.IDENT s -> Printf.sprintf "IDENT(%s)" s
   | Parser.LET -> "LET"
   | Parser.DEF -> "DEF"
-  | Parser.CLASS -> "CLASS"
   | Parser.INTERFACE -> "INTERFACE"
   | Parser.IMPLEMENTS -> "IMPLEMENTS"
   | Parser.IMPL -> "IMPL"

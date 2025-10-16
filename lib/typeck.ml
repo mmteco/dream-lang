@@ -1007,13 +1007,6 @@ let rec check_statement env = function
 
       (env, final_subst)
 
-  | SClass class_info ->
-      let pos = class_info.class_pos in
-      let err = make_error (TypeError "Classes not implemented") pos
-        "Classes not yet implemented" in
-      report_error err;
-      (env, empty_subst)
-
   | SInterface interface_info ->
       let name = interface_info.interface_name in
       let type_params = interface_info.interface_type_params in

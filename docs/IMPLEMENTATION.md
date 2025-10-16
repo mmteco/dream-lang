@@ -48,7 +48,7 @@ GCC/Clang
 关键设计:
 - 每个表达式和语句都携带位置信息,用于错误报告
 - 支持丰富的表达式类型 (二元运算、函数调用、列表、字典等)
-- 支持多种语句类型 (let、def、if、while、for、match、class 等)
+- 支持多种语句类型 (let、def、if、while、for、match 等)
 
 ### 2. 词法分析器 (lib/lexer.mll)
 

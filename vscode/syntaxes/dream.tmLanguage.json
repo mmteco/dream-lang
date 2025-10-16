@@ -29,7 +29,7 @@
         },
         {
           "name": "keyword.other.dream",
-          "match": "\\b(let|def|class|struct|interface|impl|implements|enum|type|const|import|from|as)\\b"
+          "match": "\\b(let|def|struct|interface|impl|implements|enum|type|const|import|from|as)\\b"
         },
         {
           "name": "keyword.operator.logical.dream",

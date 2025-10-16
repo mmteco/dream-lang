@@ -14,7 +14,7 @@ Dream 是一门面向 AI 应用开发的现代编译型语言，结合了 Python
 
 ### 关键字
 ```
-let def class interface implements impl type const enum
+let def struct interface implements impl type const enum
 if else elif match case for while return
 import from as async await
 True False None

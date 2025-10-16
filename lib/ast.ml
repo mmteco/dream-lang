@@ -11,7 +11,6 @@ type token =
   | IDENT of string
   | LET
   | DEF
-  | CLASS
   | STRUCT
   | INTERFACE
   | IMPLEMENTS
@@ -147,11 +146,6 @@ and pattern =
   | PWildcard
   | PEnumVariant of string * string * pattern list
 
-(* 类成员 *)
-and class_member =
-  | CField of string * type_expr * position
-  | CMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
-
 (* 接口成员 *)
 and interface_member =
   | IField of string * type_expr * position
@@ -220,16 +214,6 @@ and struct_def = {
   struct_pos: position;  (* 整个 struct 定义位置 *)
 }
 
-(* class 定义详细信息 *)
-and class_def = {
-  class_name: string;
-  class_name_pos: position;  (* 类名位置 *)
-  class_base: string option;
-  class_interfaces: string list;
-  class_members: class_member list;
-  class_pos: position;  (* 整个 class 定义位置 *)
-}
-
 (* interface 定义详细信息 *)
 and interface_def = {
   interface_name: string;
@@ -259,7 +243,6 @@ and statement =
   | SWhile of expr * statement list * position
   | SFor of pattern * expr * statement list * position
   | SMatch of expr * (pattern * expr option * statement list) list * position  (* pattern * guard * body *)
-  | SClass of class_def
   | SStruct of struct_def
   | SInterface of interface_def
   | SImport of string list * position

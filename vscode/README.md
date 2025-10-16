@@ -154,7 +154,7 @@ vsce package
 ## 支持的语法
 
 ### 关键字
-`if`, `else`, `elif`, `while`, `for`, `in`, `match`, `case`, `return`, `let`, `def`, `class`, `struct`, `interface`, `impl`, `enum`, `and`, `or`, `not`, `self`, `super`
+`if`, `else`, `elif`, `while`, `for`, `in`, `match`, `case`, `return`, `let`, `def`, `struct`, `interface`, `impl`, `enum`, `and`, `or`, `not`, `self`, `super`
 
 ### 类型
 `int`, `float`, `str`, `bool`, `bytes`, `list`, `dict`, `tuple`, `Option`, `Some`, `Result`, `Ok`, `Err`, `None`

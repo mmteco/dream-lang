@@ -20,7 +20,7 @@
 %token <string> STRING
 %token <bool> BOOL
 %token <string> IDENT
-%token LET DEF CLASS STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
+%token LET DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
 %token IF ELSE ELIF MATCH CASE FOR WHILE RETURN
 %token IMPORT FROM AS ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
@@ -134,33 +134,6 @@ statement:
       { SFor (pat, iter, body, get_expr_pos iter) }
   | MATCH e = expr COLON newline_sep INDENT cases = case_list DEDENT
       { SMatch (e, cases, get_expr_pos e) }
-  | CLASS name = IDENT COLON newline_sep INDENT members = class_member_list DEDENT
-      { SClass {
-          class_name = name;
-          class_name_pos = make_position $startpos(name);
-          class_base = None;
-          class_interfaces = [];
-          class_members = members;
-          class_pos = make_position $startpos;
-        } }
-  | CLASS name = IDENT LPAREN base = IDENT RPAREN COLON newline_sep INDENT members = class_member_list DEDENT
-      { SClass {
-          class_name = name;
-          class_name_pos = make_position $startpos(name);
-          class_base = Some base;
-          class_interfaces = [];
-          class_members = members;
-          class_pos = make_position $startpos;
-        } }
-  | CLASS name = IDENT IMPLEMENTS interfaces = separated_list(COMMA, IDENT) COLON newline_sep INDENT members = class_member_list DEDENT
-      { SClass {
-          class_name = name;
-          class_name_pos = make_position $startpos(name);
-          class_base = None;
-          class_interfaces = interfaces;
-          class_members = members;
-          class_pos = make_position $startpos;
-        } }
   | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
       { SInterface {
           interface_name = name;
@@ -248,18 +221,6 @@ case_list:
       { (p, Some guard, body) :: rest }
   | p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
       { (p, None, body) :: rest }
-
-class_member_list:
-  | { [] }
-  | m = class_member NEWLINE* ms = class_member_list { m :: ms }
-
-class_member:
-  | name = IDENT COLON ty = type_expr
-      { CField (name, ty, make_position $startpos(name)) }
-  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
-      { CMethod (name, [], params, None, body, make_position $startpos(name)) }
-  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
-      { CMethod (name, [], params, Some ret, body, make_position $startpos(name)) }
 
 interface_member_list:
   | { [] }

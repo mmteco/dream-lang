@@ -36,7 +36,6 @@
     List.iter (fun (kwd, tok) -> Hashtbl.add keyword_table kwd tok)
       [ ("let", LET);
         ("def", DEF);
-        ("class", CLASS);
         ("struct", STRUCT);
         ("interface", INTERFACE);
         ("implements", IMPLEMENTS);

@@ -428,7 +428,7 @@ let rec analyze_stmt ctx stmt : symbol_def list =
       analyze_expr ctx value;
       []
 
-  | SClass _ | SImpl _ | SImport _ | SFromImport _ -> []
+  | SImpl _ | SImport _ | SFromImport _ -> []
 
 (* 主分析函数 *)
 let analyze_program ast _source =
