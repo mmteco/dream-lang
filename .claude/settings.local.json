@@ -15,7 +15,9 @@
       "Bash(cat:*)",
       "Bash(dune exec:*)",
       "Bash(./examples/test_generic:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(./test/test_struct:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
