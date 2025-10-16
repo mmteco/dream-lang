@@ -60,16 +60,51 @@
   - [x] 元组索引 `tuple[0]` ✅ (2025-10)
   - [x] 任意长度元组支持 ✅ (2025-10)
 
-- [x] Match 表达式 ✅ **基础功能完成** (2025-10)
+- [x] Match 表达式 ✅ **核心功能完成** (2025-10)
   - [x] 模式匹配语法解析（case 关键字可选）
   - [x] 通配符模式 `_`
   - [x] 类型检查实现
   - [x] LLVM 代码生成（整数、字符串、通配符、变量绑定）✅
   - [x] match语句（SMatch）
   - [x] match表达式（EMatch，带phi节点）
-  - [ ] 枚举变体精确匹配（需要tagged union）
-  - [ ] 守卫条件 `if` 子句
-  - [ ] 穷尽性检查
+  - [x] 枚举变体精确匹配（tagged union实现）✅ (2025-10)
+  - [x] **枚举变体带数据的模式匹配** ✅ (2025-10)
+    - [x] 单参数变体：`Circle(r)` → 提取并绑定 r
+    - [x] 多参数变体：`Rectangle(w, h)` → 提取并绑定 w, h
+  - [x] **守卫条件 `if` 子句** ✅ (2025-10)
+    - [x] 解析器支持 `pattern if guard_expr:` 语法
+    - [x] AST 扩展支持可选守卫条件（`expr option`）
+    - [x] 类型检查器验证守卫表达式为布尔类型
+    - [x] LLVM 代码生成（守卫失败跳转到下一个 case）
+    - [x] match 语句和表达式均支持守卫条件
+    - [x] 完整测试套件（test_match_guard.dm）
+  - [ ] 穷尽性检查（待扩展）
+
+- [x] Enum 类型 ✅ **完整功能完成** (2025-10)
+  - [x] 枚举定义语法解析 `enum Color: Red, Green, Blue`
+  - [x] 枚举构造器 `Color.Red`, `Shape.Circle(5)`, `Shape.Rectangle(10, 20)`
+  - [x] **Runtime 层 Tagged Union 实现（enum.c/enum.h）** ✅
+    - [x] enum_create_simple/int/string/bool 函数
+    - [x] enum_create_tuple_ptr 函数（多参数变体）
+    - [x] enum_get_tag/int/string/bool/data 函数
+  - [x] **LLVM 代码生成器集成** ✅ (2025-10)
+    - [x] 单参数变体代码生成
+    - [x] 多参数变体代码生成（使用元组存储）
+    - [x] 枚举注册表（enum_registry）
+  - [x] **Match 表达式与 enum 集成** ✅ (2025-10)
+    - [x] 简单枚举变体匹配（无数据）
+    - [x] 枚举 tag 比较和分支跳转
+    - [x] **单参数变体数据提取和绑定** ✅ (2025-10)
+    - [x] **多参数变体数据提取和绑定** ✅ (2025-10)
+    - [x] 变量重命名机制（避免 LLVM IR 中的名称冲突）
+  - [x] **GC 集成** ✅ (2025-10)
+    - [x] OBJ_ENUM 类型添加到 GC 系统
+    - [x] enum_create_xxx 使用 gc_alloc 分配
+    - [x] 自动引用计数管理
+    - [x] 内存清理（enum_release 时释放数据指针）
+  - [ ] 枚举方法支持（待扩展）
+
+  **当前状态**：枚举类型完全可用，包括带数据的变体 ✅
 
 - [x] Union 类型 ✅ **完整功能完成** (2025-10)
   - [x] 使用 `|` 语法：`int | string | bool`
@@ -88,6 +123,7 @@
   - [x] **Print 支持 union 类型** ✅ (2025-10)
     - [x] union_print_value 运行时函数
     - [x] 自动根据 tag 输出正确值
+    - [x] 输出格式统一（所有值带换行符）✅
   - [x] **函数参数 union 装箱** ✅ (2025-10)
     - [x] 函数参数类型表（function_param_types）
     - [x] 调用时自动检测并装箱
@@ -106,6 +142,7 @@
     - [x] 内存池优化（64 字节池，批量分配）
     - [x] 完整的单元测试（test_union_gc.c）
     - [x] 零内存泄漏验证
+    - [x] union_print_value 支持小写 true/false 输出 ✅
 
   **两种模式**：
   1. **编译时类型特化**（默认）：零运行时开销，性能最优
@@ -225,6 +262,7 @@
 ### 内置函数
 - [x] `print(int)`
 - [x] `print(string)`
+- [x] `print(bool)` ✅ (2025-10)
 - [x] `len(array)`
 
 ### 类型系统改进

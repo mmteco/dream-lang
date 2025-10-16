@@ -113,10 +113,14 @@ else_opt:
 
 case_list:
   | { [] }
+  | CASE p = pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
+      { (p, Some guard, body) :: rest }
   | CASE p = pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
-      { (p, body) :: rest }
+      { (p, None, body) :: rest }
+  | p = pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
+      { (p, Some guard, body) :: rest }
   | p = pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
-      { (p, body) :: rest }
+      { (p, None, body) :: rest }
 
 class_member_list:
   | { [] }

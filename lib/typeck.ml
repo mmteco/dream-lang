@@ -365,7 +365,7 @@ let rec infer_expr env = function
       let result_type = fresh_type_var () in
       let rec check_cases combined_subst = function
         | [] -> (result_type, combined_subst)
-        | (pat, expr) :: rest ->
+        | (pat, guard_opt, expr) :: rest ->
             (* 创建模式绑定的新环境 *)
             let rec bind_pattern env pat expected_type =
               match pat with
@@ -395,8 +395,23 @@ let rec infer_expr env = function
                   List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
             in
             let case_env = bind_pattern env' pat (apply_subst combined_subst scrut_type) in
-            let (case_type, case_subst) = infer_expr case_env expr in
-            let combined = compose_subst case_subst combined_subst in
+            (* 检查守卫条件类型 *)
+            let (guard_env, guard_subst) = match guard_opt with
+              | None -> (case_env, combined_subst)
+              | Some guard_expr ->
+                  let (guard_type, g_subst) = infer_expr case_env guard_expr in
+                  let combined_g = compose_subst g_subst combined_subst in
+                  (try
+                     let bool_subst = unify (apply_subst combined_g guard_type) TyBool in
+                     (case_env, compose_subst bool_subst combined_g)
+                   with Failure msg ->
+                     let err = make_error (TypeError msg) pos
+                       (Printf.sprintf "Guard condition must be bool: %s" msg) in
+                     report_error err;
+                     (case_env, combined_g))
+            in
+            let (case_type, case_subst) = infer_expr guard_env expr in
+            let combined = compose_subst case_subst guard_subst in
             (try
                let unify_subst = unify (apply_subst combined result_type) (apply_subst combined case_type) in
                check_cases (compose_subst unify_subst combined) rest
@@ -606,7 +621,7 @@ let rec check_statement env = function
       (* 检查每个case分支 *)
       let rec check_cases combined_subst = function
         | [] -> combined_subst
-        | (pat, body) :: rest ->
+        | (pat, guard_opt, body) :: rest ->
             (* 创建模式绑定的新环境 *)
             let rec bind_pattern env pat expected_type =
               match pat with
@@ -636,8 +651,23 @@ let rec check_statement env = function
                   List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
             in
             let case_env = bind_pattern env' pat (apply_subst combined_subst scrut_type) in
-            let (_, case_subst) = check_statements case_env body in
-            let combined = compose_subst case_subst combined_subst in
+            (* 检查守卫条件类型 *)
+            let (guard_env, guard_subst) = match guard_opt with
+              | None -> (case_env, combined_subst)
+              | Some guard_expr ->
+                  let (guard_type, g_subst) = infer_expr case_env guard_expr in
+                  let combined_g = compose_subst g_subst combined_subst in
+                  (try
+                     let bool_subst = unify (apply_subst combined_g guard_type) TyBool in
+                     (case_env, compose_subst bool_subst combined_g)
+                   with Failure msg ->
+                     let err = make_error (TypeError msg) _pos
+                       (Printf.sprintf "Guard condition must be bool: %s" msg) in
+                     report_error err;
+                     (case_env, combined_g))
+            in
+            let (_, case_subst) = check_statements guard_env body in
+            let combined = compose_subst case_subst guard_subst in
             check_cases combined rest
       in
       let final_subst = check_cases scrut_subst cases in

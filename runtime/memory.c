@@ -25,6 +25,7 @@ typedef enum {
     OBJ_DICT,
     OBJ_TUPLE,
     OBJ_UNION,
+    OBJ_ENUM,
 } ObjectType;
 
 // 对象作用域
@@ -440,6 +441,19 @@ void gc_release(void* object) {
                 }
                 break;
             }
+            case OBJ_ENUM: {
+                // Enum 类型的清理（释放数据指针）
+                typedef struct {
+                    int32_t tag;
+                    void* data;
+                } enum_t;
+
+                enum_t* e = (enum_t*)obj_data;
+                if (e->data != NULL) {
+                    free(e->data);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -759,6 +773,19 @@ void gc_cleanup() {
                 union_t* u = (union_t*)object;
                 if (u->tag == UNION_STRING && u->value.as_string != NULL) {
                     free(u->value.as_string);
+                }
+                break;
+            }
+            case OBJ_ENUM: {
+                // Enum 类型的清理（释放数据指针）
+                typedef struct {
+                    int32_t tag;
+                    void* data;
+                } enum_t;
+
+                enum_t* e = (enum_t*)object;
+                if (e->data != NULL) {
+                    free(e->data);
                 }
                 break;
             }

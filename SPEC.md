@@ -14,10 +14,12 @@ Dream 是一门面向 AI 应用开发的现代编译型语言，结合了 Python
 
 ### 关键字
 ```
-let def class interface implements
+let def class interface implements enum
 if else elif match case for while return
 import from as async await
-None self super in
+True False None Some Ok Err
+true false none  # 小写形式（2025-10新增）
+self super in
 and or not
 ```
 
@@ -154,15 +156,49 @@ let inferred = [1, 2, 3]    # 推导为 [int]
 
 **限制**: 当前实现中，数组大小必须在编译时确定
 
-#### 元组 (未完全实现)
+#### 元组 ✅ (2025-10完成)
 ```python
 let pair: (int, string) = (1, "one")
 let triple = (1, 2.0, "three")
+let coords = (10, 20, 30)
+
+# 元组解包
+let (x, y, z) = coords
+let (a, b) = pair
+
+# 元组索引
+let first = pair[0]    # 1
+let second = pair[1]   # "one"
+
+# for循环中的元组解包
+for (k, v) in dict_items(d):
+    print(k)
+    print(v)
 ```
 
-#### 字典 (未完全实现)
+#### 字典 ✅ (2025-10完成泛型化)
 ```python
-let ages: {string: int} = {"Alice": 30, "Bob": 25}
+# 整数键值对
+let ages: dict[string, int] = {"Alice": 30, "Bob": 25}
+let scores = {1: 100, 2: 95, 3: 88}
+
+# 字符串键值对
+let config = {"host": "localhost", "port": "8080"}
+
+# 混合类型
+let data: dict[int, string] = {1: "one", 2: "two"}
+
+# 字典操作
+let age = ages["Alice"]         # 读取
+ages["Charlie"] = 35            # 写入
+let keys = dict_keys(ages)      # 获取所有键
+let values = dict_values(ages)  # 获取所有值
+let items = dict_items(ages)    # 获取键值对列表
+
+# 字典迭代
+for (k, v) in dict_items(ages):
+    print(k)
+    print(v)
 ```
 
 ### 函数类型
@@ -205,6 +241,108 @@ def greet(name: string) -> string:
 def calculate(a: int, b: int) -> int:
     return a + b
 ```
+
+### 高级类型
+
+#### Union 类型 ✅ (2025-10完成)
+
+Union 类型允许一个值拥有多个可能的类型：
+
+```python
+# 基本 Union 类型
+let x: int | string = 42
+let y: int | string = "hello"
+
+# 函数参数 Union 类型
+def process(v: int | bool) -> int:
+    match v:
+        42: return 10
+        true: return 20
+        _: return 0
+
+print(process(42))      # 输出 10
+print(process(true))    # 输出 20
+
+# 函数返回值 Union 类型
+def get_value(flag: int) -> int | string:
+    if flag == 1:
+        return 42
+    else:
+        return "hello"
+
+let result = get_value(1)  # result: int | string
+print(result)              # 输出 42
+```
+
+**特性**：
+- 自动装箱：当类型注解为 Union 时自动装箱
+- 自动拆箱：Match 表达式自动拆箱并类型检查
+- 支持 print：union_print_value 自动识别类型并打印
+- 完整的 GC 支持：自动内存管理
+
+#### 泛型 ✅ (2025-10基础完成)
+
+支持函数泛型，允许编写类型参数化的函数：
+
+```python
+# 基本泛型函数
+def identity[T](x: T) -> T:
+    return x
+
+let a = identity(42)       # T = int
+let b = identity("hello")  # T = string
+
+# 泛型列表操作
+def first[T](arr: [T]) -> T:
+    return arr[0]
+
+let num = first([1, 2, 3])      # T = int, 返回 1
+let str = first(["a", "b"])     # T = string, 返回 "a"
+```
+
+**实现方式**：单态化（Monomorphization）
+- 编译时为每个具体类型生成专门的函数版本
+- 零运行时开销
+- 与 Rust/C++ 类似
+
+#### Match 表达式 ✅ (2025-10基础完成)
+
+模式匹配支持：
+
+```python
+# 基本模式匹配
+def classify(x: int) -> string:
+    match x:
+        0: return "zero"
+        1: return "one"
+        _: return "other"
+
+# Match 表达式（可用于赋值）
+let result = match value:
+    42: 10
+    100: 20
+    _: 0
+
+# Union 类型匹配
+def process(v: int | string) -> int:
+    match v:
+        42: return 10
+        "test": return 20
+        _: return 0
+
+# 变量绑定模式
+match x:
+    n:
+        print(n)  # n 绑定到 x 的值
+```
+
+**支持的模式**：
+- 整数字面量：`42`, `100`
+- 字符串字面量：`"test"`, `"hello"`
+- 布尔值：`true`, `false`
+- None：`none`
+- 变量绑定：`n`, `x`
+- 通配符：`_`
 
 ### 多态类型
 
@@ -401,9 +539,15 @@ def main():
 ```python
 print(42)              # 打印整数
 print("hello")         # 打印字符串
+print(true)            # 打印布尔值（输出 "true"）✅ (2025-10)
+print(False)           # 打印布尔值（输出 "false"）✅ (2025-10)
+
+# Union 类型自动打印 ✅ (2025-10)
+let x: int | string = 42
+print(x)               # 自动识别类型并打印 "42"
 ```
 
-**限制**: 暂不支持打印数组、元组等复合类型
+**限制**: 暂不支持打印数组、元组等复合类型（但支持 Union 类型）
 
 #### len(array)
 返回数组长度
@@ -591,25 +735,24 @@ main()
 
 1. **数组大小限制**
    - 数组大小必须在编译时确定
-   - 不支持真正的动态大小数组
+   - 不支持真正的动态大小数组（但有 dynarray 运行时库）
    - 列表推导式和切片分配固定大小
 
 2. **类型系统限制**
    - 函数参数默认推导为 int
    - 数组参数需要显式类型注解
-   - 暂不支持泛型
 
 3. **功能限制**
-   - 暂不支持字典、元组
-   - 暂不支持类和对象
-   - 暂不支持模式匹配
+   - 暂不支持类和对象（已有语法但未实现代码生成）
+   - 枚举类型（已有语法和类型检查，缺少代码生成）
+   - Match 表达式（已有基础实现，缺少枚举精确匹配）
    - 暂不支持异常处理
    - 暂不支持模块导入
 
 4. **内置函数限制**
    - `len()` 只能用于局部数组变量
-   - `print()` 不支持复合类型
-   - 缺少常用的内置函数
+   - `print()` 不支持打印数组、复合类型（但支持 Union）
+   - 缺少常用的内置函数（map, filter, reduce 等）
 
 ### 性能考虑
 

@@ -17,6 +17,7 @@
 - [x] 元组解包（let、for 循环）✅ (2025-10)
 - [x] Runtime 模块化（string_ops, file_ops, dict, tuple, dynarray, memory）✅ (2025-10)
 - [x] 小写布尔和None关键字（true/false/none 支持）✅ (2025-10)
+- [x] print(bool) 函数支持（输出小写 true/false）✅ (2025-10)
 
 ---
 
@@ -71,26 +72,55 @@
 
 ## 第二阶段：语言特性 (P1)
 
-### 6. 枚举类型 ⚠️ **部分完成** (2025-10)
+### 6. 枚举类型 ✅ **完整功能完成** (2025-10)
 **已实现功能**：
 - [x] 枚举定义语法 `enum Color { Red, Green, Blue }`
 - [x] 带数据的枚举 `enum Shape { Circle(int), Rectangle(int, int) }`
-- [x] 泛型枚举 `enum Maybe[T] { Just(T), Nothing }`
-- [x] 枚举构造器 `Color.Red`, `Shape.Circle(5)`
+- [x] 泛型枚举 `enum Maybe[T] { Just(T), Nothing }`（语法解析）
+- [x] 枚举构造器 `Color.Red`, `Shape.Circle(5)`, `Shape.Rectangle(10, 20)`
 - [x] 模式匹配语法和类型检查
+- [x] **Runtime 层 Tagged Union 实现** ✅
+  - [x] enum.h/enum.c（enum_t 结构）
+  - [x] enum_create_simple/int/string/bool 函数
+  - [x] enum_create_tuple_ptr 函数（多参数变体）
+  - [x] enum_get_tag/int/string/bool/data 函数
+  - [x] enum_is_variant 类型检查函数
+  - [x] enum_print_value 输出函数
+- [x] **LLVM 代码生成器集成** ✅
+  - [x] 枚举注册表（enum_registry）
+  - [x] 单参数变体代码生成
+  - [x] 多参数变体代码生成（使用元组存储）
+  - [x] 枚举构造器代码生成（EEnumVariant）
+  - [x] 枚举模式匹配代码生成（PEnumVariant）
+  - [x] %enum_t 类型定义
+  - [x] enum runtime 函数声明
+  - [x] 链接 enum.c 到可执行文件
+- [x] **模式匹配数据提取** ✅ (2025-10)
+  - [x] 单参数变体数据提取：`Circle(r)` → 绑定 r
+  - [x] 多参数变体数据提取：`Rectangle(w, h)` → 绑定 w, h
+  - [x] 变量重命名机制（避免 LLVM IR 名称冲突）
+  - [x] gen_pattern_bindings 函数集成
+- [x] **GC 集成** ✅
+  - [x] OBJ_ENUM 类型添加到 GC 系统
+  - [x] enum_create_xxx 使用 gc_alloc
+  - [x] 自动引用计数管理
+  - [x] 内存清理（enum_release 时释放数据指针）
 
 **待完成功能**：
-- [ ] 模式匹配 LLVM 代码生成
 - [ ] 递归枚举（AST 节点类型）
 - [ ] 穷尽性检查
+- [ ] 枚举方法支持
 
-### 7. 模式匹配 ✅ **基础功能完成** (2025-10)
+### 7. 模式匹配 ✅ **核心功能完成** (2025-10)
 **已实现功能**：
 - [x] match 语句和表达式语法
 - [x] case 关键字现在可选
 - [x] 整数、字符串、布尔值匹配
 - [x] 元组解构
-- [x] 枚举变体匹配 `Color.Red`（简化实现）
+- [x] 枚举变体匹配 `Color.Red`
+- [x] **枚举变体带数据的模式匹配** ✅ (2025-10)
+  - [x] 单参数变体：`Circle(r)` → 提取 r 并绑定
+  - [x] 多参数变体：`Rectangle(w, h)` → 提取 w, h 并绑定
 - [x] 通配符模式 `_`
 - [x] 变量模式绑定 `PVar`
 - [x] 类型检查和环境绑定
@@ -98,12 +128,16 @@
   - [x] SMatch 语句生成（基本块 + 条件跳转）
   - [x] EMatch 表达式生成（phi 节点）
   - [x] gen_pattern_test（模式测试条件生成）
-  - [x] gen_pattern_bindings（模式变量绑定）
+  - [x] gen_pattern_bindings（模式变量绑定，包括枚举数据提取）
+- [x] **守卫条件 `if` 子句** ✅ (2025-10)
+  - [x] 解析器支持 `pattern if guard_expr:` 语法
+  - [x] AST 扩展（EMatch 和 SMatch 的 case 支持可选守卫）
+  - [x] 类型检查器验证守卫表达式为布尔类型
+  - [x] LLVM 代码生成（守卫失败跳转到下一个 case）
+  - [x] 完整的测试用例（test_match_guard.dm）
 
 **待完成功能**：
-- [ ] 枚举变体精确匹配（需要 tagged union 内存表示）
 - [ ] 列表解构
-- [ ] 守卫条件 `if` 子句
 - [ ] 穷尽性检查
 
 ### 8. 结构体
@@ -157,6 +191,7 @@
 - [x] **Print 支持 union 类型** ✅ (2025-10)
   - [x] union_print_value 运行时函数
   - [x] 自动根据 tag 输出正确值
+  - [x] 输出格式统一（所有值带换行符）✅
 
 **工作原理**：
 ```dream
@@ -250,6 +285,7 @@ match get_value(1):
   - [x] 批量分配（每批 64 个对象）
   - [x] 完整的单元测试（test_union_gc.c）
   - [x] 零内存泄漏（106 alloc / 106 free）
+  - [x] union_print_value 支持小写 true/false 输出 ✅
 
 **待完成功能**：
 - 无（Union 类型已生产可用）
@@ -296,16 +332,15 @@ match get_value(1):
 ### 立即开始（P0）
 1. ✅ ~~字典类型~~ (已完成)
 2. ✅ ~~元组解包~~ (已完成)
-3. ⚠️ ~~枚举类型~~ (部分完成 - 缺少代码生成)
-4. ✅ ~~模式匹配代码生成~~ (基础完成 - 整数/字符串/通配符/变量) ✅ (2025-10)
+3. ✅ ~~枚举类型~~ (基础完成 - 简单变体) ✅ (2025-10)
+4. ✅ ~~模式匹配代码生成~~ (基础完成 - 整数/字符串/通配符/变量/枚举) ✅ (2025-10)
 5. 🔴 **字符串操作** - Runtime 已有，添加语言绑定
 6. 🔴 **文件 I/O** - Runtime 已有，添加语言绑定
 
 ### 短期目标（P1）
-7. 枚举 tagged union 内存表示
+7. ✅ ~~枚举变体带数据的模式匹配~~ (已完成) ✅ (2025-10)
 8. 结构体
-9. Union 类型运行时表示
-10. 完成泛型系统高级特性
+9. 完成泛型系统高级特性
 
 ### 中期目标（P2）
 11. Lexer 重写

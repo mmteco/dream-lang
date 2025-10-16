@@ -56,7 +56,8 @@ let compile_to_exe output_ll =
     "runtime/file_ops.c";
     "runtime/dict.c";
     "runtime/tuple.c";
-    "runtime/union.c"
+    "runtime/union.c";
+    "runtime/enum.c"
   ] in
   let runtime_args = String.concat " " runtime_files in
   let compile_cmd = Printf.sprintf

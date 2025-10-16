@@ -14,8 +14,23 @@ type llvm_type =
   | DictPtr   (* 字典指针 dict[int,int] *)
   | DictStrPtr (* 字符串键字典指针 dict[string,int] *)
   | UnionPtr   (* Union 类型指针 *)
+  | EnumPtr    (* Enum 类型指针 *)
 
 type llvm_value = string
+
+(* 枚举定义注册表 *)
+type enum_variant_info = {
+  variant_name: string;
+  tag: int;
+  has_data: bool;
+}
+
+type enum_definition = {
+  enum_name: string;
+  variants: enum_variant_info list;
+}
+
+let enum_registry : (string, enum_definition) Hashtbl.t = Hashtbl.create 16
 
 let temp_counter = ref 0
 let label_counter = ref 0
@@ -46,6 +61,7 @@ let rec llvm_type_to_string = function
   | DictPtr -> "i8*"    (* 字典指针表示为i8* *)
   | DictStrPtr -> "i8*" (* 字符串键字典指针也表示为i8* *)
   | UnionPtr -> "%union_t*"  (* Union 类型指针 *)
+  | EnumPtr -> "%enum_t*"    (* Enum 类型指针 *)
 
 let mangle_name name =
   "@" ^ String.map (fun c -> if c = '_' then '_' else c) name
@@ -1254,15 +1270,73 @@ let rec gen_expr buf ctx = function
       Buffer.add_string buf "  ; Err(value) - 暂时直接返回内部值\n";
       (v, t)
 
-  | EEnumVariant (_enum_name, _variant_name, args, _) ->
-      if List.length args = 0 then
-        ("0", I32)
-      else
-        let arg_vals = List.map (fun arg ->
-          let (v, _t) = gen_expr buf ctx arg in
-          v
-        ) args in
-        (List.hd arg_vals, I32)
+  | EEnumVariant (enum_name, variant_name, args, _) ->
+      (* 查找枚举定义 *)
+      (match Hashtbl.find_opt enum_registry enum_name with
+       | None ->
+           Buffer.add_string buf ("  ; ERROR: Enum " ^ enum_name ^ " not found\n");
+           ("0", I32)
+       | Some enum_def ->
+           (* 查找变体 tag *)
+           let variant_opt = List.find_opt (fun v -> v.variant_name = variant_name) enum_def.variants in
+           (match variant_opt with
+            | None ->
+                Buffer.add_string buf ("  ; ERROR: Variant " ^ variant_name ^ " not found\n");
+                ("0", I32)
+            | Some variant_info ->
+                let result = fresh_temp () in
+                let arg_count = List.length args in
+                if arg_count = 0 then begin
+                  (* 简单枚举（无数据） *)
+                  Printf.bprintf buf "  %s = call %%enum_t* @enum_create_simple(i32 %d)\n"
+                    result variant_info.tag;
+                  (result, EnumPtr)
+                end else if arg_count = 1 then begin
+                  (* 单参数枚举 *)
+                  let (arg_val, arg_type) = gen_expr buf ctx (List.hd args) in
+                  (match arg_type with
+                   | I32 ->
+                       Printf.bprintf buf "  %s = call %%enum_t* @enum_create_int(i32 %d, i32 %s)\n"
+                         result variant_info.tag arg_val;
+                       (result, EnumPtr)
+                   | I1 ->
+                       Printf.bprintf buf "  %s = call %%enum_t* @enum_create_bool(i32 %d, i1 %s)\n"
+                         result variant_info.tag arg_val;
+                       (result, EnumPtr)
+                   | Ptr I32 ->
+                       Printf.bprintf buf "  %s = call %%enum_t* @enum_create_string(i32 %d, i8* %s)\n"
+                         result variant_info.tag arg_val;
+                       (result, EnumPtr)
+                   | _ ->
+                       Buffer.add_string buf "  ; Unsupported single arg enum data type\n";
+                       Printf.bprintf buf "  %s = call %%enum_t* @enum_create_simple(i32 %d)\n"
+                         result variant_info.tag;
+                       (result, EnumPtr))
+                end else begin
+                  (* 多参数枚举 - 使用元组存储 *)
+                  Printf.bprintf buf "  ; Creating enum with %d arguments (using tuple)\n" arg_count;
+
+                  (* 创建元组来存储所有参数 *)
+                  let tuple_temp = fresh_temp () in
+                  Printf.bprintf buf "  %s = call i8* @tuple_create(i32 %d)\n" tuple_temp arg_count;
+
+                  (* 将每个参数存入元组 *)
+                  List.iteri (fun i arg_expr ->
+                    let (arg_val, arg_type) = gen_expr buf ctx arg_expr in
+                    (* 目前假设所有参数都是 i32 类型 *)
+                    match arg_type with
+                    | I32 ->
+                        Printf.bprintf buf "  call void @tuple_set(i8* %s, i32 %d, i32 %s)\n"
+                          tuple_temp i arg_val
+                    | _ ->
+                        Printf.bprintf buf "  ; Warning: Non-i32 arg in multi-arg enum\n"
+                  ) args;
+
+                  (* 使用 enum_create_tuple_ptr 直接存储元组指针 *)
+                  Printf.bprintf buf "  %s = call %%enum_t* @enum_create_tuple_ptr(i32 %d, i8* %s)\n"
+                    result variant_info.tag tuple_temp;
+                  (result, EnumPtr)
+                end))
 
   | EMatch (scrut, cases, _) ->
       (* 生成被匹配的值 *)
@@ -1286,7 +1360,7 @@ let rec gen_expr buf ctx = function
        | [] -> Printf.bprintf buf "  br label %%%s\n" default_label);
 
       (* 生成每个case *)
-      List.iteri (fun i ((pat, body_expr), (case_label, body_label)) ->
+      List.iteri (fun i ((pat, guard_opt, body_expr), (case_label, body_label)) ->
         Printf.bprintf buf "\n%s:\n" case_label;
 
         (* 生成模式匹配条件 *)
@@ -1300,8 +1374,34 @@ let rec gen_expr buf ctx = function
             default_label
         in
 
+        (* 如果有守卫条件，需要额外的标签 *)
+        let guard_label = match guard_opt with
+          | Some _ -> fresh_label ("match.guard" ^ string_of_int i)
+          | None -> body_label
+        in
+
         Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n"
-          match_cond body_label next_label;
+          match_cond guard_label next_label;
+
+        (* 如果有守卫条件，生成守卫检查 *)
+        (match guard_opt with
+         | Some guard_expr ->
+             Printf.bprintf buf "\n%s:\n" guard_label;
+
+             (* 保存当前变量表并绑定模式变量 *)
+             let saved_vars = ctx.variables in
+             gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+
+             (* 生成守卫条件表达式 *)
+             let (guard_v, _guard_t) = gen_expr buf ctx guard_expr in
+
+             (* 根据守卫结果跳转 *)
+             Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n"
+               guard_v body_label next_label;
+
+             (* 恢复变量表（准备进入body或下一个case） *)
+             ctx.variables <- saved_vars
+         | None -> ());
 
         Printf.bprintf buf "\n%s:\n" body_label;
 
@@ -1329,7 +1429,7 @@ let rec gen_expr buf ctx = function
       (* 结束块和phi节点 *)
       Printf.bprintf buf "\n%s:\n" end_label;
       let result_type = match cases with
-        | (_, e) :: _ ->
+        | (_, _, e) :: _ ->
             (* 需要一个临时的上下文来推断类型 *)
             let temp_buf = Buffer.create 256 in
             snd (gen_expr temp_buf ctx e)
@@ -1435,9 +1535,37 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
       "1"  (* 通配符总是匹配 *)
   | PVar _ ->
       "1"  (* 变量模式总是匹配 *)
-  | PEnumVariant (_enum_name, _variant_name, _) ->
-      (* 简化处理：目前假设枚举用整数表示 *)
-      "1"
+  | PEnumVariant (enum_name, variant_name, args) ->
+      (match scrut_t with
+       | EnumPtr ->
+           (* 查找枚举定义和变体tag *)
+           (match Hashtbl.find_opt enum_registry enum_name with
+            | None ->
+                Buffer.add_string buf ("  ; ERROR: Enum " ^ enum_name ^ " not found in pattern\n");
+                "0"
+            | Some enum_def ->
+                let variant_opt = List.find_opt (fun v -> v.variant_name = variant_name) enum_def.variants in
+                (match variant_opt with
+                 | None ->
+                     Buffer.add_string buf ("  ; ERROR: Variant " ^ variant_name ^ " not found in pattern\n");
+                     "0"
+                 | Some variant_info ->
+                     (* 检查枚举的 tag 是否匹配 *)
+                     let tag_temp = fresh_temp () in
+                     Printf.bprintf buf "  %s = call i32 @enum_get_tag(%%enum_t* %s)\n" tag_temp scrut_v;
+                     let cond = fresh_temp () in
+                     Printf.bprintf buf "  %s = icmp eq i32 %s, %d\n" cond tag_temp variant_info.tag;
+
+                     (* 如果有参数模式，还需要检查数据 *)
+                     if List.length args > 0 then begin
+                       (* TODO: 实现数据提取和递归模式匹配 *)
+                       Buffer.add_string buf "  ; TODO: Pattern matching with enum data\n";
+                       cond
+                     end else
+                       cond))
+       | _ ->
+           Buffer.add_string buf "  ; ERROR: Expected enum type for enum pattern\n";
+           "0")
   | _ ->
       Printf.bprintf buf "  ; unsupported pattern type\n";
       "0"
@@ -1466,6 +1594,69 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t =
             add_variable ctx name I32
         | _ -> ()
       ) pats
+  | PEnumVariant (enum_name, variant_name, arg_patterns) ->
+      (* 枚举变体数据提取 *)
+      (match scrut_t with
+       | EnumPtr ->
+           (* 查找枚举定义 *)
+           (match Hashtbl.find_opt enum_registry enum_name with
+            | None ->
+                Buffer.add_string buf ("  ; ERROR: Enum " ^ enum_name ^ " not found in binding\n")
+            | Some enum_def ->
+                let variant_opt = List.find_opt (fun v -> v.variant_name = variant_name) enum_def.variants in
+                (match variant_opt with
+                 | None ->
+                     Buffer.add_string buf ("  ; ERROR: Variant " ^ variant_name ^ " not found in binding\n")
+                 | Some _variant_info ->
+                     let arg_count = List.length arg_patterns in
+                     if arg_count = 0 then begin
+                       (* 无参数，不需要绑定 *)
+                       ()
+                     end else if arg_count = 1 then begin
+                       (* 单参数枚举 - 直接提取 *)
+                       (match List.hd arg_patterns with
+                        | PVar name ->
+                            (* 提取单个 int 值 *)
+                            let data_temp = fresh_temp () in
+                            Printf.bprintf buf "  %s = call i32 @enum_get_int(%%enum_t* %s)\n"
+                              data_temp scrut_v;
+                            let local = fresh_temp () in  (* 使用唯一名称，如 %t123 *)
+                            Printf.bprintf buf "  %s = alloca i32\n" local;
+                            Printf.bprintf buf "  store i32 %s, i32* %s\n" data_temp local;
+                            (* 去掉 % 前缀再存储 *)
+                            let local_name = if String.length local > 0 && local.[0] = '%'
+                                             then String.sub local 1 (String.length local - 1)
+                                             else local in
+                            add_variable_with_rename ctx name local_name I32
+                        | _ ->
+                            Buffer.add_string buf "  ; Warning: Non-var pattern in single-arg enum\n")
+                     end else begin
+                       (* 多参数枚举 - 从元组中提取 *)
+                       let tuple_temp = fresh_temp () in
+                       Printf.bprintf buf "  %s = call i8* @enum_get_data(%%enum_t* %s)\n"
+                         tuple_temp scrut_v;
+
+                       (* 逐个提取元组元素 *)
+                       List.iteri (fun i pat ->
+                         match pat with
+                         | PVar name ->
+                             let elem_temp = fresh_temp () in
+                             Printf.bprintf buf "  %s = call i32 @tuple_get(i8* %s, i32 %d)\n"
+                               elem_temp tuple_temp i;
+                             let local = fresh_temp () in  (* 使用唯一名称，如 %t123 *)
+                             Printf.bprintf buf "  %s = alloca i32\n" local;
+                             Printf.bprintf buf "  store i32 %s, i32* %s\n" elem_temp local;
+                             (* 去掉 % 前缀再存储 *)
+                             let local_name = if String.length local > 0 && local.[0] = '%'
+                                              then String.sub local 1 (String.length local - 1)
+                                              else local in
+                             add_variable_with_rename ctx name local_name I32
+                         | _ ->
+                             Buffer.add_string buf "  ; Warning: Non-var pattern in multi-arg enum\n"
+                       ) arg_patterns
+                     end))
+       | _ ->
+           Buffer.add_string buf "  ; ERROR: Expected enum type for enum pattern binding\n")
   | _ -> ()  (* 其他模式不需要绑定变量 *)
 
 let rec gen_statement buf ctx = function
@@ -1881,8 +2072,18 @@ let rec gen_statement buf ctx = function
        | _ ->
            Printf.bprintf buf "  ; for loops only work with dynamic arrays\n")
 
-  | SEnum (_name, _type_params, _variants, _) ->
-      Buffer.add_string buf "  ; enum definition (no code generated)\n"
+  | SEnum (name, _type_params, variants, _) ->
+      (* 注册枚举定义 *)
+      let variant_infos = List.mapi (fun i variant ->
+        match variant with
+        | VSimple (vname, _) ->
+            { variant_name = vname; tag = i; has_data = false }
+        | VTuple (vname, types, _) ->
+            { variant_name = vname; tag = i; has_data = (List.length types > 0) }
+      ) variants in
+      let enum_def = { enum_name = name; variants = variant_infos } in
+      Hashtbl.replace enum_registry name enum_def;
+      Buffer.add_string buf ("  ; enum definition: " ^ name ^ "\n")
 
   | SMatch (scrut, cases, _) ->
       (* 生成被匹配的值 *)
@@ -1902,7 +2103,7 @@ let rec gen_statement buf ctx = function
        | [] -> Printf.bprintf buf "  br label %%%s\n" default_label);
 
       (* 生成每个case *)
-      List.iteri (fun i ((pat, body_stmts), (case_label, body_label)) ->
+      List.iteri (fun i ((pat, guard_opt, body_stmts), (case_label, body_label)) ->
         Printf.bprintf buf "\n%s:\n" case_label;
 
         (* 生成模式匹配条件 *)
@@ -1916,8 +2117,34 @@ let rec gen_statement buf ctx = function
             default_label
         in
 
+        (* 如果有守卫条件，需要额外的标签 *)
+        let guard_label = match guard_opt with
+          | Some _ -> fresh_label ("match.guard" ^ string_of_int i)
+          | None -> body_label
+        in
+
         Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n"
-          match_cond body_label next_label;
+          match_cond guard_label next_label;
+
+        (* 如果有守卫条件，生成守卫检查 *)
+        (match guard_opt with
+         | Some guard_expr ->
+             Printf.bprintf buf "\n%s:\n" guard_label;
+
+             (* 保存当前变量表并绑定模式变量 *)
+             let saved_vars = ctx.variables in
+             gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+
+             (* 生成守卫条件表达式 *)
+             let (guard_v, _guard_t) = gen_expr buf ctx guard_expr in
+
+             (* 根据守卫结果跳转 *)
+             Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n"
+               guard_v body_label next_label;
+
+             (* 恢复变量表（准备进入body或下一个case） *)
+             ctx.variables <- saved_vars
+         | None -> ());
 
         Printf.bprintf buf "\n%s:\n" body_label;
 
@@ -1948,7 +2175,7 @@ let rec gen_statement buf ctx = function
       Printf.bprintf buf "  unreachable\n";
 
       (* 结束块 - 检查是否所有分支都有 return *)
-      let all_have_return = List.for_all (fun (_, body_stmts) ->
+      let all_have_return = List.for_all (fun (_, _, body_stmts) ->
         match List.rev body_stmts with
         | SReturn _ :: _ -> true
         | _ -> false
@@ -2035,7 +2262,7 @@ let gen_function buf ctx name params ret_ty body =
     | SReturn _ -> true
     | SMatch (_, cases, _) ->
         (* match 的所有分支都有 return *)
-        List.for_all (fun (_, body_stmts) ->
+        List.for_all (fun (_, _, body_stmts) ->
           List.exists has_return_stmt body_stmts
         ) cases
     | SIf (_, then_body, _, Some else_body, _) ->
@@ -2184,6 +2411,27 @@ let gen_program program =
   Buffer.add_string buf "declare void @union_free(%union_t*)\n";
   Buffer.add_string buf "declare %union_t* @union_clone(%union_t*)\n";
   Buffer.add_string buf "declare void @union_print_value(%union_t*)\n\n";
+
+  (* Enum functions *)
+  Buffer.add_string buf "; Enum functions\n";
+  Buffer.add_string buf "declare %enum_t* @enum_create_simple(i32)\n";
+  Buffer.add_string buf "declare %enum_t* @enum_create_int(i32, i32)\n";
+  Buffer.add_string buf "declare %enum_t* @enum_create_string(i32, i8*)\n";
+  Buffer.add_string buf "declare %enum_t* @enum_create_bool(i32, i1)\n";
+  Buffer.add_string buf "declare %enum_t* @enum_create_tuple(i32, i8*, i64)\n";
+  Buffer.add_string buf "declare %enum_t* @enum_create_tuple_ptr(i32, i8*)\n";
+  Buffer.add_string buf "declare i1 @enum_is_variant(%enum_t*, i32)\n";
+  Buffer.add_string buf "declare i32 @enum_get_tag(%enum_t*)\n";
+  Buffer.add_string buf "declare i32 @enum_get_int(%enum_t*)\n";
+  Buffer.add_string buf "declare i8* @enum_get_string(%enum_t*)\n";
+  Buffer.add_string buf "declare i1 @enum_get_bool(%enum_t*)\n";
+  Buffer.add_string buf "declare i8* @enum_get_data(%enum_t*)\n";
+  Buffer.add_string buf "declare void @enum_free(%enum_t*)\n";
+  Buffer.add_string buf "declare void @enum_print_value(%enum_t*)\n\n";
+
+  (* 类型定义 *)
+  Buffer.add_string buf "; Type definitions\n";
+  Buffer.add_string buf "%enum_t = type opaque\n\n";
 
   let ctx = create_context () in
   let code_buf = create 8192 in

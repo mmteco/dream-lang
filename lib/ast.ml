@@ -122,7 +122,7 @@ type expr =
   | EAttr of expr * string * position
   | ELambda of (string * type_expr option) list * expr * position
   | EIf of expr * expr * expr option * position
-  | EMatch of expr * (pattern * expr) list * position
+  | EMatch of expr * (pattern * expr option * expr) list * position  (* pattern * guard * body *)
   | EListComp of expr * string * expr * expr option * position
   | ESome of expr * position
   | EOk of expr * position
@@ -154,7 +154,7 @@ type statement =
   | SIf of expr * statement list * (expr * statement list) list * statement list option * position
   | SWhile of expr * statement list * position
   | SFor of pattern * expr * statement list * position
-  | SMatch of expr * (pattern * statement list) list * position
+  | SMatch of expr * (pattern * expr option * statement list) list * position  (* pattern * guard * body *)
   | SClass of string * string option * string list * class_member list * position
   | SInterface of string * interface_member list * position
   | SImport of string list * position
