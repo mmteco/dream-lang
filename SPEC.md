@@ -622,6 +622,39 @@ let sub4 = s[:]     # "World" - 完整复制
 - 负索引暂不支持
 - 底层调用 `string_substring()` 运行时函数
 
+#### 字符串分割和连接 ✅
+```python
+# 字符串分割
+let text: string = "apple,banana,orange"
+let parts = text.split(",")  # 返回字符串数组
+
+# 字符串连接
+let result = join(parts, " - ")  # "apple - banana - orange"
+print(result)
+```
+
+**说明**:
+- `split(delimiter)` - 按分隔符分割字符串，返回字符串数组
+- `join(array, separator)` - 用分隔符连接字符串数组，返回字符串
+- 底层使用 `%dynarray_ptr` 类型存储字符串数组
+- 完整的 GC 支持
+
+#### 字符级别方法 ✅
+```python
+let s: string = "A1 B2"
+
+# 检查指定位置的字符类型
+print(s.is_alpha(0))       # true (A 是字母)
+print(s.is_digit(1))       # true (1 是数字)
+print(s.is_whitespace(2))  # true (空格)
+```
+
+**说明**:
+- `is_alpha(index)` - 检查指定位置字符是否为字母
+- `is_digit(index)` - 检查指定位置字符是否为数字
+- `is_whitespace(index)` - 检查指定位置字符是否为空白字符
+- 所有方法返回布尔值
+
 ### 内置函数
 
 #### print(value)

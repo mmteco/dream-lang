@@ -21,15 +21,29 @@
   - [ ] 泛型约束和高级特性（待扩展）
 
 #### P1 - 重要改进
-- [ ] 字符串类型完善
-  - [ ] 字符串拼接
-  - [x] 字符串索引和切片 
+- [x] 字符串类型完善  **核心功能完成**
+  - [ ] 字符串拼接 (待添加)
+  - [x] 字符串索引和切片
     - [x] 字符串索引 `str[i]` 返回字符的 ASCII 码
     - [x] 字符串切片 `str[start:end]` 返回子字符串
     - [x] LLVM 代码生成支持
     - [x] 类型检查支持
     - [x] print(string) 支持
-  - [ ] 基本字符串方法 (len, split, join)
+  - [x] 字符串方法
+    - [x] `length()` - 字符串长度
+    - [x] `find(substr)` - 查找子字符串位置
+    - [x] `replace(old, new)` - 替换子字符串
+    - [x] `strip()` - 去除首尾空白
+    - [x] `upper()` / `lower()` - 大小写转换
+    - [x] `starts_with(prefix)` / `ends_with(suffix)` - 前后缀检查
+    - [x] `split(delimiter)`, `join(array, separator)` - 分割和连接字符串数组
+  - [x] 字符串比较操作符
+    - [x] `==`, `!=` - 相等性比较
+    - [x] `<`, `>`, `<=`, `>=` - 字典序比较
+  - [x] 字符级别方法
+    - [x] `is_digit(index)` - 检查指定位置字符是否为数字
+    - [x] `is_alpha(index)` - 检查指定位置字符是否为字母
+    - [x] `is_whitespace(index)` - 检查指定位置字符是否为空白
 
 - [ ] 错误处理改进
   - [ ] 更好的错误消息

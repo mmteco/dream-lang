@@ -25,17 +25,26 @@
 
 ## 第一阶段：核心数据结构 (P0)
 
-### 1. 字符串增强 ✅ **部分完成**
-**Runtime 已实现** (`runtime/string_ops.c`)：
-- [x] 字符串索引 `s[i]` - 返回字符的 ASCII 码 
-- [x] 字符串切片 `s[start:end]` - 返回子字符串 
-- [x] print(string) 支持 
+### 1. 字符串增强 ✅ **完成**
 
-**待添加语言层绑定**：
-- [ ] `split()`, `join()`, `find()`, `replace()`
-- [ ] `strip()`, `upper()`, `lower()`
-- [ ] `starts_with()`, `ends_with()`
-- [ ] `is_digit()`, `is_alpha()`, `is_whitespace()`
+- [x] 字符串索引 `s[i]` - 返回字符的 ASCII 码
+- [x] 字符串切片 `s[start:end]` - 返回子字符串
+- [x] print(string) 支持
+- [x] `length()` - 字符串长度
+- [x] `find(substr)` - 查找子字符串位置（返回 -1 如果未找到）
+- [x] `replace(old, new)` - 替换所有匹配的子字符串
+- [x] `strip()` - 去除首尾空白字符
+- [x] `upper()` - 转换为大写
+- [x] `lower()` - 转换为小写
+- [x] `starts_with(prefix)` - 检查是否以指定前缀开始
+- [x] `ends_with(suffix)` - 检查是否以指定后缀结束
+- [x] `==`, `!=` - 相等性比较
+- [x] `<`, `>`, `<=`, `>=` - 字典序比较
+- [x] `is_digit(index)` - 检查指定位置字符是否为数字
+- [x] `is_alpha(index)` - 检查指定位置字符是否为字母
+- [x] `is_whitespace(index)` - 检查指定位置字符是否为空白
+- [x] `split(delimiter)` - 分割字符串返回字符串数组
+- [x] `join(array, separator)` - 连接字符串数组
 
 ### 2. 文件 I/O 🔴 **高优先级**
 **Runtime 已实现** (`runtime/file_ops.c`)，需添加语言层绑定：
@@ -346,9 +355,12 @@ match get_value(1):
 2. ✅ ~~元组解包~~ (已完成)
 3. ✅ ~~枚举类型~~ (已完成)
 4. ✅ ~~模式匹配代码生成~~ (已完成)
-5. ✅ ~~字符串索引和切片~~ (已完成) - 还需补充字符串方法
-6. 🔴 **字符串方法** - split, join, find, replace 等
-7. 🔴 **文件 I/O** - Runtime 已有，添加语言绑定
+5. ✅ ~~字符串索引和切片~~ (已完成)
+6. ✅ ~~字符串方法~~ (已完成) - length, find, replace, strip, upper, lower, starts_with, ends_with
+7. ✅ ~~字符串比较操作符~~ (已完成) - ==, !=, <, >, <=, >=
+8. ✅ ~~字符级别方法~~ (已完成) - is_digit, is_alpha, is_whitespace
+9. 🔴 **文件 I/O** - Runtime 已有，添加语言绑定
+10. 🔴 **split/join** - Runtime 已实现，需完善类型系统支持
 
 ### 短期目标（P1）
 8. 结构体

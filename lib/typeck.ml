@@ -175,10 +175,52 @@ let rec infer_expr env = function
         (TyDict (first_kt, first_vt), combined_subst)
 
   | ECall (func, args, pos) ->
-      (* 检查是否是泛型函数调用 *)
+      (* 检查是否是方法调用 (EAttr) *)
       (match func with
+       | EAttr (_obj, attr, _) ->
+           (* 方法调用：先推导对象和属性类型，然后检查参数 *)
+           let (attr_type, attr_subst) = infer_expr env func in
+           let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
+           let combined_subst = List.fold_left compose_subst attr_subst arg_substs in
+           (match apply_subst combined_subst attr_type with
+            | TyFunc (expected_arg_types, ret_type) ->
+                (* 检查参数类型是否匹配 *)
+                if List.length arg_types <> List.length expected_arg_types then begin
+                  let err = make_error (TypeError "Argument count mismatch") pos
+                    (Printf.sprintf "Method '%s' expects %d arguments but got %d"
+                      attr (List.length expected_arg_types) (List.length arg_types)) in
+                  report_error err;
+                  (TyUnknown, combined_subst)
+                end else begin
+                  try
+                    let arg_substs = List.map2 (fun expected actual ->
+                      unify (apply_subst combined_subst expected) (apply_subst combined_subst actual)
+                    ) expected_arg_types arg_types in
+                    let final_subst = List.fold_left compose_subst combined_subst arg_substs in
+                    (apply_subst final_subst ret_type, final_subst)
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) pos
+                      (Printf.sprintf "Method argument type mismatch: %s" msg) in
+                    report_error err;
+                    (TyUnknown, combined_subst)
+                end
+            | TyInt | TyString ->
+                (* 属性访问（非函数），例如 s.length，不需要参数 *)
+                if List.length args = 0 then
+                  (attr_type, combined_subst)
+                else begin
+                  let err = make_error (TypeError "Not a method") pos
+                    (Printf.sprintf "Cannot call attribute '%s' (not a method)" attr) in
+                  report_error err;
+                  (TyUnknown, combined_subst)
+                end
+            | _ ->
+                let err = make_error (TypeError "Invalid method call") pos
+                  "Cannot call this attribute" in
+                report_error err;
+                (TyUnknown, combined_subst))
        | EVar (func_name, _) ->
-           (* 尝试查找函数类型 *)
+           (* 普通函数调用 *)
            let (func_type, func_subst) = infer_expr env func in
            let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
            let combined_subst = List.fold_left compose_subst func_subst arg_substs in
@@ -208,7 +250,7 @@ let rec infer_expr env = function
                 (TyUnknown, combined_subst)
               end)
        | _ ->
-           (* 非直接函数调用 *)
+           (* 其他函数调用 *)
            let (func_type, func_subst) = infer_expr env func in
            let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
            let combined_subst = List.fold_left compose_subst func_subst arg_substs in
@@ -301,12 +343,29 @@ let rec infer_expr env = function
            report_error err;
            (TyUnknown, !combined_subst))
 
-  | EAttr (obj, _attr, pos) ->
-      let (_obj_type, obj_subst) = infer_expr env obj in
-      let err = make_error (TypeError "Attributes not implemented") pos
-        "Attribute access not yet implemented" in
-      report_error err;
-      (TyUnknown, obj_subst)
+  | EAttr (obj, attr, pos) ->
+      let (obj_type, obj_subst) = infer_expr env obj in
+      (match apply_subst obj_subst obj_type with
+       | TyString ->
+           (* 字符串方法 *)
+           (match attr with
+            | "length" -> (TyFunc ([], TyInt), obj_subst)
+            | "upper" | "lower" | "strip" -> (TyFunc ([], TyString), obj_subst)
+            | "find" -> (TyFunc ([TyString], TyInt), obj_subst)
+            | "starts_with" | "ends_with" -> (TyFunc ([TyString], TyBool), obj_subst)
+            | "replace" -> (TyFunc ([TyString; TyString], TyString), obj_subst)
+            | "split" -> (TyFunc ([TyString], TyList TyString), obj_subst)
+            | "is_digit" | "is_alpha" | "is_whitespace" -> (TyFunc ([TyInt], TyBool), obj_subst)
+            | _ ->
+                let err = make_error (TypeError "Unknown string method") pos
+                  (Printf.sprintf "String type has no method '%s'" attr) in
+                report_error err;
+                (TyUnknown, obj_subst))
+       | _ ->
+           let err = make_error (TypeError "Attributes not implemented") pos
+             "Attribute access not yet implemented for this type" in
+           report_error err;
+           (TyUnknown, obj_subst))
 
   | ELambda (params, body, _) ->
       let param_env = List.fold_left

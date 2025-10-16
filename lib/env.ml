@@ -70,6 +70,7 @@ let builtin_env =
   let env = add_binding "dict_keys" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "K"))) env in
   let env = add_binding "dict_values" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "V"))) env in
   let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
+  let env = add_binding "join" (TyFunc ([TyList TyString; TyString], TyString)) env in
   (* 预定义内置枚举类型 *)
   let env = add_binding "Option" (TyEnum ("Option", [])) env in
   let env = add_binding "Result" (TyEnum ("Result", [])) env in
