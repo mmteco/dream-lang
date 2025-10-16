@@ -30,21 +30,6 @@ let rec infer_expr env = function
   | EFloat (_, _) -> (TyFloat, empty_subst)
   | EString (_, _) -> (TyString, empty_subst)
   | EBool (_, _) -> (TyBool, empty_subst)
-  | ENone _ -> (TyNone, empty_subst)
-
-  | ESome (e, _) ->
-      let (t, s) = infer_expr env e in
-      (TyOption t, s)
-
-  | EOk (e, _) ->
-      let (t, s) = infer_expr env e in
-      let err_var = fresh_type_var () in
-      (TyResult (t, err_var), s)
-
-  | EErr (e, _) ->
-      let (t, s) = infer_expr env e in
-      let ok_var = fresh_type_var () in
-      (TyResult (ok_var, t), s)
 
   | EVar (name, pos) ->
       (match find_binding name env with
@@ -370,7 +355,7 @@ let rec infer_expr env = function
             let rec bind_pattern env pat expected_type =
               match pat with
               | PVar name -> add_binding name expected_type env
-              | PInt _ | PFloat _ | PString _ | PBool _ | PNone | PWildcard -> env
+              | PInt _ | PFloat _ | PString _ | PBool _ | PWildcard -> env
               | PTuple pats ->
                   (match expected_type with
                    | TyTuple elem_types when List.length pats = List.length elem_types ->
@@ -378,18 +363,6 @@ let rec infer_expr env = function
                    | _ -> env)
               | PList _ -> env  (* TODO: 实现列表模式 *)
               | PType (_, _) -> env  (* TODO: 实现类型模式 *)
-              | PSome p ->
-                  (match expected_type with
-                   | TyOption t -> bind_pattern env p t
-                   | _ -> env)
-              | POk p ->
-                  (match expected_type with
-                   | TyResult (t, _) -> bind_pattern env p t
-                   | _ -> env)
-              | PErr p ->
-                  (match expected_type with
-                   | TyResult (_, t) -> bind_pattern env p t
-                   | _ -> env)
               | PEnumVariant (_, _, pats) ->
                   (* 枚举模式暂时不检查内部参数类型 *)
                   List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
@@ -626,7 +599,7 @@ let rec check_statement env = function
             let rec bind_pattern env pat expected_type =
               match pat with
               | PVar name -> add_binding name expected_type env
-              | PInt _ | PFloat _ | PString _ | PBool _ | PNone | PWildcard -> env
+              | PInt _ | PFloat _ | PString _ | PBool _ | PWildcard -> env
               | PTuple pats ->
                   (match expected_type with
                    | TyTuple elem_types when List.length pats = List.length elem_types ->
@@ -634,18 +607,6 @@ let rec check_statement env = function
                    | _ -> env)
               | PList _ -> env  (* TODO: 实现列表模式 *)
               | PType (_, _) -> env  (* TODO: 实现类型模式 *)
-              | PSome p ->
-                  (match expected_type with
-                   | TyOption t -> bind_pattern env p t
-                   | _ -> env)
-              | POk p ->
-                  (match expected_type with
-                   | TyResult (t, _) -> bind_pattern env p t
-                   | _ -> env)
-              | PErr p ->
-                  (match expected_type with
-                   | TyResult (_, t) -> bind_pattern env p t
-                   | _ -> env)
               | PEnumVariant (_, _, pats) ->
                   (* 枚举模式暂时不检查内部参数类型 *)
                   List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats

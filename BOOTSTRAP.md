@@ -37,9 +37,9 @@
 - [ ] `file_exists(path)`, `file_append(path, content)`
 - [ ] `file_delete(path)`
 
-### 3. 错误处理
-- [ ] Result 类型 `Result[T, E] = Ok(T) | Err(E)`
-- [ ] Option 类型 `Option[T] = Some(T) | None`
+### 3. 错误处理 ✅ **枚举实现完成** (2025-10)
+- [x] Option 类型 `Option[T] = Some(T) | Nothing` (使用标准枚举)
+- [x] Result 类型 `Result[T, E] = Success(T) | Failure(E)` (使用标准枚举)
 - [ ] 错误传播语法 `?`
 
 ### 4. 字典类型 ✅ **完全泛型化完成**

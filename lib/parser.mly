@@ -3,11 +3,11 @@
 
   let get_expr_pos = function
     | EInt (_, p) | EFloat (_, p) | EString (_, p) | EBool (_, p)
-    | ENone p | EVar (_, p) | EBinOp (_, _, _, p) | EUnOp (_, _, p)
+    | EVar (_, p) | EBinOp (_, _, _, p) | EUnOp (_, _, p)
     | ECall (_, _, p) | EList (_, p) | EDict (_, p) | ETuple (_, p)
     | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
     | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p)
-    | ESome (_, p) | EOk (_, p) | EErr (_, p) | EEnumVariant (_, _, _, p) -> p
+    | EEnumVariant (_, _, _, p) -> p
 %}
 
 %token <int> INT
@@ -17,7 +17,8 @@
 %token <string> IDENT
 %token LET DEF CLASS INTERFACE IMPLEMENTS ENUM
 %token IF ELSE ELIF MATCH CASE FOR WHILE RETURN
-%token IMPORT FROM AS ASYNC AWAIT NONE SOME OK ERR SELF SUPER IN
+%token IMPORT FROM AS ASYNC AWAIT SELF SUPER IN
+%token SOME NONE OK ERR OPTION RESULT
 %token PLUS MINUS TIMES DIV MOD
 %token EQ NEQ LT GT LTE GTE
 %token AND OR NOT
@@ -113,13 +114,13 @@ else_opt:
 
 case_list:
   | { [] }
-  | CASE p = pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
+  | CASE p = match_pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
       { (p, Some guard, body) :: rest }
-  | CASE p = pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
+  | CASE p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
       { (p, None, body) :: rest }
-  | p = pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
+  | p = match_pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
       { (p, Some guard, body) :: rest }
-  | p = pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
+  | p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
       { (p, None, body) :: rest }
 
 class_member_list:
@@ -148,10 +149,19 @@ enum_variant_list:
   | { [] }
   | v = enum_variant NEWLINE* vs = enum_variant_list { v :: vs }
 
+variant_name:
+  | name = IDENT { name }
+  | SOME { "Some" }
+  | NONE { "None" }
+  | OK { "Ok" }
+  | ERR { "Err" }
+  | OPTION { "Option" }
+  | RESULT { "Result" }
+
 enum_variant:
-  | name = IDENT
+  | name = variant_name
       { VSimple (name, { line = 0; column = 0 }) }
-  | name = IDENT LPAREN types = separated_list(COMMA, type_expr) RPAREN
+  | name = variant_name LPAREN types = separated_list(COMMA, type_expr) RPAREN
       { VTuple (name, types, { line = 0; column = 0 }) }
 
 param:
@@ -163,19 +173,62 @@ pattern:
   | f = FLOAT { PFloat f }
   | s = STRING { PString s }
   | b = BOOL { PBool b }
-  | NONE { PNone }
   | UNDERSCORE { PWildcard }
-  | name = IDENT { PVar name }
-  | LPAREN patterns = separated_list(COMMA, pattern) RPAREN { PTuple patterns }
+  | LPAREN patterns = separated_list(COMMA, pattern) RPAREN
+      { match patterns with
+        | [p] -> p  (* 单个模式，不是元组 *)
+        | _ -> PTuple patterns
+      }
   | LBRACKET patterns = separated_list(COMMA, pattern) RBRACKET { PList patterns }
-  | name = IDENT COLON ty = type_expr { PType (name, ty) }
-  | SOME LPAREN p = pattern RPAREN { PSome p }
-  | OK LPAREN p = pattern RPAREN { POk p }
-  | ERR LPAREN p = pattern RPAREN { PErr p }
   | enum_name = IDENT DOT variant_name = IDENT LPAREN patterns = separated_list(COMMA, pattern) RPAREN
       { PEnumVariant (enum_name, variant_name, patterns) }
   | enum_name = IDENT DOT variant_name = IDENT
       { PEnumVariant (enum_name, variant_name, []) }
+  | variant_name = IDENT LPAREN patterns = separated_list(COMMA, pattern) RPAREN
+      { PEnumVariant ("", variant_name, patterns) }
+  | name = IDENT COLON ty = type_expr { PType (name, ty) }
+  | name = IDENT
+      { (* None 单独出现时作为枚举变体，其他作为变量 *)
+        if name = "None" then PEnumVariant ("", "None", [])
+        else PVar name
+      }
+
+match_pattern:
+  | n = INT { PInt n }
+  | f = FLOAT { PFloat f }
+  | s = STRING { PString s }
+  | b = BOOL { PBool b }
+  | UNDERSCORE { PWildcard }
+  | LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { match patterns with
+        | [p] -> p
+        | _ -> PTuple patterns
+      }
+  | LBRACKET patterns = separated_list(COMMA, match_pattern) RBRACKET { PList patterns }
+  | OPTION DOT SOME LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant ("Option", "Some", patterns) }
+  | OPTION DOT NONE
+      { PEnumVariant ("Option", "None", []) }
+  | RESULT DOT OK LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant ("Result", "Ok", patterns) }
+  | RESULT DOT ERR LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant ("Result", "Err", patterns) }
+  | enum_name = IDENT DOT variant_name = IDENT LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant (enum_name, variant_name, patterns) }
+  | enum_name = IDENT DOT variant_name = IDENT
+      { PEnumVariant (enum_name, variant_name, []) }
+  | SOME LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant ("Option", "Some", patterns) }
+  | NONE
+      { PEnumVariant ("Option", "None", []) }
+  | OK LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant ("Result", "Ok", patterns) }
+  | ERR LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant ("Result", "Err", patterns) }
+  | variant_name = IDENT LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
+      { PEnumVariant ("", variant_name, patterns) }
+  | name = IDENT
+      { PVar name }
 
 for_pattern:
   | name = IDENT { PVar name }
@@ -212,7 +265,6 @@ expr:
   | f = FLOAT { EFloat (f, { line = 0; column = 0 }) }
   | s = STRING { EString (s, { line = 0; column = 0 }) }
   | b = BOOL { EBool (b, { line = 0; column = 0 }) }
-  | NONE { ENone { line = 0; column = 0 } }
   | name = IDENT { EVar (name, { line = 0; column = 0 }) }
   | e1 = expr PLUS e2 = expr { EBinOp (e1, Add, e2, { line = 0; column = 0 }) }
   | e1 = expr MINUS e2 = expr { EBinOp (e1, Sub, e2, { line = 0; column = 0 }) }
@@ -253,12 +305,22 @@ expr:
       { EListComp (elem, var, iter, None, { line = 0; column = 0 }) }
   | LBRACKET elem = expr FOR var = IDENT IN iter = expr IF cond = expr RBRACKET
       { EListComp (elem, var, iter, Some cond, { line = 0; column = 0 }) }
-  | SOME LPAREN e = expr RPAREN
-      { ESome (e, { line = 0; column = 0 }) }
-  | OK LPAREN e = expr RPAREN
-      { EOk (e, { line = 0; column = 0 }) }
-  | ERR LPAREN e = expr RPAREN
-      { EErr (e, { line = 0; column = 0 }) }
+  | OPTION DOT SOME LPAREN args = separated_list(COMMA, expr) RPAREN
+      { EEnumVariant ("Option", "Some", args, { line = 0; column = 0 }) }
+  | OPTION DOT NONE
+      { EEnumVariant ("Option", "None", [], { line = 0; column = 0 }) }
+  | RESULT DOT OK LPAREN args = separated_list(COMMA, expr) RPAREN
+      { EEnumVariant ("Result", "Ok", args, { line = 0; column = 0 }) }
+  | RESULT DOT ERR LPAREN args = separated_list(COMMA, expr) RPAREN
+      { EEnumVariant ("Result", "Err", args, { line = 0; column = 0 }) }
+  | SOME LPAREN args = separated_list(COMMA, expr) RPAREN
+      { EEnumVariant ("Option", "Some", args, { line = 0; column = 0 }) }
+  | NONE
+      { EEnumVariant ("Option", "None", [], { line = 0; column = 0 }) }
+  | OK LPAREN args = separated_list(COMMA, expr) RPAREN
+      { EEnumVariant ("Result", "Ok", args, { line = 0; column = 0 }) }
+  | ERR LPAREN args = separated_list(COMMA, expr) RPAREN
+      { EEnumVariant ("Result", "Err", args, { line = 0; column = 0 }) }
   | enum_name = IDENT DOT variant_name = IDENT LPAREN args = separated_list(COMMA, expr) RPAREN
       { EEnumVariant (enum_name, variant_name, args, { line = 0; column = 0 }) }
   | enum_name = IDENT DOT variant_name = IDENT

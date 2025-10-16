@@ -1255,21 +1255,6 @@ let rec gen_expr buf ctx = function
         result (llvm_type_to_string then_t) then_v then_label else_v else_label;
       (result, then_t)
 
-  | ESome (e, _) ->
-      let (v, t) = gen_expr buf ctx e in
-      Buffer.add_string buf "  ; Some(value) - 暂时直接返回内部值\n";
-      (v, t)
-
-  | EOk (e, _) ->
-      let (v, t) = gen_expr buf ctx e in
-      Buffer.add_string buf "  ; Ok(value) - 暂时直接返回内部值\n";
-      (v, t)
-
-  | EErr (e, _) ->
-      let (v, t) = gen_expr buf ctx e in
-      Buffer.add_string buf "  ; Err(value) - 暂时直接返回内部值\n";
-      (v, t)
-
   | EEnumVariant (enum_name, variant_name, args, _) ->
       (* 查找枚举定义 *)
       (match Hashtbl.find_opt enum_registry enum_name with

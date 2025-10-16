@@ -39,11 +39,6 @@
         ("as", AS);
         ("async", ASYNC);
         ("await", AWAIT);
-        ("None", NONE);
-        ("none", NONE);
-        ("Some", SOME);
-        ("Ok", OK);
-        ("Err", ERR);
         ("True", BOOL true);
         ("true", BOOL true);
         ("False", BOOL false);
@@ -54,6 +49,12 @@
         ("self", SELF);
         ("super", SUPER);
         ("in", IN);
+        ("Some", SOME);
+        ("None", NONE);
+        ("Ok", OK);
+        ("Err", ERR);
+        ("Option", OPTION);
+        ("Result", RESULT);
       ]
 }
 

@@ -28,13 +28,15 @@ type token =
   | AS
   | ASYNC
   | AWAIT
-  | NONE
-  | SOME
-  | OK
-  | ERR
   | SELF
   | SUPER
   | IN
+  | SOME
+  | NONE
+  | OK
+  | ERR
+  | OPTION
+  | RESULT
   | PLUS
   | MINUS
   | TIMES
@@ -109,7 +111,6 @@ type expr =
   | EFloat of float * position
   | EString of string * position
   | EBool of bool * position
-  | ENone of position
   | EVar of string * position
   | EBinOp of expr * binop * expr * position
   | EUnOp of unop * expr * position
@@ -124,9 +125,6 @@ type expr =
   | EIf of expr * expr * expr option * position
   | EMatch of expr * (pattern * expr option * expr) list * position  (* pattern * guard * body *)
   | EListComp of expr * string * expr * expr option * position
-  | ESome of expr * position
-  | EOk of expr * position
-  | EErr of expr * position
   | EEnumVariant of string * string * expr list * position
 
 and pattern =
@@ -134,15 +132,11 @@ and pattern =
   | PFloat of float
   | PString of string
   | PBool of bool
-  | PNone
   | PVar of string
   | PTuple of pattern list
   | PList of pattern list
   | PType of string * type_expr
   | PWildcard
-  | PSome of pattern
-  | POk of pattern
-  | PErr of pattern
   | PEnumVariant of string * string * pattern list
 
 type statement =

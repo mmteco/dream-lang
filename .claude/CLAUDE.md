@@ -9,3 +9,4 @@
     2. 同步更新 TODO.md,BOOTSTRAP.md,SPEC.md
     3. 清理 examples 目录无用文件，尽量合并保留下来的ml文件
 6. 不要管 token 限制，以完成任务为首要目标
+7. 每次执行文件操作的时候，记得先使用pwd确认当前位置

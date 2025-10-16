@@ -31,13 +31,27 @@ let compile_to_llvm input_file =
   let lexbuf = Lexing.from_string source in
   let ast = Parser.program next_token lexbuf in
 
-  Typeck.typecheck ast;
+  (* 在用户代码前插入内置枚举定义 *)
+  (* 暂时使用 int 类型，避免泛型复杂性 *)
+  let builtin_enums = [
+    Ast.SEnum ("Option", [], [
+      Ast.VTuple ("Some", [Ast.TInt], {line = 0; column = 0});
+      Ast.VSimple ("None", {line = 0; column = 0})
+    ], {line = 0; column = 0});
+    Ast.SEnum ("Result", [], [
+      Ast.VTuple ("Ok", [Ast.TInt], {line = 0; column = 0});
+      Ast.VTuple ("Err", [Ast.TInt], {line = 0; column = 0})
+    ], {line = 0; column = 0})
+  ] in
+  let full_ast = builtin_enums @ ast in
+
+  Typeck.typecheck full_ast;
 
   (* 获取收集到的泛型实例 *)
   let generic_instances = Typeck.get_generic_instances () in
 
   (* 执行单态化 *)
-  let mono_ast = Monomorphize.monomorphize ast generic_instances in
+  let mono_ast = Monomorphize.monomorphize full_ast generic_instances in
 
   let llvm_ir = Llvmgen.gen_program mono_ast in
 

@@ -17,11 +17,13 @@ Dream 是一门面向 AI 应用开发的现代编译型语言，结合了 Python
 let def class interface implements enum
 if else elif match case for while return
 import from as async await
-True False None Some Ok Err
+True False None
 true false none  # 小写形式（2025-10新增）
 self super in
 and or not
 ```
+
+注意：`Some`、`Ok`、`Err` 不再是关键字（2025-10），现在通过标准枚举实现 Option 和 Result 类型。
 
 ### 标识符
 - 以字母或下划线开头
@@ -304,6 +306,66 @@ let str = first(["a", "b"])     # T = string, 返回 "a"
 - 编译时为每个具体类型生成专门的函数版本
 - 零运行时开销
 - 与 Rust/C++ 类似
+
+#### Option 和 Result 枚举类型 ✅ (2025-10完成)
+
+Option 和 Result 现在通过标准枚举类型实现，不再是内置关键字：
+
+```python
+# Option 类型 - 表示可能有值或没有值
+enum Option:
+    Some(int)   # 包含一个值
+    Nothing     # 没有值（避免与 None 关键字冲突）
+
+let some_value = Option.Some(42)
+let no_value = Option.Nothing
+
+match some_value:
+    Option.Some(x):
+        print(x)        # 输出 42
+    Option.Nothing:
+        print(-1)
+
+# 带守卫条件的 Option 匹配
+match some_value:
+    Option.Some(x) if x > 10:
+        print(100)      # x > 10 时执行
+    Option.Some(x):
+        print(10)       # 其他有值情况
+    Option.Nothing:
+        print(0)
+
+# Result 类型 - 表示操作结果（成功或失败）
+enum Result:
+    Success(int)  # 成功，包含结果值
+    Failure(int)  # 失败，包含错误码
+
+let success_result = Result.Success(42)
+let failure_result = Result.Failure(404)
+
+match success_result:
+    Result.Success(value):
+        print(value)    # 输出 42
+    Result.Failure(error):
+        print(error)
+
+# 带守卫条件的 Result 匹配
+match failure_result:
+    Result.Success(code) if code == 200:
+        print(1)
+    Result.Success(code):
+        print(2)
+    Result.Failure(code) if code >= 500:
+        print(3)        # code >= 500 时执行
+    Result.Failure(code):
+        print(4)
+```
+
+**特性**：
+- Option 和 Result 是普通枚举类型，没有特殊对待
+- 完全支持模式匹配和守卫条件
+- 可以定义自己的类似类型（如 `Maybe`、`Either` 等）
+- 与 Rust 的 Option/Result 类似，但通过通用枚举机制实现
 
 #### Match 表达式 ✅ (2025-10基础完成)
 

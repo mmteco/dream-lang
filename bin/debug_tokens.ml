@@ -45,10 +45,6 @@ let tok_to_string = function
   | Parser.AND -> "AND"
   | Parser.OR -> "OR"
   | Parser.NOT -> "NOT"
-  | Parser.NONE -> "NONE"
-  | Parser.SOME -> "SOME"
-  | Parser.OK -> "OK"
-  | Parser.ERR -> "ERR"
   | Parser.COMMA -> "COMMA"
   | Parser.DOT -> "DOT"
   | Parser.ARROW -> "ARROW"
@@ -64,6 +60,12 @@ let tok_to_string = function
   | Parser.SUPER -> "SUPER"
   | Parser.SEMICOLON -> "SEMICOLON"
   | Parser.UNDERSCORE -> "UNDERSCORE"
+  | Parser.SOME -> "SOME"
+  | Parser.NONE -> "NONE"
+  | Parser.OK -> "OK"
+  | Parser.ERR -> "ERR"
+  | Parser.OPTION -> "OPTION"
+  | Parser.RESULT -> "RESULT"
 
 let () =
   if Array.length Sys.argv < 2 then begin
