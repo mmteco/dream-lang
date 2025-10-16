@@ -81,7 +81,7 @@ let compile_to_llvm ?(silent=false) input_file =
 
   (* 设置当前文件路径，用于类型检查中判断是否为标准库 *)
   Typeck.set_current_file input_file;
-  Typeck.typecheck full_ast;
+  let transformed_ast = Typeck.typecheck full_ast in
 
   (* 打印错误和警告摘要 *)
   Error.print_summary ();
@@ -95,7 +95,7 @@ let compile_to_llvm ?(silent=false) input_file =
   let generic_instances = Typeck.get_generic_instances () in
 
   (* 执行单态化 *)
-  let mono_ast = Monomorphize.monomorphize full_ast generic_instances in
+  let mono_ast = Monomorphize.monomorphize transformed_ast generic_instances in
 
   let llvm_ir = Llvmgen.gen_program mono_ast in
 

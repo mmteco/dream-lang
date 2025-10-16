@@ -14,6 +14,7 @@ let gen_function buf ctx name params ret_ty body =
   label_counter := 0;
 
   ctx.variables <- [];
+  ctx.var_renames <- [];
 
   let ret_type = match ret_ty with
     | Some t -> type_expr_to_llvm_type t
@@ -24,7 +25,7 @@ let gen_function buf ctx name params ret_ty body =
   ctx.function_type <- Some ret_type;
 
   (* 收集参数类型并存储到 context *)
-  let param_types = List.map (fun (_, pty) ->
+  let param_types = List.map (fun (_, pty, _) ->
     match pty with
     | Some t -> type_expr_to_llvm_type t
     | None -> I32
@@ -39,7 +40,7 @@ let gen_function buf ctx name params ret_ty body =
 
   Printf.bprintf buf "\ndefine %s %s(" ret_type_str (mangle_name name);
 
-  List.iteri (fun i (pname, pty) ->
+  List.iteri (fun i (pname, pty, _) ->
     if i > 0 then Buffer.add_string buf ", ";
     let param_type = match pty with
       | Some t -> type_expr_to_llvm_type t
@@ -57,7 +58,7 @@ let gen_function buf ctx name params ret_ty body =
   Buffer.add_string buf ") {\n";
   Buffer.add_string buf "entry:\n";
 
-  List.iter (fun (pname, pty) ->
+  List.iter (fun (pname, pty, _) ->
     let param_type = match pty with
       | Some t -> type_expr_to_llvm_type t
       | None -> I32
@@ -109,6 +110,9 @@ let gen_function buf ctx name params ret_ty body =
     | UnionPtr ->
         (* Union 返回类型默认返回 null *)
         Buffer.add_string buf "  ret %union_t* null\n"
+    | EnumPtr ->
+        (* Enum 返回类型默认返回 null *)
+        Buffer.add_string buf "  ret %enum_t* null\n"
     | _ ->
         Printf.bprintf buf "  ret %s 0\n" (llvm_type_to_string ret_type));
 
@@ -264,16 +268,50 @@ let gen_program program =
   let ctx = create_context () in
   let code_buf = create 8192 in
 
-  (* 扫描所有函数定义并注册它们的签名 *)
+  (* 注册内置枚举类型 Result *)
+  let result_enum_def = {
+    enum_name = "Result";
+    variants = [
+      { variant_name = "Ok"; tag = 0; has_data = true };
+      { variant_name = "Err"; tag = 1; has_data = true }
+    ]
+  } in
+  Hashtbl.replace enum_registry "Result" result_enum_def;
+
+  (* 处理导入语句，加载导入模块的函数 *)
+  let imported_modules = ref [] in
   List.iter (function
-    | SDef def_info ->
-        let ret_type = match def_info.def_return_type with
-          | Some t -> type_expr_to_llvm_type t
-          | None -> I32
-        in
-        ctx.function_signatures <- (def_info.def_name, ret_type) :: ctx.function_signatures
+    | SImport (module_path, _alias, _) ->
+        (match Module_loader.load_module module_path with
+         | Ok (_path, ast) -> imported_modules := ast :: !imported_modules
+         | Error _ -> ())
+    | SFromImport (module_name, _selections, _) ->
+        (match Module_loader.load_module [module_name] with
+         | Ok (_path, ast) -> imported_modules := ast :: !imported_modules
+         | Error _ -> ())
     | _ -> ()
   ) program;
+
+  (* 扫描所有函数定义并注册它们的签名（包括导入的） *)
+  let all_programs = program :: !imported_modules in
+  List.iter (fun prog ->
+    List.iter (function
+      | SDef def_info ->
+          let ret_type = match def_info.def_return_type with
+            | Some t -> type_expr_to_llvm_type t
+            | None -> I32
+          in
+          ctx.function_signatures <- (def_info.def_name, ret_type) :: ctx.function_signatures;
+          (* 同时注册参数类型 *)
+          let param_types = List.map (fun (_, pty, _) ->
+            match pty with
+            | Some t -> type_expr_to_llvm_type t
+            | None -> I32
+          ) def_info.def_params in
+          ctx.function_param_types <- (def_info.def_name, param_types) :: ctx.function_param_types
+      | _ -> ()
+    ) prog
+  ) all_programs;
 
   let has_main = List.exists (function
     | SDef def_info -> def_info.def_name = "main"
@@ -314,13 +352,15 @@ let gen_program program =
       | _ -> ()
     ) program;
 
-    (* 生成所有函数定义 *)
-    List.iter (function
-      | SDef def_info ->
-          gen_function code_buf ctx def_info.def_name def_info.def_params
-            def_info.def_return_type def_info.def_body
-      | _ -> ()
-    ) program;
+    (* 生成所有函数定义（包括导入的） *)
+    List.iter (fun prog ->
+      List.iter (function
+        | SDef def_info ->
+            gen_function code_buf ctx def_info.def_name def_info.def_params
+              def_info.def_return_type def_info.def_body
+        | _ -> ()
+      ) prog
+    ) all_programs;
 
     (* 生成所有结构体方法 *)
     List.iter (function
@@ -333,11 +373,11 @@ let gen_program program =
                 let mangled_name = Printf.sprintf "%s_%s" struct_name method_name in
                 (* 如果第一个参数是 self,给它加上结构体类型标注并记录到 context *)
                 let params_with_types = match params with
-                  | (pname, None) :: rest when pname = "self" ->
+                  | (pname, None, def) :: rest when pname = "self" ->
                       (* 记录 self 的结构体类型 *)
                       ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
-                      (pname, Some (TStruct (struct_name, []))) :: rest
-                  | (pname, Some _) :: _ when pname = "self" ->
+                      (pname, Some (TStruct (struct_name, [])), def) :: rest
+                  | (pname, Some _, _) :: _ when pname = "self" ->
                       (* 记录 self 的结构体类型 *)
                       ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
                       params  (* 如果已经有类型标注,保留 *)
@@ -410,13 +450,15 @@ let gen_program program =
       | _ -> ()
     ) program;
 
-    (* 生成所有函数定义 *)
-    List.iter (function
-      | SDef def_info ->
-          gen_function code_buf ctx def_info.def_name def_info.def_params
-            def_info.def_return_type def_info.def_body
-      | _ -> ()
-    ) program;
+    (* 生成所有函数定义（包括导入的） *)
+    List.iter (fun prog ->
+      List.iter (function
+        | SDef def_info ->
+            gen_function code_buf ctx def_info.def_name def_info.def_params
+              def_info.def_return_type def_info.def_body
+        | _ -> ()
+      ) prog
+    ) all_programs;
 
     (* 生成所有结构体方法 *)
     List.iter (function
@@ -429,11 +471,11 @@ let gen_program program =
                 let mangled_name = Printf.sprintf "%s_%s" struct_name method_name in
                 (* 如果第一个参数是 self,给它加上结构体类型标注并记录到 context *)
                 let params_with_types = match params with
-                  | (pname, None) :: rest when pname = "self" ->
+                  | (pname, None, def) :: rest when pname = "self" ->
                       (* 记录 self 的结构体类型 *)
                       ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
-                      (pname, Some (TStruct (struct_name, []))) :: rest
-                  | (pname, Some _) :: _ when pname = "self" ->
+                      (pname, Some (TStruct (struct_name, [])), def) :: rest
+                  | (pname, Some _, _) :: _ when pname = "self" ->
                       (* 记录 self 的结构体类型 *)
                       ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
                       params  (* 如果已经有类型标注,保留 *)
@@ -472,6 +514,10 @@ let gen_program program =
                ())
       | _ -> ()
     ) program;
+
+    (* 清理 context 为 main 函数准备 *)
+    ctx.variables <- [];
+    ctx.var_renames <- [];
 
     Buffer.add_string code_buf "\ndefine i32 @main() {\nentry:\n";
     List.iter (function

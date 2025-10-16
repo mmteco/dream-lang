@@ -1781,6 +1781,12 @@ let rec gen_expr buf ctx = function
       (* 生成被匹配的值 *)
       let (scrut_v, scrut_t) = gen_expr buf ctx scrut in
 
+      (* 提取被匹配的变量名（如果 scrut 是变量） *)
+      let scrut_var_name = match scrut with
+        | EVar (name, _) -> Some name
+        | _ -> None
+      in
+
       (* 创建基本块标签 *)
       let case_labels = List.mapi (fun i _ ->
         (fresh_label ("match.case" ^ string_of_int i),
@@ -1827,9 +1833,10 @@ let rec gen_expr buf ctx = function
          | Some guard_expr ->
              Printf.bprintf buf "\n%s:\n" guard_label;
 
-             (* 保存当前变量表并绑定模式变量 *)
+             (* 保存当前变量表和重命名表并绑定模式变量 *)
              let saved_vars = ctx.variables in
-             gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+             let saved_renames = ctx.var_renames in
+             gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name;
 
              (* 生成守卫条件表达式 *)
              let (guard_v, _guard_t) = gen_expr buf ctx guard_expr in
@@ -1838,17 +1845,19 @@ let rec gen_expr buf ctx = function
              Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n"
                guard_v body_label next_label;
 
-             (* 恢复变量表（准备进入body或下一个case） *)
-             ctx.variables <- saved_vars
+             (* 恢复变量表和重命名表（准备进入body或下一个case） *)
+             ctx.variables <- saved_vars;
+             ctx.var_renames <- saved_renames
          | None -> ());
 
         Printf.bprintf buf "\n%s:\n" body_label;
 
-        (* 保存当前变量表 *)
+        (* 保存当前变量表和重命名表 *)
         let saved_vars = ctx.variables in
+        let saved_renames = ctx.var_renames in
 
         (* 绑定模式变量 *)
-        gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+        gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name;
 
         (* 生成body表达式 *)
         let (body_v, _body_t) = gen_expr buf ctx body_expr in
@@ -1856,8 +1865,9 @@ let rec gen_expr buf ctx = function
 
         Printf.bprintf buf "  br label %%%s\n" end_label;
 
-        (* 恢复变量表 *)
-        ctx.variables <- saved_vars
+        (* 恢复变量表和重命名表 *)
+        ctx.variables <- saved_vars;
+        ctx.var_renames <- saved_renames
       ) (List.combine cases case_labels);
 
       (* 默认分支（不应该到达，但为了安全） *)
@@ -2251,7 +2261,7 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
       "0"
 
 (* 生成模式变量绑定 *)
-and gen_pattern_bindings buf ctx pat scrut_v scrut_t =
+and gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name_opt =
   match pat with
   | PVar name ->
       (* 注意：这里不拆箱，保持 union_t* 类型 *)
@@ -2339,6 +2349,11 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t =
            Buffer.add_string buf "  ; ERROR: Expected enum type for enum pattern binding\n")
   | PType (var_name, type_expr) ->
       (* 类型模式：从 Union 中拆箱并绑定变量 *)
+      (* 如果匹配的是一个变量，使用原变量名；否则使用模式中的变量名 *)
+      let bind_name = match scrut_var_name_opt with
+        | Some scrut_var -> scrut_var
+        | None -> var_name
+      in
       (match scrut_t with
        | UnionPtr ->
            (* Union 类型：根据 type_expr 拆箱对应的值 *)
@@ -2347,37 +2362,50 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t =
             | I32 ->
                 let unboxed_val = fresh_temp () in
                 Printf.bprintf buf "  %s = call i32 @union_get_int(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local = "%" ^ var_name in
-                Printf.bprintf buf "  %s = alloca i32\n" local;
-                Printf.bprintf buf "  store i32 %s, i32* %s\n" unboxed_val local;
-                add_variable ctx var_name I32
+                (* 使用新的临时变量名避免冲突 *)
+                let local_temp = fresh_temp () in
+                Printf.bprintf buf "  %s = alloca i32\n" local_temp;
+                Printf.bprintf buf "  store i32 %s, i32* %s\n" unboxed_val local_temp;
+                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
+                                 then String.sub local_temp 1 (String.length local_temp - 1)
+                                 else local_temp in
+                add_variable_with_rename ctx bind_name local_name I32
             | I64 ->
                 (* 浮点数拆箱 *)
                 let unboxed_val = fresh_temp () in
                 Printf.bprintf buf "  %s = call double @union_get_float(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local = "%" ^ var_name in
-                Printf.bprintf buf "  %s = alloca double\n" local;
-                Printf.bprintf buf "  store double %s, double* %s\n" unboxed_val local;
-                add_variable ctx var_name I64
+                let local_temp = fresh_temp () in
+                Printf.bprintf buf "  %s = alloca double\n" local_temp;
+                Printf.bprintf buf "  store double %s, double* %s\n" unboxed_val local_temp;
+                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
+                                 then String.sub local_temp 1 (String.length local_temp - 1)
+                                 else local_temp in
+                add_variable_with_rename ctx bind_name local_name I64
             | Ptr I32 ->
                 (* 字符串拆箱 *)
                 let unboxed_val = fresh_temp () in
                 Printf.bprintf buf "  %s = call i8* @union_get_string(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local = "%" ^ var_name in
-                Printf.bprintf buf "  %s = alloca i8*\n" local;
-                Printf.bprintf buf "  store i8* %s, i8** %s\n" unboxed_val local;
-                add_variable ctx var_name (Ptr I32)
+                let local_temp = fresh_temp () in
+                Printf.bprintf buf "  %s = alloca i8*\n" local_temp;
+                Printf.bprintf buf "  store i8* %s, i8** %s\n" unboxed_val local_temp;
+                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
+                                 then String.sub local_temp 1 (String.length local_temp - 1)
+                                 else local_temp in
+                add_variable_with_rename ctx bind_name local_name (Ptr I32)
             | DynArrayPtr ->
                 (* bytes 类型需要从 union 中获取 *)
                 Buffer.add_string buf "  ; TODO: union_get_bytes not implemented yet\n";
-                add_variable ctx var_name DynArrayPtr
+                add_variable ctx bind_name DynArrayPtr
             | I1 ->
                 let unboxed_val = fresh_temp () in
                 Printf.bprintf buf "  %s = call i1 @union_get_bool(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local = "%" ^ var_name in
-                Printf.bprintf buf "  %s = alloca i1\n" local;
-                Printf.bprintf buf "  store i1 %s, i1* %s\n" unboxed_val local;
-                add_variable ctx var_name I1
+                let local_temp = fresh_temp () in
+                Printf.bprintf buf "  %s = alloca i1\n" local_temp;
+                Printf.bprintf buf "  store i1 %s, i1* %s\n" unboxed_val local_temp;
+                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
+                                 then String.sub local_temp 1 (String.length local_temp - 1)
+                                 else local_temp in
+                add_variable_with_rename ctx bind_name local_name I1
             | _ ->
                 Buffer.add_string buf "  ; ERROR: Unsupported type in type pattern binding\n")
        | _ ->

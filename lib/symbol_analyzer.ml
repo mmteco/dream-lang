@@ -280,7 +280,7 @@ let rec analyze_stmt ctx stmt : symbol_def list =
       (* 进入函数作用域 *)
       enter_scope ctx;
       (* 添加参数，记录 ID *)
-      let param_ids = List.map (fun (param_name, _) ->
+      let param_ids = List.map (fun (param_name, _, _) ->
         add_definition ctx param_name Parameter
           {line = def_info.def_name_pos.line + 1; column = 4}
       ) def_info.def_params in
@@ -320,7 +320,7 @@ let rec analyze_stmt ctx stmt : symbol_def list =
             let method_id = add_definition ctx method_name Method method_pos in
             enter_scope ctx;
             (* 添加参数，记录 ID *)
-            let param_ids = List.map (fun (param_name, _) ->
+            let param_ids = List.map (fun (param_name, _, _) ->
               add_definition ctx param_name Parameter
                 {line = method_pos.line; column = 0}
             ) params in

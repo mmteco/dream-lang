@@ -198,13 +198,28 @@ let rec gen_statement buf ctx = function
 
       Printf.bprintf buf "\n%s:\n" then_label;
       List.iter (gen_statement buf ctx) then_body;
-      Printf.bprintf buf "  br label %%%s\n" end_label;
+      (* 检查 then 分支是否有 return *)
+      let then_has_return = match List.rev then_body with
+        | SReturn _ :: _ -> true
+        | _ -> false
+      in
+      if not then_has_return then
+        Printf.bprintf buf "  br label %%%s\n" end_label;
 
       Printf.bprintf buf "\n%s:\n" else_label;
       List.iter (gen_statement buf ctx) else_body;
-      Printf.bprintf buf "  br label %%%s\n" end_label;
+      (* 检查 else 分支是否有 return *)
+      let else_has_return = match List.rev else_body with
+        | SReturn _ :: _ -> true
+        | _ -> false
+      in
+      if not else_has_return then
+        Printf.bprintf buf "  br label %%%s\n" end_label;
 
-      Printf.bprintf buf "\n%s:\n" end_label
+      Printf.bprintf buf "\n%s:\n" end_label;
+      (* 如果两个分支都有 return,end 块不可达 *)
+      if then_has_return && else_has_return then
+        Printf.bprintf buf "  unreachable\n"
 
   | SWhile (cond, body, _) ->
       let loop_label = fresh_label "while.loop" in
@@ -449,6 +464,12 @@ let rec gen_statement buf ctx = function
       (* 生成被匹配的值 *)
       let (scrut_v, scrut_t) = gen_expr buf ctx scrut in
 
+      (* 提取被匹配的变量名（如果 scrut 是变量） *)
+      let scrut_var_name = match scrut with
+        | EVar (name, _) -> Some name
+        | _ -> None
+      in
+
       (* 创建基本块标签 *)
       let case_labels = List.mapi (fun i _ ->
         (fresh_label ("match.case" ^ string_of_int i),
@@ -493,7 +514,7 @@ let rec gen_statement buf ctx = function
 
              (* 保存当前变量表并绑定模式变量 *)
              let saved_vars = ctx.variables in
-             gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+             gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name;
 
              (* 生成守卫条件表达式 *)
              let (guard_v, _guard_t) = gen_expr buf ctx guard_expr in
@@ -512,7 +533,7 @@ let rec gen_statement buf ctx = function
         let saved_vars = ctx.variables in
 
         (* 绑定模式变量 *)
-        gen_pattern_bindings buf ctx pat scrut_v scrut_t;
+        gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name;
 
         (* 生成body语句 *)
         List.iter (gen_statement buf ctx) body_stmts;
@@ -627,6 +648,10 @@ let rec gen_statement buf ctx = function
                           Printf.bprintf buf "  store i32 %s, i32* %s\n" value_val field_ptr)))
        | _ ->
            Printf.bprintf buf "  ; ERROR: Field assignment on non-struct type\n")
+
+  | SImport _ | SFromImport _ ->
+      (* 导入语句在代码生成时不产生任何运行时代码 *)
+      ()
 
   | _ ->
       Buffer.add_string buf "  ; unsupported statement\n"

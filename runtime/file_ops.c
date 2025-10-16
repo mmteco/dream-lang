@@ -30,14 +30,14 @@ char* __c_file_read(const char* path) {
 int __c_file_write(const char* path, const char* content) {
     FILE* file = fopen(path, "w");
     if (file == NULL) {
-        return 0;
+        return -1;
     }
 
     size_t len = strlen(content);
     size_t written = fwrite(content, 1, len, file);
 
     fclose(file);
-    return written == len ? 1 : 0;
+    return (int)written;
 }
 
 int __c_file_exists(const char* path) {
@@ -52,14 +52,14 @@ int __c_file_exists(const char* path) {
 int __c_file_append(const char* path, const char* content) {
     FILE* file = fopen(path, "a");
     if (file == NULL) {
-        return 0;
+        return -1;
     }
 
     size_t len = strlen(content);
     size_t written = fwrite(content, 1, len, file);
 
     fclose(file);
-    return written == len ? 1 : 0;
+    return (int)written;
 }
 
 int __c_file_delete(const char* path) {
@@ -101,19 +101,19 @@ dynarray_i32* __c_file_read_bytes(const char* path) {
 
 int __c_file_write_bytes(const char* path, dynarray_i32* data) {
     if (data == NULL) {
-        return 0;
+        return -1;
     }
 
     FILE* file = fopen(path, "wb");
     if (file == NULL) {
-        return 0;
+        return -1;
     }
 
     int len = len_dynarray_i32(data);
     unsigned char* buffer = (unsigned char*)malloc(len);
     if (buffer == NULL) {
         fclose(file);
-        return 0;
+        return -1;
     }
 
     for (int i = 0; i < len; i++) {
@@ -125,24 +125,24 @@ int __c_file_write_bytes(const char* path, dynarray_i32* data) {
 
     free(buffer);
     fclose(file);
-    return written == (size_t)len ? 1 : 0;
+    return (int)written;
 }
 
 int __c_file_append_bytes(const char* path, dynarray_i32* data) {
     if (data == NULL) {
-        return 0;
+        return -1;
     }
 
     FILE* file = fopen(path, "ab");
     if (file == NULL) {
-        return 0;
+        return -1;
     }
 
     int len = len_dynarray_i32(data);
     unsigned char* buffer = (unsigned char*)malloc(len);
     if (buffer == NULL) {
         fclose(file);
-        return 0;
+        return -1;
     }
 
     for (int i = 0; i < len; i++) {
@@ -154,5 +154,5 @@ int __c_file_append_bytes(const char* path, dynarray_i32* data) {
 
     free(buffer);
     fclose(file);
-    return written == (size_t)len ? 1 : 0;
+    return (int)written;
 }

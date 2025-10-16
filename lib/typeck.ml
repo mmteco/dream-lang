@@ -288,12 +288,54 @@ let rec infer_expr env = function
              let combined_subst = List.fold_left compose_subst func_subst arg_substs in
              let concrete_arg_types = List.map (apply_subst combined_subst) arg_types in
              let ret_type = fresh_type_var () in
-             let expected_func_type = TyFunc (arg_types, ret_type) in
-             (try
-                let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
-                (* 成功统一，可能是泛型函数 - 记录实例 *)
-                add_generic_instance func_name concrete_arg_types pos;
-                (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
+
+             (* 检查是否省略了有默认值的参数 *)
+             let rec take n lst = match n, lst with
+               | 0, _ | _, [] -> []
+               | n, x :: xs -> x :: take (n - 1) xs
+             in
+             let rec drop n lst = match n, lst with
+               | 0, _ -> lst
+               | _, [] -> []
+               | n, _ :: xs -> drop (n - 1) xs
+             in
+
+             let (use_default_params, actual_return_type) = match apply_subst combined_subst func_type with
+               | TyFunc (expected_params, actual_ret_type) when List.length arg_types < List.length expected_params ->
+                   (* 参数不足，检查是否有默认值 *)
+                   (match Env.get_function_defaults func_name env with
+                    | Some defaults ->
+                        let num_provided = List.length arg_types in
+                        let missing_defaults = drop num_provided defaults in
+                        let has_all_defaults = List.for_all (fun default_opt -> default_opt <> None) missing_defaults in
+                        if has_all_defaults then begin
+                          (* 所有缺失参数都有默认值，允许调用 *)
+                          (* 检查提供的参数类型是否匹配 *)
+                          let provided_params = take num_provided expected_params in
+                          (try
+                             let _ = List.map2 (fun expected actual ->
+                               unify (apply_subst combined_subst expected) (apply_subst combined_subst actual)
+                             ) provided_params arg_types in
+                             (true, actual_ret_type)
+                           with _ -> (false, ret_type))
+                        end else
+                          (false, ret_type)
+                    | None -> (false, ret_type))
+               | _ -> (false, ret_type)
+             in
+
+             if use_default_params then begin
+               (* 使用默认参数，直接返回 *)
+               add_generic_instance func_name concrete_arg_types pos;
+               (actual_return_type, combined_subst)
+             end else begin
+               (* 正常的函数调用类型检查 *)
+               let expected_func_type = TyFunc (arg_types, ret_type) in
+               (try
+                  let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
+                  (* 成功统一，可能是泛型函数 - 记录实例 *)
+                  add_generic_instance func_name concrete_arg_types pos;
+                  (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
               with Failure msg ->
                 (* 对于泛型函数调用，occurs check 失败是预期的，不报告为错误 *)
                 let has_prefix s prefix =
@@ -311,6 +353,7 @@ let rec infer_expr env = function
                   report_error err;
                   (TyUnknown, combined_subst)
                 end)
+             end
            end
        | _ ->
            (* 其他函数调用 *)
@@ -631,13 +674,14 @@ let rec infer_expr env = function
        | None -> ());
 
       (* 不可达模式检查 *)
-      let unreachable_indices = Exhaustiveness.check_reachability cases in
+      let unreachable_indices = Exhaustiveness.check_reachability env' (apply_subst scrut_subst scrut_type) cases in
       List.iter (fun idx ->
         let (pat, _, _) = List.nth cases idx in
         let pat_str = match pat with
           | PEnumVariant (_, v, _) -> v
           | PInt n -> string_of_int n
           | PBool b -> string_of_bool b
+          | PWildcard -> "_"
           | _ -> "_"
         in
         let err = make_error (TypeError "Unreachable pattern") pos
@@ -892,7 +936,7 @@ let rec check_statement env = function
       let ret_opt = def_info.def_return_type in
       let body = def_info.def_body in
       let param_env = List.fold_left
-        (fun e (pname, pty_opt) ->
+        (fun e (pname, pty_opt, _default) ->
           let pty = match pty_opt with
             | Some t -> type_expr_to_ty t
             | None -> fresh_type_var ()
@@ -902,7 +946,7 @@ let rec check_statement env = function
       in
       let (_, _) = check_statements param_env body in
       let param_types = List.map
-        (fun (pname, _) ->
+        (fun (pname, _, _) ->
           match find_binding pname param_env with
           | Some t -> t
           | None -> TyUnknown)
@@ -913,7 +957,9 @@ let rec check_statement env = function
         | None -> TyNone
       in
       let func_type = TyFunc (param_types, ret_type) in
-      let new_env = add_binding name func_type env in
+      (* 提取默认参数值 *)
+      let default_values = List.map (fun (_, _, default_opt) -> default_opt) params in
+      let new_env = Env.add_function_with_defaults name func_type default_values env in
       (new_env, empty_subst)
 
   | SReturn (_, _) -> (env, empty_subst)
@@ -1050,13 +1096,14 @@ let rec check_statement env = function
        | None -> ());
 
       (* 不可达模式检查 *)
-      let unreachable_indices = Exhaustiveness.check_reachability cases in
+      let unreachable_indices = Exhaustiveness.check_reachability env' (apply_subst scrut_subst scrut_type) cases in
       List.iter (fun idx ->
         let (pat, _, _) = List.nth cases idx in
         let pat_str = match pat with
           | PEnumVariant (_, v, _) -> v
           | PInt n -> string_of_int n
           | PBool b -> string_of_bool b
+          | PWildcard -> "_"
           | _ -> "_"
         in
         let err = make_error (TypeError "Unreachable pattern") _pos
@@ -1083,7 +1130,7 @@ let rec check_statement env = function
            let check_interface_member = function
              | IMethod (_, _, params, ret_ty_opt, default_impl_opt, _) ->
                  (* 检查方法签名 *)
-                 let param_types = List.map (fun (_, ty_opt) ->
+                 let param_types = List.map (fun (_, ty_opt, _) ->
                    match ty_opt with
                    | Some ty -> type_expr_to_ty ty
                    | None -> fresh_type_var ()
@@ -1096,7 +1143,7 @@ let rec check_statement env = function
                  (match default_impl_opt with
                   | Some body ->
                       let method_env = List.fold_left
-                        (fun e (pname, pty_opt) ->
+                        (fun e (pname, pty_opt, _) ->
                           let pty = match pty_opt with
                             | Some t -> type_expr_to_ty t
                             | None -> fresh_type_var ()
@@ -1168,7 +1215,7 @@ let rec check_statement env = function
              | IMethod (name, _, params, ret_ty_opt, default_impl_opt, _) ->
                  (* 如果有默认实现,则不是必需的 *)
                  if default_impl_opt = None then
-                   let param_types = List.map (fun (_, ty_opt) ->
+                   let param_types = List.map (fun (_, ty_opt, _) ->
                      match ty_opt with
                      | Some ty -> type_expr_to_ty ty
                      | None -> fresh_type_var ()
@@ -1186,7 +1233,7 @@ let rec check_statement env = function
            (* 检查impl中实现的方法 *)
            let impl_methods = List.filter_map (function
              | ImplMethod (name, _, params, ret_ty_opt, body, _) ->
-                 let param_types = List.map (fun (_, ty_opt) ->
+                 let param_types = List.map (fun (_, ty_opt, _) ->
                    match ty_opt with
                    | Some ty -> type_expr_to_ty ty
                    | None -> fresh_type_var ()
@@ -1198,7 +1245,7 @@ let rec check_statement env = function
 
                  (* 检查方法体 *)
                  let method_env = List.fold_left
-                   (fun e (pname, pty_opt) ->
+                   (fun e (pname, pty_opt, _) ->
                      let pty = match pty_opt with
                        | Some t -> type_expr_to_ty t
                        | None -> fresh_type_var ()
@@ -1258,7 +1305,66 @@ let rec check_statement env = function
            let new_env = Env.add_impl impl_def env in
            (new_env, empty_subst)))
 
-  | SImport (_, _) | SFromImport (_, _, _) -> (env, empty_subst)
+  | SImport (module_path, alias, _pos) ->
+      (* 导入整个模块 *)
+      (match Module_loader.import_all_from_module module_path alias with
+       | Error msg ->
+           (* 报告错误但不终止编译 *)
+           Printf.eprintf "Import error: %s\n" msg;
+           (env, empty_subst)
+       | Ok imports ->
+           (* 将导入的符号添加到环境 *)
+           let new_env = List.fold_left (fun acc_env (name, symbol) ->
+             match symbol with
+             | Module_loader.ExportedFunc (_original_name, def_info) ->
+                 (* 构造函数类型 *)
+                 let param_types = List.map (fun (_, ty_opt, _) ->
+                   match ty_opt with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> fresh_type_var ()
+                 ) def_info.def_params in
+                 let ret_type = match def_info.def_return_type with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> fresh_type_var ()
+                 in
+                 let func_type = TyFunc (param_types, ret_type) in
+                 (* 提取默认参数 *)
+                 let default_values = List.map (fun (_, _, default_opt) -> default_opt) def_info.def_params in
+                 Env.add_function_with_defaults name func_type default_values acc_env
+             | _ ->
+                 (* 暂时只支持导入函数 *)
+                 acc_env
+           ) env imports in
+           (new_env, empty_subst))
+
+  | SFromImport (module_name, selections, _pos) ->
+      (* 从模块导入指定符号 *)
+      let module_path = [module_name] in
+      (match Module_loader.import_selected_from_module module_path selections with
+       | Error msg ->
+           Printf.eprintf "Import error: %s\n" msg;
+           (env, empty_subst)
+       | Ok imports ->
+           let new_env = List.fold_left (fun acc_env (name, symbol) ->
+             match symbol with
+             | Module_loader.ExportedFunc (_original_name, def_info) ->
+                 let param_types = List.map (fun (_, ty_opt, _) ->
+                   match ty_opt with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> fresh_type_var ()
+                 ) def_info.def_params in
+                 let ret_type = match def_info.def_return_type with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> fresh_type_var ()
+                 in
+                 let func_type = TyFunc (param_types, ret_type) in
+                 (* 提取默认参数 *)
+                 let default_values = List.map (fun (_, _, default_opt) -> default_opt) def_info.def_params in
+                 Env.add_function_with_defaults name func_type default_values acc_env
+             | _ ->
+                 acc_env
+           ) env imports in
+           (new_env, empty_subst))
 
   | SStruct struct_info ->
       let name = struct_info.struct_name in
@@ -1309,7 +1415,7 @@ let rec check_statement env = function
              let method_env =
                let base_env = create_child_env env in
                let (_, final_env) = List.fold_left
-                 (fun (is_first, e) (pname, pty_opt) ->
+                 (fun (is_first, e) (pname, pty_opt, _) ->
                    let pty =
                      (* 如果是第一个参数且名为 self，则给它结构体类型 *)
                      if is_first && pname = "self" then
@@ -1331,7 +1437,7 @@ let rec check_statement env = function
              (* 生成方法类型 *)
              let param_types =
                let (_, types) = List.fold_left
-                 (fun (is_first, acc) (pname, pty_opt) ->
+                 (fun (is_first, acc) (pname, pty_opt, _) ->
                    let pty =
                      (* 如果是第一个参数且名为 self，则给它结构体类型 *)
                      if is_first && pname = "self" then
@@ -1459,6 +1565,132 @@ and check_statements env stmts =
     (fun (e, _) stmt -> check_statement e stmt)
     (env, empty_subst) stmts
 
+(* AST转换：填充默认参数 *)
+let rec fill_default_params env expr =
+  match expr with
+  | ECall (EVar (func_name, func_pos), args, pos) ->
+      (* 检查是否需要填充默认参数 *)
+      (match Env.get_function_defaults func_name env with
+       | Some defaults when List.length args < List.length defaults ->
+           (* 需要填充默认参数 *)
+           let num_provided = List.length args in
+           (* 获取缺失的默认参数（从 num_provided 位置开始） *)
+           let rec drop n lst = match n, lst with
+             | 0, _ -> lst
+             | _, [] -> []
+             | n, _ :: xs -> drop (n - 1) xs
+           in
+           let missing_defaults = drop num_provided defaults in
+           let default_args = List.filter_map (fun default_opt -> default_opt) missing_defaults in
+           (* 递归处理已提供的参数 *)
+           let new_args = List.map (fill_default_params env) args in
+           (* 添加默认参数 *)
+           let full_args = new_args @ default_args in
+           ECall (EVar (func_name, func_pos), full_args, pos)
+       | _ ->
+           (* 不需要填充，只递归处理参数 *)
+           let new_args = List.map (fill_default_params env) args in
+           ECall (EVar (func_name, func_pos), new_args, pos))
+  | ECall (func, args, pos) ->
+      ECall (fill_default_params env func, List.map (fill_default_params env) args, pos)
+  | EBinOp (e1, op, e2, pos) ->
+      EBinOp (fill_default_params env e1, op, fill_default_params env e2, pos)
+  | EUnOp (op, e, pos) ->
+      EUnOp (op, fill_default_params env e, pos)
+  | EList (elems, pos) ->
+      EList (List.map (fill_default_params env) elems, pos)
+  | ETuple (elems, pos) ->
+      ETuple (List.map (fill_default_params env) elems, pos)
+  | EDict (pairs, pos) ->
+      EDict (List.map (fun (k, v) -> (fill_default_params env k, fill_default_params env v)) pairs, pos)
+  | EIndex (arr, idx, pos) ->
+      EIndex (fill_default_params env arr, fill_default_params env idx, pos)
+  | ESlice (arr, start_opt, end_opt, pos) ->
+      ESlice (fill_default_params env arr,
+              Option.map (fill_default_params env) start_opt,
+              Option.map (fill_default_params env) end_opt, pos)
+  | EAttr (obj, attr, pos) ->
+      EAttr (fill_default_params env obj, attr, pos)
+  | ELambda (params, body, pos) ->
+      ELambda (params, fill_default_params env body, pos)
+  | EIf (cond, then_expr, else_opt, pos) ->
+      EIf (fill_default_params env cond, fill_default_params env then_expr,
+           Option.map (fill_default_params env) else_opt, pos)
+  | EMatch (scrut, cases, pos) ->
+      let new_cases = List.map (fun (pat, guard_opt, expr) ->
+        (pat, Option.map (fill_default_params env) guard_opt, fill_default_params env expr)
+      ) cases in
+      EMatch (fill_default_params env scrut, new_cases, pos)
+  | EListComp (elem, var, iter, cond_opt, pos) ->
+      EListComp (fill_default_params env elem, var, fill_default_params env iter,
+                 Option.map (fill_default_params env) cond_opt, pos)
+  | EEnumVariant (enum_name, variant_name, args, pos) ->
+      EEnumVariant (enum_name, variant_name, List.map (fill_default_params env) args, pos)
+  | EStructLiteral (struct_name, field_inits, pos) ->
+      EStructLiteral (struct_name,
+                      List.map (fun (name, expr) -> (name, fill_default_params env expr)) field_inits,
+                      pos)
+  | EStructAccess (obj, field, pos) ->
+      EStructAccess (fill_default_params env obj, field, pos)
+  | _ -> expr
+
+let rec fill_default_params_stmt env stmt =
+  match stmt with
+  | SExpr (e, pos) -> SExpr (fill_default_params env e, pos)
+  | SLet let_info ->
+      SLet { let_info with let_value = fill_default_params env let_info.let_value }
+  | SLetPat (pat, value, pos) ->
+      SLetPat (pat, fill_default_params env value, pos)
+  | SAssign (name, value, pos) ->
+      SAssign (name, fill_default_params env value, pos)
+  | SDef def_info ->
+      let new_body = List.map (fill_default_params_stmt env) def_info.def_body in
+      SDef { def_info with def_body = new_body }
+  | SReturn (expr_opt, pos) ->
+      SReturn (Option.map (fill_default_params env) expr_opt, pos)
+  | SIf (cond, then_body, elifs, else_opt, pos) ->
+      let new_then = List.map (fill_default_params_stmt env) then_body in
+      let new_elifs = List.map (fun (c, b) ->
+        (fill_default_params env c, List.map (fill_default_params_stmt env) b)
+      ) elifs in
+      let new_else = Option.map (List.map (fill_default_params_stmt env)) else_opt in
+      SIf (fill_default_params env cond, new_then, new_elifs, new_else, pos)
+  | SWhile (cond, body, pos) ->
+      SWhile (fill_default_params env cond, List.map (fill_default_params_stmt env) body, pos)
+  | SFor (pat, iter, body, pos) ->
+      SFor (pat, fill_default_params env iter, List.map (fill_default_params_stmt env) body, pos)
+  | SMatch (scrut, cases, pos) ->
+      let new_cases = List.map (fun (pat, guard_opt, body) ->
+        (pat, Option.map (fill_default_params env) guard_opt,
+         List.map (fill_default_params_stmt env) body)
+      ) cases in
+      SMatch (fill_default_params env scrut, new_cases, pos)
+  | SImpl (impl_block, pos) ->
+      let new_members = List.map (function
+        | ImplMethod (name, type_params, params, ret_ty_opt, body, mpos) ->
+            ImplMethod (name, type_params, params, ret_ty_opt,
+                       List.map (fill_default_params_stmt env) body, mpos)
+        | other -> other
+      ) impl_block.impl_members in
+      SImpl ({ impl_block with impl_members = new_members }, pos)
+  | SStruct struct_info ->
+      let new_members = List.map (function
+        | SMethod (name, type_params, params, ret_ty_opt, body, mpos) ->
+            SMethod (name, type_params, params, ret_ty_opt,
+                    List.map (fill_default_params_stmt env) body, mpos)
+        | other -> other
+      ) struct_info.struct_members in
+      SStruct { struct_info with struct_members = new_members }
+  | SFieldAssign (obj, field, value, pos) ->
+      SFieldAssign (fill_default_params env obj, field, fill_default_params env value, pos)
+  | SIndexAssign (arr, idx, value, pos) ->
+      SIndexAssign (fill_default_params env arr, fill_default_params env idx,
+                   fill_default_params env value, pos)
+  | _ -> stmt
+
 let typecheck program =
-  let (_, _) = check_statements builtin_env program in
-  ()
+  let (final_env, _) = check_statements builtin_env program in
+  (* 填充默认参数 *)
+  let transformed_program = List.map (fill_default_params_stmt final_env) program in
+  (* 返回转换后的程序 *)
+  transformed_program

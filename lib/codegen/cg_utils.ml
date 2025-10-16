@@ -53,8 +53,8 @@ let rec type_expr_to_llvm_type = function
   | TUnion _ -> UnionPtr  (* Union 类型映射为 union_t* *)
   | TVar _ -> I32
   | TOption _ -> Ptr I32
-  | TResult _ -> Ptr I32
-  | TEnum _ -> I32
+  | TResult _ -> EnumPtr  (* Result 类型映射为 enum_t* *)
+  | TEnum _ -> EnumPtr    (* Enum 类型映射为 enum_t* *)
   | TStruct _ -> Ptr I32  (* 结构体类型映射为指针 *)
   | TNone | TFunc _ | TGeneric _ -> I32
 
@@ -83,8 +83,10 @@ let box_to_union buf ctx value src_type =
    | I1 ->
        Printf.bprintf buf "  %s = call %%union_t* @union_create_bool(i1 %s)\n" result value
    | Ptr I32 ->
-       (* 字符串类型 *)
-       Printf.bprintf buf "  %s = call %%union_t* @union_create_string(i8* %s)\n" result value
+       (* 字符串类型 - 需要先转换为 i8* *)
+       let str_i8 = fresh_temp () in
+       Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 value;
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_string(i8* %s)\n" result str_i8
    | _ ->
        (* 其他类型暂不支持 *)
        Printf.bprintf buf "  ; TODO: box type %s to union\n" (llvm_type_to_string src_type);

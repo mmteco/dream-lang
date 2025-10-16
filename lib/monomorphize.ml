@@ -249,10 +249,10 @@ let rec substitute_statement ctx type_params type_args stmt =
 
 (* 生成单态化的函数定义 *)
 let monomorphize_function ctx _func_name type_params params ret_ty body inst =
-  let new_params = List.map (fun (pname, pty_opt) ->
+  let new_params = List.map (fun (pname, pty_opt, default_val) ->
     match pty_opt with
-    | Some ty -> (pname, Some (substitute_type_expr type_params inst.type_args ty))
-    | None -> (pname, None)
+    | Some ty -> (pname, Some (substitute_type_expr type_params inst.type_args ty), default_val)
+    | None -> (pname, None, default_val)
   ) params in
 
   let new_ret_ty = match ret_ty with

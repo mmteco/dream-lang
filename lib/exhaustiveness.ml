@@ -21,9 +21,53 @@ let rec pattern_to_space = function
   | PBool b -> PConst (PBool b)
   | PTuple pats -> PTup (List.map pattern_to_space pats)
   | PList _ -> PAny  (* 暂时简化处理列表 *)
-  | PType (_, _) -> PAny
+  | PType (_, _) -> PAny  (* 类型模式暂时当作通配符处理 *)
   | PEnumVariant (enum_name, variant_name, pats) ->
       PVariant (enum_name, variant_name, List.map pattern_to_space pats)
+
+(* 检查 match 是否全是类型模式 *)
+let all_type_patterns patterns =
+  List.for_all (fun (pat, _, _) ->
+    match pat with
+    | PType (_, _) -> true
+    | PWildcard -> true
+    | _ -> false
+  ) patterns
+
+(* 从模式中提取类型 *)
+let extract_type_from_pattern = function
+  | PType (_, type_expr) -> Some type_expr
+  | _ -> None
+
+(* 检查类型模式是否覆盖了 Union 类型的所有成员 *)
+let check_union_coverage union_types patterns =
+  (* 从模式中提取所有匹配的类型 *)
+  let pattern_types = List.filter_map (fun (pat, _, _) ->
+    extract_type_from_pattern pat
+  ) patterns in
+
+  (* 检查是否有通配符 *)
+  let has_wildcard = List.exists (fun (pat, _, _) ->
+    match pat with PWildcard -> true | _ -> false
+  ) patterns in
+
+  if has_wildcard then
+    None  (* 有通配符，肯定是穷尽的 *)
+  else
+    (* 检查 Union 中的每个类型是否都被覆盖 *)
+    let uncovered = List.filter (fun union_ty ->
+      not (List.exists (fun pattern_ty ->
+        (* 简单比较类型是否相同 *)
+        Types.type_expr_to_ty pattern_ty = union_ty
+      ) pattern_types)
+    ) union_types in
+
+    if uncovered = [] then
+      None  (* 全部覆盖 *)
+    else
+      (* 生成缺失类型的名称 *)
+      let missing_names = List.map Types.ty_to_string uncovered in
+      Some missing_names
 
 (* 获取枚举的所有变体 *)
 let get_enum_variants _env enum_name =
@@ -69,50 +113,60 @@ let generate_enum_space env enum_name =
 
 (* 检查模式列表的穷尽性 *)
 let check_exhaustiveness env scrutinee_type patterns pos =
-  let pattern_spaces = List.map (fun (pat, _, _) -> pattern_to_space pat) patterns in
-
-  (* 根据 scrutinee 的类型生成需要覆盖的空间 *)
-  let required_space = match scrutinee_type with
-    | TyBool -> POr [PConst (PBool true); PConst (PBool false)]
-    | TyEnum (enum_name, _) ->
-        POr (generate_enum_space env enum_name)
-    | TyTuple tys ->
-        PTup (List.map (fun _ -> PAny) tys)
-    | _ -> PAny
-  in
-
-  (* 检查是否所有情况都被覆盖 *)
-  match required_space with
-  | POr spaces ->
-      let uncovered = List.filter (fun space ->
-        not (is_covered space pattern_spaces)
-      ) spaces in
-      if uncovered <> [] then
-        let missing_patterns = List.map (fun space ->
-          match space with
-          | PConst (PBool true) -> "true"
-          | PConst (PBool false) -> "false"
-          | PVariant (_, variant_name, _) -> variant_name
-          | _ -> "_"
-        ) uncovered in
-        Some (pos, missing_patterns)
-      else
-        None
-  | PAny ->
-      (* 对于任意类型，检查是否有通配符 *)
-      if List.exists (fun p -> p = PAny) pattern_spaces then
-        None
-      else
-        Some (pos, ["_"])
+  (* 特殊处理：检查是否是类型模式匹配 Union 类型 *)
+  match scrutinee_type with
+  | TyUnion union_types when all_type_patterns patterns ->
+      (* 这是 match type of 匹配 Union 类型 *)
+      (match check_union_coverage union_types patterns with
+       | Some missing_names ->
+           Some (pos, missing_names)
+       | None -> None)
   | _ ->
-      if is_covered required_space pattern_spaces then
-        None
-      else
-        Some (pos, ["_"])
+      (* 常规模式匹配检查 *)
+      let pattern_spaces = List.map (fun (pat, _, _) -> pattern_to_space pat) patterns in
+
+      (* 根据 scrutinee 的类型生成需要覆盖的空间 *)
+      let required_space = match scrutinee_type with
+        | TyBool -> POr [PConst (PBool true); PConst (PBool false)]
+        | TyEnum (enum_name, _) ->
+            POr (generate_enum_space env enum_name)
+        | TyTuple tys ->
+            PTup (List.map (fun _ -> PAny) tys)
+        | _ -> PAny
+      in
+
+      (* 检查是否所有情况都被覆盖 *)
+      match required_space with
+      | POr spaces ->
+          let uncovered = List.filter (fun space ->
+            not (is_covered space pattern_spaces)
+          ) spaces in
+          if uncovered <> [] then
+            let missing_patterns = List.map (fun space ->
+              match space with
+              | PConst (PBool true) -> "true"
+              | PConst (PBool false) -> "false"
+              | PVariant (_, variant_name, _) -> variant_name
+              | _ -> "_"
+            ) uncovered in
+            Some (pos, missing_patterns)
+          else
+            None
+      | PAny ->
+          (* 对于任意类型，检查是否有通配符 *)
+          if List.exists (fun p -> p = PAny) pattern_spaces then
+            None
+          else
+            Some (pos, ["_"])
+      | _ ->
+          if is_covered required_space pattern_spaces then
+            None
+          else
+            Some (pos, ["_"])
 
 (* 检查是否有不可达的模式 *)
-let check_reachability patterns =
-  let rec check_from_index idx patterns acc_patterns =
+let check_reachability env scrutinee_type patterns =
+  let rec check_from_index idx patterns acc_patterns_with_metadata =
     match patterns with
     | [] -> []
     | (pat, guard, _) :: rest ->
@@ -122,15 +176,19 @@ let check_reachability patterns =
         let has_guard = match guard with | Some _ -> true | None -> false in
         let is_fully_covered = match current_space with
           | PAny ->
-              (* 通配符只有在所有情况都被覆盖时才不可达 *)
-              (* 这很难检查，暂时认为通配符总是可达的 *)
-              false
-          | _ -> is_covered current_space acc_patterns
+              (* 通配符：检查之前的模式是否已经穷尽所有情况 *)
+              (* 如果已经穷尽，则通配符不可达 *)
+              (match check_exhaustiveness env scrutinee_type acc_patterns_with_metadata {line=0; column=0} with
+               | None -> true  (* 之前的模式已穷尽，通配符不可达 *)
+               | Some _ -> false)  (* 之前的模式未穷尽，通配符可达 *)
+          | _ ->
+              let acc_pattern_spaces = List.map (fun (p, _, _) -> pattern_to_space p) acc_patterns_with_metadata in
+              is_covered current_space acc_pattern_spaces
         in
         let is_reachable = has_guard || not is_fully_covered in
         let unreachable = if is_reachable then [] else [idx] in
         (* 只有无守卫的模式才会完全覆盖模式空间，有守卫的模式可能不匹配 *)
-        let new_acc = if has_guard then acc_patterns else acc_patterns @ [current_space] in
+        let new_acc = if has_guard then acc_patterns_with_metadata else acc_patterns_with_metadata @ [(pat, guard, ())] in
         unreachable @ check_from_index (idx + 1) rest new_acc
   in
   check_from_index 0 patterns []

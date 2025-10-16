@@ -150,7 +150,7 @@ and pattern =
 (* 接口成员 *)
 and interface_member =
   | IField of string * type_expr * position
-  | IMethod of string * string list * (string * type_expr option) list * type_expr option * statement list option * position  (* 添加可选的默认实现 *)
+  | IMethod of string * string list * (string * type_expr option * expr option) list * type_expr option * statement list option * position  (* 添加可选的默认实现 *)
   | IAssocType of string * type_expr option * position  (* 关联类型: type Name = T *)
   | IAssocConst of string * type_expr * expr * position  (* 关联常量: const NAME: type = value *)
 
@@ -161,7 +161,7 @@ and enum_variant =
 
 (* impl 成员 *)
 and impl_member =
-  | ImplMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
+  | ImplMethod of string * string list * (string * type_expr option * expr option) list * type_expr option * statement list * position
   | ImplAssocType of string * type_expr * position  (* 关联类型实现 *)
   | ImplAssocConst of string * expr * position  (* 关联常量实现 *)
 
@@ -184,7 +184,7 @@ and struct_field = {
 (* 结构体成员: 字段或方法 *)
 and struct_member =
   | SField of struct_field
-  | SMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
+  | SMethod of string * string list * (string * type_expr option * expr option) list * type_expr option * statement list * position
 
 (* let 语句详细信息 *)
 and let_stmt = {
@@ -200,7 +200,7 @@ and def_stmt = {
   def_name: string;
   def_name_pos: position;  (* 函数名位置 *)
   def_type_params: string list;
-  def_params: (string * type_expr option) list;
+  def_params: (string * type_expr option * expr option) list;  (* name, type, default_value *)
   def_return_type: type_expr option;
   def_body: statement list;
   def_pos: position;  (* 整个 def 语句位置 *)
@@ -246,8 +246,8 @@ and statement =
   | SMatch of expr * (pattern * expr option * statement list) list * position  (* pattern * guard * body *)
   | SStruct of struct_def
   | SInterface of interface_def
-  | SImport of string list * position
-  | SFromImport of string * string list * position
+  | SImport of string list * string option * position  (* module path * alias * position *)
+  | SFromImport of string * (string * string option) list * position  (* module * (name * alias) list * position *)
   | SAssign of string * expr * position
   | SIndexAssign of expr * expr * expr * position
   | SFieldAssign of expr * string * expr * position  (* 字段赋值: obj.field = value *)

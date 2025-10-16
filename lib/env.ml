@@ -32,6 +32,7 @@ type env = {
   interfaces: interface_def StringMap.t;  (* 接口名 -> 接口定义 *)
   impls: impl_def list;  (* 所有impl块 *)
   structs: struct_def StringMap.t;  (* 结构体名 -> 结构体定义 *)
+  default_params: expr option list StringMap.t;  (* 函数名 -> 默认参数列表 *)
 }
 
 let empty_env = {
@@ -41,6 +42,7 @@ let empty_env = {
   interfaces = StringMap.empty;
   impls = [];
   structs = StringMap.empty;
+  default_params = StringMap.empty;
 }
 
 let create_child_env parent = {
@@ -50,10 +52,26 @@ let create_child_env parent = {
   interfaces = parent.interfaces;  (* 继承父环境的接口定义 *)
   impls = parent.impls;  (* 继承父环境的impl块 *)
   structs = parent.structs;  (* 继承父环境的结构体定义 *)
+  default_params = parent.default_params;  (* 继承父环境的默认参数 *)
 }
 
 let add_binding name ty env =
   { env with bindings = StringMap.add name ty env.bindings }
+
+let add_function_with_defaults name ty defaults env =
+  let env' = add_binding name ty env in
+  { env' with default_params = StringMap.add name defaults env'.default_params }
+
+let get_function_defaults name env =
+  let rec lookup env =
+    match StringMap.find_opt name env.default_params with
+    | Some defaults -> Some defaults
+    | None ->
+        match env.parent with
+        | Some parent -> lookup parent
+        | None -> None
+  in
+  lookup env
 
 let lock_binding name env =
   { env with locked = name :: env.locked }
@@ -94,6 +112,7 @@ let merge_env env1 env2 =
     interfaces = env1.interfaces;
     impls = env1.impls;
     structs = env1.structs;
+    default_params = StringMap.union (fun _ v1 _ -> Some v1) env1.default_params env2.default_params;
   }
 
 (* 添加接口定义到环境 *)
@@ -140,7 +159,7 @@ let struct_implements_interface struct_def iface_def =
     | IMethod (name, _, params, ret_ty_opt, default_impl_opt, _) ->
         (* 如果有默认实现，则不是必需的 *)
         if default_impl_opt = None then
-          let param_types = List.map (fun (_, ty_opt) ->
+          let param_types = List.map (fun (_, ty_opt, _) ->
             match ty_opt with
             | Some ty -> type_expr_to_ty ty
             | None -> TyVar "T"  (* 参数类型未指定，使用泛型 *)

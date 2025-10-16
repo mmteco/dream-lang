@@ -201,9 +201,15 @@ statement:
   | obj = expr DOT field = IDENT ASSIGN value = expr
       { SFieldAssign (obj, field, value, get_expr_pos obj) }
   | IMPORT modules = separated_list(DOT, IDENT)
-      { SImport (modules, { line = 0; column = 0 }) }
-  | FROM module_name = IDENT IMPORT names = separated_list(COMMA, IDENT)
+      { SImport (modules, None, { line = 0; column = 0 }) }
+  | IMPORT modules = separated_list(DOT, IDENT) AS alias = IDENT
+      { SImport (modules, Some alias, { line = 0; column = 0 }) }
+  | FROM module_name = IDENT IMPORT names = separated_list(COMMA, import_name)
       { SFromImport (module_name, names, { line = 0; column = 0 }) }
+
+import_name:
+  | name = IDENT { (name, None) }
+  | name = IDENT AS alias = IDENT { (name, Some alias) }
 
 elif_list:
   | { [] }
@@ -299,10 +305,11 @@ enum_variant:
       { VTuple (name, types, { line = 0; column = 0 }) }
 
 param:
-  | name = IDENT { (name, None) }
-  | name = IDENT COLON ty = type_expr { (name, Some ty) }
-  | SELF { ("self", None) }
-  | SELF COLON ty = type_expr { ("self", Some ty) }
+  | name = IDENT { (name, None, None) }
+  | name = IDENT COLON ty = type_expr { (name, Some ty, None) }
+  | name = IDENT COLON ty = type_expr ASSIGN default_value = expr { (name, Some ty, Some default_value) }
+  | SELF { ("self", None, None) }
+  | SELF COLON ty = type_expr { ("self", Some ty, None) }
 
 pattern:
   | n = INT { PInt n }
@@ -370,10 +377,15 @@ for_pattern:
   | LPAREN patterns = separated_list(COMMA, for_pattern) RPAREN { PTuple patterns }
 
 type_expr:
+  | RESULT LBRACKET ty1 = type_expr COMMA ty2 = type_expr RBRACKET {
+      (* 支持 Result[T, E] 语法 *)
+      TResult (ty1, ty2)
+    }
   | name = IDENT LBRACKET ty = type_expr RBRACKET {
-      (* 支持 list[T] 语法 *)
+      (* 支持 list[T] 和 Option[T] 语法 *)
       match name with
       | "list" -> TList ty
+      | "Option" -> TOption ty
       | _ -> TVar name  (* 暂时忽略泛型参数 *)
     }
   | IDENT { match $1 with
