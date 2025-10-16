@@ -17,14 +17,18 @@
     line_num := !line_num + 1;
     col_num := 0
 
-  let keyword_table = Hashtbl.create 32
+  let keyword_table = Hashtbl.create 40
   let () =
     List.iter (fun (kwd, tok) -> Hashtbl.add keyword_table kwd tok)
       [ ("let", LET);
         ("def", DEF);
         ("class", CLASS);
+        ("struct", STRUCT);
         ("interface", INTERFACE);
         ("implements", IMPLEMENTS);
+        ("impl", IMPL);
+        ("type", TYPE);
+        ("const", CONST);
         ("enum", ENUM);
         ("if", IF);
         ("else", ELSE);

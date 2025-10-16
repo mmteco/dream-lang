@@ -12,8 +12,12 @@ type token =
   | LET
   | DEF
   | CLASS
+  | STRUCT
   | INTERFACE
   | IMPLEMENTS
+  | IMPL
+  | TYPE
+  | CONST
   | ENUM
   | IF
   | ELSE
@@ -105,6 +109,7 @@ type type_expr =
   | TOption of type_expr
   | TResult of type_expr * type_expr
   | TEnum of string * type_expr list
+  | TStruct of string * type_expr list
 
 type expr =
   | EInt of int * position
@@ -126,6 +131,8 @@ type expr =
   | EMatch of expr * (pattern * expr option * expr) list * position  (* pattern * guard * body *)
   | EListComp of expr * string * expr * expr option * position
   | EEnumVariant of string * string * expr list * position
+  | EStructLiteral of string * (string * expr) list * position  (* 结构体字面量 *)
+  | EStructAccess of expr * string * position  (* 字段访问，与 EAttr 类似但专门用于结构体 *)
 
 and pattern =
   | PInt of int
@@ -139,7 +146,52 @@ and pattern =
   | PWildcard
   | PEnumVariant of string * string * pattern list
 
-type statement =
+(* 类成员 *)
+and class_member =
+  | CField of string * type_expr * position
+  | CMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
+
+(* 接口成员 *)
+and interface_member =
+  | IField of string * type_expr * position
+  | IMethod of string * string list * (string * type_expr option) list * type_expr option * statement list option * position  (* 添加可选的默认实现 *)
+  | IAssocType of string * type_expr option * position  (* 关联类型: type Name = T *)
+  | IAssocConst of string * type_expr * expr * position  (* 关联常量: const NAME: type = value *)
+
+(* 枚举变体 *)
+and enum_variant =
+  | VSimple of string * position
+  | VTuple of string * type_expr list * position
+
+(* impl 成员 *)
+and impl_member =
+  | ImplMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
+  | ImplAssocType of string * type_expr * position  (* 关联类型实现 *)
+  | ImplAssocConst of string * expr * position  (* 关联常量实现 *)
+
+(* impl 块：为类型实现接口或定义方法 *)
+and impl_block = {
+  impl_interface: string option;  (* 接口名(可选,None表示只是为类型定义方法) *)
+  impl_type_params: string list;  (* 类型参数 *)
+  impl_target: type_expr;  (* 目标类型 *)
+  impl_members: impl_member list;  (* 实现的成员 *)
+  impl_pos: position;
+}
+
+(* 结构体字段定义 *)
+and struct_field = {
+  field_name: string;
+  field_type: type_expr;
+  field_pos: position;
+}
+
+(* 结构体成员: 字段或方法 *)
+and struct_member =
+  | SField of struct_field
+  | SMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
+
+(* 语句 *)
+and statement =
   | SExpr of expr * position
   | SLet of string * type_expr option * expr * position
   | SLetPat of pattern * expr * position  (* 元组解包: let (a,b) = tuple *)
@@ -150,23 +202,14 @@ type statement =
   | SFor of pattern * expr * statement list * position
   | SMatch of expr * (pattern * expr option * statement list) list * position  (* pattern * guard * body *)
   | SClass of string * string option * string list * class_member list * position
-  | SInterface of string * interface_member list * position
+  | SStruct of string * string list * struct_member list * position  (* 结构体定义,支持字段和方法 *)
+  | SInterface of string * string list * interface_member list * position  (* 添加类型参数支持 *)
   | SImport of string list * position
   | SFromImport of string * string list * position
   | SAssign of string * expr * position
   | SIndexAssign of expr * expr * expr * position
+  | SFieldAssign of expr * string * expr * position  (* 字段赋值: obj.field = value *)
   | SEnum of string * string list * enum_variant list * position
-
-and class_member =
-  | CField of string * type_expr * position
-  | CMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
-
-and interface_member =
-  | IField of string * type_expr * position
-  | IMethod of string * string list * (string * type_expr option) list * type_expr option * position
-
-and enum_variant =
-  | VSimple of string * position
-  | VTuple of string * type_expr list * position
+  | SImpl of impl_block * position  (* impl 块 *)
 
 type program = statement list

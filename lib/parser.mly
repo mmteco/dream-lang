@@ -7,7 +7,7 @@
     | ECall (_, _, p) | EList (_, p) | EDict (_, p) | ETuple (_, p)
     | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
     | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p)
-    | EEnumVariant (_, _, _, p) -> p
+    | EEnumVariant (_, _, _, p) | EStructLiteral (_, _, p) | EStructAccess (_, _, p) -> p
 %}
 
 %token <int> INT
@@ -15,7 +15,7 @@
 %token <string> STRING
 %token <bool> BOOL
 %token <string> IDENT
-%token LET DEF CLASS INTERFACE IMPLEMENTS ENUM
+%token LET DEF CLASS STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
 %token IF ELSE ELIF MATCH CASE FOR WHILE RETURN
 %token IMPORT FROM AS ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
@@ -92,11 +92,31 @@ statement:
   | CLASS name = IDENT IMPLEMENTS interfaces = separated_list(COMMA, IDENT) COLON newline_sep INDENT members = class_member_list DEDENT
       { SClass (name, None, interfaces, members, { line = 0; column = 0 }) }
   | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
-      { SInterface (name, members, { line = 0; column = 0 }) }
+      { SInterface (name, [], members, { line = 0; column = 0 }) }
+  | INTERFACE name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET COLON newline_sep INDENT members = interface_member_list DEDENT
+      { SInterface (name, type_params, members, { line = 0; column = 0 }) }
+  | IMPL interface_name = IDENT FOR target = type_expr COLON newline_sep INDENT members = impl_member_list DEDENT
+      { SImpl ({ impl_interface = Some interface_name;
+                 impl_type_params = [];
+                 impl_target = target;
+                 impl_members = members;
+                 impl_pos = { line = 0; column = 0 } }, { line = 0; column = 0 }) }
+  | IMPL interface_name = IDENT LBRACKET _type_params = separated_list(COMMA, type_expr) RBRACKET FOR target = type_expr COLON newline_sep INDENT members = impl_member_list DEDENT
+      { SImpl ({ impl_interface = Some interface_name;
+                 impl_type_params = [];  (* 暂时忽略类型参数,后续实现 *)
+                 impl_target = target;
+                 impl_members = members;
+                 impl_pos = { line = 0; column = 0 } }, { line = 0; column = 0 }) }
+  | STRUCT name = IDENT COLON newline_sep INDENT members = struct_member_list DEDENT
+      { SStruct (name, [], members, { line = 0; column = 0 }) }
+  | STRUCT name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET COLON newline_sep INDENT members = struct_member_list DEDENT
+      { SStruct (name, type_params, members, { line = 0; column = 0 }) }
   | ENUM name = IDENT COLON newline_sep INDENT variants = enum_variant_list DEDENT
       { SEnum (name, [], variants, { line = 0; column = 0 }) }
   | ENUM name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET COLON newline_sep INDENT variants = enum_variant_list DEDENT
       { SEnum (name, type_params, variants, { line = 0; column = 0 }) }
+  | obj = expr DOT field = IDENT ASSIGN value = expr
+      { SFieldAssign (obj, field, value, get_expr_pos obj) }
   | IMPORT modules = separated_list(DOT, IDENT)
       { SImport (modules, { line = 0; column = 0 }) }
   | FROM module_name = IDENT IMPORT names = separated_list(COMMA, IDENT)
@@ -143,7 +163,41 @@ interface_member:
   | name = IDENT COLON ty = type_expr
       { IField (name, ty, { line = 0; column = 0 }) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr
-      { IMethod (name, [], params, Some ret, { line = 0; column = 0 }) }
+      { IMethod (name, [], params, Some ret, None, { line = 0; column = 0 }) }
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
+      { IMethod (name, [], params, Some ret, Some body, { line = 0; column = 0 }) }
+  | TYPE assoc_name = IDENT
+      { IAssocType (assoc_name, None, { line = 0; column = 0 }) }
+  | TYPE assoc_name = IDENT ASSIGN assoc_ty = type_expr
+      { IAssocType (assoc_name, Some assoc_ty, { line = 0; column = 0 }) }
+  | CONST const_name = IDENT COLON const_ty = type_expr ASSIGN const_val = expr
+      { IAssocConst (const_name, const_ty, const_val, { line = 0; column = 0 }) }
+
+impl_member_list:
+  | { [] }
+  | m = impl_member NEWLINE* ms = impl_member_list { m :: ms }
+
+impl_member:
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
+      { ImplMethod (name, [], params, None, body, { line = 0; column = 0 }) }
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
+      { ImplMethod (name, [], params, Some ret, body, { line = 0; column = 0 }) }
+  | TYPE assoc_name = IDENT ASSIGN assoc_ty = type_expr
+      { ImplAssocType (assoc_name, assoc_ty, { line = 0; column = 0 }) }
+  | CONST const_name = IDENT ASSIGN const_val = expr
+      { ImplAssocConst (const_name, const_val, { line = 0; column = 0 }) }
+
+struct_member_list:
+  | { [] }
+  | m = struct_member NEWLINE* ms = struct_member_list { m :: ms }
+
+struct_member:
+  | name = IDENT COLON ty = type_expr
+      { SField { field_name = name; field_type = ty; field_pos = { line = 0; column = 0 } } }
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
+      { SMethod (name, [], params, None, body, { line = 0; column = 0 }) }
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
+      { SMethod (name, [], params, Some ret, body, { line = 0; column = 0 }) }
 
 enum_variant_list:
   | { [] }
@@ -167,6 +221,8 @@ enum_variant:
 param:
   | name = IDENT { (name, None) }
   | name = IDENT COLON ty = type_expr { (name, Some ty) }
+  | SELF { ("self", None) }
+  | SELF COLON ty = type_expr { ("self", Some ty) }
 
 pattern:
   | n = INT { PInt n }
@@ -266,6 +322,7 @@ expr:
   | s = STRING { EString (s, { line = 0; column = 0 }) }
   | b = BOOL { EBool (b, { line = 0; column = 0 }) }
   | name = IDENT { EVar (name, { line = 0; column = 0 }) }
+  | SELF { EVar ("self", { line = 0; column = 0 }) }
   | e1 = expr PLUS e2 = expr { EBinOp (e1, Add, e2, { line = 0; column = 0 }) }
   | e1 = expr MINUS e2 = expr { EBinOp (e1, Sub, e2, { line = 0; column = 0 }) }
   | e1 = expr TIMES e2 = expr { EBinOp (e1, Mul, e2, { line = 0; column = 0 }) }
@@ -325,9 +382,14 @@ expr:
       { EEnumVariant (enum_name, variant_name, args, { line = 0; column = 0 }) }
   | enum_name = IDENT DOT variant_name = IDENT
       { EEnumVariant (enum_name, variant_name, [], { line = 0; column = 0 }) }
+  | struct_name = IDENT LBRACE fields = separated_list(COMMA, struct_field_init) RBRACE
+      { EStructLiteral (struct_name, fields, { line = 0; column = 0 }) }
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }
+
+struct_field_init:
+  | name = IDENT COLON value = expr { (name, value) }
 
 slice_start:
   | { None }

@@ -32,6 +32,23 @@ type enum_definition = {
 
 let enum_registry : (string, enum_definition) Hashtbl.t = Hashtbl.create 16
 
+(* 结构体定义注册表 *)
+type struct_field_info = {
+  field_name: string;
+  field_index: int;
+  field_llvm_type: llvm_type;
+}
+
+type struct_definition = {
+  struct_name: string;
+  fields: struct_field_info list;
+}
+
+let struct_registry : (string, struct_definition) Hashtbl.t = Hashtbl.create 16
+
+(* 方法注册表: method_name -> struct_name *)
+let struct_method_registry : (string, string) Hashtbl.t = Hashtbl.create 16
+
 let temp_counter = ref 0
 let label_counter = ref 0
 let string_counter = ref 0
@@ -81,6 +98,8 @@ type context = {
   mutable function_signatures: (string * llvm_type) list;
   (* 函数参数类型表: 函数名 -> 参数类型列表 *)
   mutable function_param_types: (string * llvm_type list) list;
+  (* 变量对应的结构体类型: 变量名 -> 结构体名 *)
+  mutable var_struct_types: (string * string) list;
 }
 
 let create_context () = {
@@ -92,6 +111,7 @@ let create_context () = {
   gc_objects = [];
   function_signatures = [];
   function_param_types = [];
+  var_struct_types = [];
 }
 
 let add_variable ctx name ty =
@@ -122,6 +142,7 @@ let rec type_expr_to_llvm_type = function
   | TOption _ -> Ptr I32
   | TResult _ -> Ptr I32
   | TEnum _ -> I32
+  | TStruct _ -> Ptr I32  (* 结构体类型映射为指针 *)
   | TNone | TFunc _ | TGeneric _ -> I32
 
 let gen_binop = function
@@ -605,8 +626,27 @@ let rec gen_expr buf ctx = function
                 Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
                 (result, I1)
             | _ ->
-                Printf.bprintf buf "  ; Unknown string method: %s\n" method_name;
-                ("0", I32))
+                (* 不是字符串方法，可能是结构体方法调用 *)
+                (* 从 struct_method_registry 查找方法所属的结构体 *)
+                (match Hashtbl.find_opt struct_method_registry method_name with
+                 | Some struct_name ->
+                     (* 生成结构体方法调用 *)
+                     let mangled_name = Printf.sprintf "%s_%s" struct_name method_name in
+                     let arg_vals_types = List.map (gen_expr buf ctx) args in
+                     let arg_vals = List.map fst arg_vals_types in
+                     let result = fresh_temp () in
+
+                     (* 调用 StructName_method_name(obj, args...) *)
+                     Printf.bprintf buf "  %s = call i32 %s(i32* %s"
+                       result (mangle_name mangled_name) obj_v;
+                     List.iter (fun arg_val ->
+                       Printf.bprintf buf ", i32 %s" arg_val
+                     ) arg_vals;
+                     Printf.bprintf buf ")\n";
+                     (result, I32)
+                 | None ->
+                     Printf.bprintf buf "  ; Unknown string method or struct method: %s\n" method_name;
+                     ("0", I32)))
        | _ ->
            Printf.bprintf buf "  ; Method call on non-string type\n";
            ("0", I32))
@@ -1472,14 +1512,49 @@ let rec gen_expr buf ctx = function
       (* 查找枚举定义 *)
       (match Hashtbl.find_opt enum_registry enum_name with
        | None ->
-           (* 枚举不存在，尝试作为方法调用处理 *)
-           (* enum_name.variant_name(args) 可能是 obj.method(args) *)
+           (* 枚举不存在，尝试作为方法调用或结构体字段访问处理 *)
+           (* enum_name.variant_name(args) 可能是 obj.method(args) 或 obj.field *)
            (match find_variable ctx enum_name with
             | Some (Ptr I32) ->
-                (* 字符串方法调用 *)
-                let obj_v = (match gen_expr buf ctx (EVar (enum_name, {line=0; column=0})) with
-                             | (v, Ptr I32) -> v
-                             | _ -> enum_name) in
+                (* 首先检查是否是结构体字段访问 (args 为空时) *)
+                let struct_name_opt = if List.length args = 0 then
+                  Hashtbl.fold (fun sname sdef acc ->
+                    if List.exists (fun f -> f.field_name = variant_name) sdef.fields then
+                      Some sname
+                    else acc
+                  ) struct_registry None
+                else
+                  None
+                in
+
+                (match struct_name_opt with
+                 | Some struct_name ->
+                     (* 是结构体字段访问 *)
+                     let obj_v = (match gen_expr buf ctx (EVar (enum_name, {line=0; column=0})) with
+                                  | (v, Ptr I32) -> v
+                                  | _ -> enum_name) in
+                     (match Hashtbl.find_opt struct_registry struct_name with
+                      | None ->
+                          Printf.bprintf buf "  ; ERROR: Struct '%s' not found\n" struct_name;
+                          ("0", I32)
+                      | Some struct_def ->
+                          let field_info_opt = List.find_opt (fun f -> f.field_name = variant_name) struct_def.fields in
+                          (match field_info_opt with
+                           | None ->
+                               Printf.bprintf buf "  ; ERROR: Field '%s' not found\n" variant_name;
+                               ("0", I32)
+                           | Some field_info ->
+                               let field_ptr = fresh_temp () in
+                               Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                                 field_ptr obj_v field_info.field_index;
+                               let result = fresh_temp () in
+                               Printf.bprintf buf "  %s = load i32, i32* %s\n" result field_ptr;
+                               (result, I32)))
+                 | None ->
+                     (* 字符串方法调用 *)
+                     let obj_v = (match gen_expr buf ctx (EVar (enum_name, {line=0; column=0})) with
+                                  | (v, Ptr I32) -> v
+                                  | _ -> enum_name) in
                 let str_i8 = fresh_temp () in
                 Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 obj_v;
                 let result = fresh_temp () in
@@ -1568,8 +1643,31 @@ let rec gen_expr buf ctx = function
                      Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
                      (result, I1)
                  | _ ->
-                     Printf.bprintf buf "  ; ERROR: Unknown string method: %s\n" variant_name;
-                     ("0", I32))
+                     (* 不是字符串方法，检查是否是结构体方法 *)
+                     (match Hashtbl.find_opt struct_method_registry variant_name with
+                      | Some struct_name ->
+                          (* 是结构体方法调用 *)
+                          let mangled_name = Printf.sprintf "%s_%s" struct_name variant_name in
+                          let obj_v = (match gen_expr buf ctx (EVar (enum_name, {line=0; column=0})) with
+                                       | (v, Ptr I32) -> v
+                                       | _ -> enum_name) in
+
+                          (* 生成参数列表 *)
+                          let arg_vals_types = List.map (gen_expr buf ctx) args in
+                          let arg_vals = List.map fst arg_vals_types in
+                          let result = fresh_temp () in
+
+                          (* 调用 StructName_method_name(obj, args...) *)
+                          Printf.bprintf buf "  %s = call i32 %s(i32* %s"
+                            result (mangle_name mangled_name) obj_v;
+                          List.iter (fun arg_val ->
+                            Printf.bprintf buf ", i32 %s" arg_val
+                          ) arg_vals;
+                          Printf.bprintf buf ")\n";
+                          (result, I32)
+                      | None ->
+                          Printf.bprintf buf "  ; ERROR: Unknown string method or struct method: %s\n" variant_name;
+                          ("0", I32))))
             | _ ->
                 Buffer.add_string buf ("  ; ERROR: Enum " ^ enum_name ^ " not found\n");
                 ("0", I32))
@@ -1748,19 +1846,139 @@ let rec gen_expr buf ctx = function
       let (obj_v, obj_t) = gen_expr buf ctx obj in
       (match obj_t with
        | Ptr I32 ->
-           (* 字符串属性 *)
-           let str_i8 = fresh_temp () in
-           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 obj_v;
-           let result = fresh_temp () in
-           (match attr with
-            | "length" ->
-                Printf.bprintf buf "  %s = call i32 @string_length(i8* %s)\n" result str_i8;
-                (result, I32)
-            | _ ->
-                Printf.bprintf buf "  ; Unknown string attribute: %s\n" attr;
-                ("0", I32))
+           (* 可能是结构体字段访问或字符串属性 *)
+           (* 首先尝试从变量名推断结构体类型 *)
+           let struct_name_opt = match obj with
+             | EVar (var_name, _) ->
+                 (* 从 var_struct_types 查找 *)
+                 (match List.assoc_opt var_name ctx.var_struct_types with
+                  | Some sname -> Some sname
+                  | None ->
+                      (* 如果 var_struct_types 中没有，尝试从所有结构体定义中查找 *)
+                      Hashtbl.fold (fun sname sdef acc ->
+                        if List.exists (fun f -> f.field_name = attr) sdef.fields then
+                          Some sname
+                        else acc
+                      ) struct_registry None)
+             | _ ->
+                 (* 如果不是变量，从所有结构体定义中查找匹配的字段 *)
+                 Hashtbl.fold (fun sname sdef acc ->
+                   if List.exists (fun f -> f.field_name = attr) sdef.fields then
+                     Some sname
+                   else acc
+                 ) struct_registry None
+           in
+
+           (match struct_name_opt with
+            | Some struct_name ->
+                (* 是结构体字段访问 *)
+                (match Hashtbl.find_opt struct_registry struct_name with
+                 | None ->
+                     Printf.bprintf buf "  ; ERROR: Struct '%s' not found\n" struct_name;
+                     ("0", I32)
+                 | Some struct_def ->
+                     let field_info_opt = List.find_opt (fun f -> f.field_name = attr) struct_def.fields in
+                     (match field_info_opt with
+                      | None ->
+                          Printf.bprintf buf "  ; ERROR: Field '%s' not found\n" attr;
+                          ("0", I32)
+                      | Some field_info ->
+                          let field_ptr = fresh_temp () in
+                          Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                            field_ptr obj_v field_info.field_index;
+                          let result = fresh_temp () in
+                          Printf.bprintf buf "  %s = load i32, i32* %s\n" result field_ptr;
+                          (result, I32)))
+            | None ->
+                (* 不是结构体字段,尝试字符串属性 *)
+                let str_i8 = fresh_temp () in
+                Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 obj_v;
+                let result = fresh_temp () in
+                (match attr with
+                 | "length" ->
+                     Printf.bprintf buf "  %s = call i32 @string_length(i8* %s)\n" result str_i8;
+                     (result, I32)
+                 | _ ->
+                     Printf.bprintf buf "  ; Unknown attribute: %s\n" attr;
+                     ("0", I32)))
        | _ ->
-           Printf.bprintf buf "  ; Attribute access on non-string type\n";
+           Printf.bprintf buf "  ; Attribute access on non-supported type\n";
+           ("0", I32))
+
+  | EStructLiteral (struct_name, field_inits, _) ->
+      (* 结构体字面量：分配结构体并初始化字段 *)
+      (match Hashtbl.find_opt struct_registry struct_name with
+       | None ->
+           Printf.bprintf buf "  ; ERROR: Struct '%s' not found\n" struct_name;
+           ("0", I32)
+       | Some struct_def ->
+           (* 在堆上分配结构体 *)
+           let field_count = List.length struct_def.fields in
+           let struct_size = field_count * 4 in
+           let malloc_result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8* @malloc(i32 %d)\n" malloc_result struct_size;
+
+           let struct_ptr = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" struct_ptr malloc_result;
+
+           (* 初始化每个字段 *)
+           List.iter (fun (field_name, field_expr) ->
+             let field_info = List.find (fun f -> f.field_name = field_name) struct_def.fields in
+             let (field_val, _field_ty) = gen_expr buf ctx field_expr in
+
+             let field_ptr = fresh_temp () in
+             Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+               field_ptr struct_ptr field_info.field_index;
+             Printf.bprintf buf "  store i32 %s, i32* %s\n" field_val field_ptr
+           ) field_inits;
+
+           (struct_ptr, Ptr I32))
+
+  | EStructAccess (obj_expr, field_name, _) ->
+      (* 结构体字段访问 *)
+      let (obj_val, obj_ty) = gen_expr buf ctx obj_expr in
+      (match obj_ty with
+       | Ptr I32 ->
+           (* 需要从对象表达式推断结构体类型 *)
+           (* 这里简化处理：假设所有 Ptr I32 的结构体访问都是有效的 *)
+           (* 从变量名推断结构体类型 *)
+           let struct_name_opt = match obj_expr with
+             | EVar (_var_name, _) ->
+                 (* 尝试从变量名推断结构体类型 *)
+                 (* 这需要在 context 中存储变量到结构体类型的映射 *)
+                 (* 暂时遍历所有结构体定义查找匹配的字段 *)
+                 Hashtbl.fold (fun sname sdef acc ->
+                   if List.exists (fun f -> f.field_name = field_name) sdef.fields then
+                     Some sname
+                   else acc
+                 ) struct_registry None
+             | _ -> None
+           in
+
+           (match struct_name_opt with
+            | None ->
+                Printf.bprintf buf "  ; ERROR: Cannot determine struct type for field access\n";
+                ("0", I32)
+            | Some struct_name ->
+                (match Hashtbl.find_opt struct_registry struct_name with
+                 | None ->
+                     Printf.bprintf buf "  ; ERROR: Struct '%s' not found\n" struct_name;
+                     ("0", I32)
+                 | Some struct_def ->
+                     let field_info_opt = List.find_opt (fun f -> f.field_name = field_name) struct_def.fields in
+                     (match field_info_opt with
+                      | None ->
+                          Printf.bprintf buf "  ; ERROR: Field '%s' not found in struct '%s'\n" field_name struct_name;
+                          ("0", I32)
+                      | Some field_info ->
+                          let field_ptr = fresh_temp () in
+                          Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                            field_ptr obj_val field_info.field_index;
+                          let result = fresh_temp () in
+                          Printf.bprintf buf "  %s = load i32, i32* %s\n" result field_ptr;
+                          (result, I32))))
+       | _ ->
+           Printf.bprintf buf "  ; ERROR: Field access on non-struct type\n";
            ("0", I32))
 
   | _ ->
@@ -2509,6 +2727,78 @@ let rec gen_statement buf ctx = function
         (* 所有分支都有 return,end 块不可达 *)
         Printf.bprintf buf "  unreachable\n"
 
+  | SInterface _ ->
+      (* 接口定义不生成代码,只是声明 *)
+      Buffer.add_string buf "  ; interface definition (no code generated)\n"
+
+  | SImpl _ ->
+      (* impl块在程序级别处理,这里不生成代码 *)
+      Buffer.add_string buf "  ; impl block (handled at program level)\n"
+
+  | SStruct (name, _type_params, members, _) ->
+      (* 结构体定义：注册到 struct_registry *)
+      (* 只处理字段，忽略方法（方法暂时不生成代码） *)
+      let field_list = List.filter_map (function
+        | Ast.SField field -> Some field
+        | Ast.SMethod _ -> None
+      ) members in
+
+      let field_infos = List.mapi (fun i field ->
+        let field_ty = type_expr_to_llvm_type field.Ast.field_type in
+        {
+          field_name = field.Ast.field_name;
+          field_index = i;
+          field_llvm_type = field_ty;
+        }
+      ) field_list in
+
+      let struct_def = {
+        struct_name = name;
+        fields = field_infos;
+      } in
+
+      Hashtbl.replace struct_registry name struct_def;
+      Printf.bprintf buf "  ; struct %s defined with %d fields\n" name (List.length field_list)
+
+  | SFieldAssign (obj_expr, field_name, value_expr, _) ->
+      (* 字段赋值：obj.field = value *)
+      let (obj_val, obj_ty) = gen_expr buf ctx obj_expr in
+      let (value_val, _value_ty) = gen_expr buf ctx value_expr in
+
+      (match obj_ty with
+       | Ptr I32 ->
+           (* 从对象表达式推断结构体类型 *)
+           let struct_name_opt = match obj_expr with
+             | EVar (_var_name, _) ->
+                 (* 遍历所有结构体定义查找匹配的字段 *)
+                 Hashtbl.fold (fun sname sdef acc ->
+                   if List.exists (fun f -> f.field_name = field_name) sdef.fields then
+                     Some sname
+                   else acc
+                 ) struct_registry None
+             | _ -> None
+           in
+
+           (match struct_name_opt with
+            | None ->
+                Printf.bprintf buf "  ; ERROR: Cannot determine struct type for field assignment\n"
+            | Some struct_name ->
+                (match Hashtbl.find_opt struct_registry struct_name with
+                 | None ->
+                     Printf.bprintf buf "  ; ERROR: Struct '%s' not found\n" struct_name
+                 | Some struct_def ->
+                     let field_info_opt = List.find_opt (fun f -> f.field_name = field_name) struct_def.fields in
+                     (match field_info_opt with
+                      | None ->
+                          Printf.bprintf buf "  ; ERROR: Field '%s' not found in struct '%s'\n" field_name struct_name
+                      | Some field_info ->
+                          let field_ptr = fresh_temp () in
+                          Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                            field_ptr obj_val field_info.field_index;
+                          Printf.bprintf buf "  store i32 %s, i32* %s\n" value_val field_ptr)))
+       | _ ->
+           Printf.bprintf buf "  ; ERROR: Field assignment on non-struct type\n")
+
   | _ ->
       Buffer.add_string buf "  ; unsupported statement\n"
 
@@ -2781,15 +3071,171 @@ let gen_program program =
   in
 
   if has_main then begin
+    (* 先注册所有结构体定义 *)
+    List.iter (function
+      | SStruct (name, _, members, _) ->
+          let field_list = List.filter_map (function
+            | Ast.SField field -> Some field
+            | _ -> None
+          ) members in
+          let field_infos = List.mapi (fun i field ->
+            let field_ty = type_expr_to_llvm_type field.Ast.field_type in
+            {
+              field_name = field.Ast.field_name;
+              field_index = i;
+              field_llvm_type = field_ty;
+            }
+          ) field_list in
+          let struct_def = {
+            struct_name = name;
+            fields = field_infos;
+          } in
+          Hashtbl.replace struct_registry name struct_def
+      | _ -> ()
+    ) program;
+
+    (* 生成所有函数定义 *)
     List.iter (function
       | SDef (name, _type_params, params, ret_ty, body, _) ->
           gen_function code_buf ctx name params ret_ty body
       | _ -> ()
+    ) program;
+
+    (* 生成所有结构体方法 *)
+    List.iter (function
+      | SStruct (struct_name, _, members, _) ->
+          List.iter (function
+            | Ast.SMethod (method_name, _type_params, params, ret_ty_opt, body, _) ->
+                (* 注册方法到 struct_method_registry *)
+                Hashtbl.replace struct_method_registry method_name struct_name;
+                let mangled_name = Printf.sprintf "%s_%s" struct_name method_name in
+                (* 如果第一个参数是 self,给它加上结构体类型标注并记录到 context *)
+                let params_with_types = match params with
+                  | (pname, None) :: rest when pname = "self" ->
+                      (* 记录 self 的结构体类型 *)
+                      ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
+                      (pname, Some (TStruct (struct_name, []))) :: rest
+                  | (pname, Some _) :: _ when pname = "self" ->
+                      (* 记录 self 的结构体类型 *)
+                      ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
+                      params  (* 如果已经有类型标注,保留 *)
+                  | _ -> params
+                in
+                gen_function code_buf ctx mangled_name params_with_types ret_ty_opt body;
+                (* 方法生成后清理 var_struct_types *)
+                ctx.var_struct_types <- []
+            | _ -> ()
+          ) members
+      | _ -> ()
+    ) program;
+
+    (* 生成所有impl块的方法 *)
+    List.iter (function
+      | SImpl (impl_block, _) ->
+          let target_type_str = match impl_block.impl_target with
+            | TVar name -> name
+            | TInt -> "int"
+            | TFloat -> "float"
+            | TString -> "string"
+            | TBool -> "bool"
+            | _ -> "unknown"
+          in
+          (match impl_block.impl_interface with
+           | Some interface_name ->
+               List.iter (function
+                 | ImplMethod (method_name, _, params, ret_ty_opt, body, _) ->
+                     let mangled_name = Printf.sprintf "%s_%s_for_%s"
+                       interface_name method_name target_type_str in
+                     gen_function code_buf ctx mangled_name params ret_ty_opt body
+                 | _ -> ()
+               ) impl_block.impl_members
+           | None ->
+               (* 没有指定接口的impl块，暂时不处理 *)
+               ())
+      | _ -> ()
     ) program
   end else begin
+    (* 先注册所有结构体定义 *)
+    List.iter (function
+      | SStruct (name, _, members, _) ->
+          let field_list = List.filter_map (function
+            | Ast.SField field -> Some field
+            | _ -> None
+          ) members in
+          let field_infos = List.mapi (fun i field ->
+            let field_ty = type_expr_to_llvm_type field.Ast.field_type in
+            {
+              field_name = field.Ast.field_name;
+              field_index = i;
+              field_llvm_type = field_ty;
+            }
+          ) field_list in
+          let struct_def = {
+            struct_name = name;
+            fields = field_infos;
+          } in
+          Hashtbl.replace struct_registry name struct_def
+      | _ -> ()
+    ) program;
+
+    (* 生成所有函数定义 *)
     List.iter (function
       | SDef (name, _type_params, params, ret_ty, body, _) ->
           gen_function code_buf ctx name params ret_ty body
+      | _ -> ()
+    ) program;
+
+    (* 生成所有结构体方法 *)
+    List.iter (function
+      | SStruct (struct_name, _, members, _) ->
+          List.iter (function
+            | Ast.SMethod (method_name, _type_params, params, ret_ty_opt, body, _) ->
+                (* 注册方法到 struct_method_registry *)
+                Hashtbl.replace struct_method_registry method_name struct_name;
+                let mangled_name = Printf.sprintf "%s_%s" struct_name method_name in
+                (* 如果第一个参数是 self,给它加上结构体类型标注并记录到 context *)
+                let params_with_types = match params with
+                  | (pname, None) :: rest when pname = "self" ->
+                      (* 记录 self 的结构体类型 *)
+                      ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
+                      (pname, Some (TStruct (struct_name, []))) :: rest
+                  | (pname, Some _) :: _ when pname = "self" ->
+                      (* 记录 self 的结构体类型 *)
+                      ctx.var_struct_types <- ("self", struct_name) :: ctx.var_struct_types;
+                      params  (* 如果已经有类型标注,保留 *)
+                  | _ -> params
+                in
+                gen_function code_buf ctx mangled_name params_with_types ret_ty_opt body;
+                (* 方法生成后清理 var_struct_types *)
+                ctx.var_struct_types <- []
+            | _ -> ()
+          ) members
+      | _ -> ()
+    ) program;
+
+    (* 生成所有impl块的方法 *)
+    List.iter (function
+      | SImpl (impl_block, _) ->
+          let target_type_str = match impl_block.impl_target with
+            | TVar name -> name
+            | TInt -> "int"
+            | TFloat -> "float"
+            | TString -> "string"
+            | TBool -> "bool"
+            | _ -> "unknown"
+          in
+          (match impl_block.impl_interface with
+           | Some interface_name ->
+               List.iter (function
+                 | ImplMethod (method_name, _, params, ret_ty_opt, body, _) ->
+                     let mangled_name = Printf.sprintf "%s_%s_for_%s"
+                       interface_name method_name target_type_str in
+                     gen_function code_buf ctx mangled_name params ret_ty_opt body
+                 | _ -> ()
+               ) impl_block.impl_members
+           | None ->
+               (* 没有指定接口的impl块，暂时不处理 *)
+               ())
       | _ -> ()
     ) program;
 

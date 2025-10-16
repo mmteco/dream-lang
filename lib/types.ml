@@ -16,6 +16,8 @@ type ty =
   | TyOption of ty
   | TyResult of ty * ty
   | TyEnum of string * ty list
+  | TyStruct of string * ty list  (* 结构体类型 *)
+  | TyInterface of string * ty list  (* 接口类型 *)
   | TyUnknown
 
 let rec type_expr_to_ty = function
@@ -34,6 +36,7 @@ let rec type_expr_to_ty = function
   | TOption t -> TyOption (type_expr_to_ty t)
   | TResult (ok, err) -> TyResult (type_expr_to_ty ok, type_expr_to_ty err)
   | TEnum (name, params) -> TyEnum (name, List.map type_expr_to_ty params)
+  | TStruct (name, params) -> TyStruct (name, List.map type_expr_to_ty params)
 
 let rec ty_to_string = function
   | TyInt -> "int"
@@ -55,6 +58,10 @@ let rec ty_to_string = function
   | TyResult (ok, err) -> Printf.sprintf "Result[%s, %s]" (ty_to_string ok) (ty_to_string err)
   | TyEnum (name, []) -> name
   | TyEnum (name, params) -> Printf.sprintf "%s[%s]" name (String.concat ", " (List.map ty_to_string params))
+  | TyStruct (name, []) -> name
+  | TyStruct (name, params) -> Printf.sprintf "%s[%s]" name (String.concat ", " (List.map ty_to_string params))
+  | TyInterface (name, []) -> Printf.sprintf "interface %s" name
+  | TyInterface (name, params) -> Printf.sprintf "interface %s[%s]" name (String.concat ", " (List.map ty_to_string params))
   | TyUnknown -> "?"
 
 let rec occurs name = function
@@ -67,6 +74,7 @@ let rec occurs name = function
   | TyGeneric (_, t) -> occurs name t
   | TyOption t -> occurs name t
   | TyResult (ok, err) -> occurs name ok || occurs name err
+  | TyInterface (_, params) -> List.exists (occurs name) params
   | _ -> false
 
 module Subst = Map.Make(String)
@@ -87,6 +95,7 @@ let rec apply_subst subst = function
   | TyGeneric (name, t) -> TyGeneric (name, apply_subst subst t)
   | TyOption t -> TyOption (apply_subst subst t)
   | TyResult (ok, err) -> TyResult (apply_subst subst ok, apply_subst subst err)
+  | TyInterface (name, params) -> TyInterface (name, List.map (apply_subst subst) params)
   | t -> t
 
 let compose_subst s1 s2 =

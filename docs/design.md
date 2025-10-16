@@ -89,7 +89,51 @@ match result:
         print(f"Error: {e}")
 ```
 
-### 5. 类和接口
+### 5. 结构体
+
+Dream 支持结构体作为自定义数据类型：
+
+```python
+# 定义结构体
+struct Point:
+    x: int
+    y: int
+
+# 创建实例
+let p = Point{x: 10, y: 20}
+
+# 访问字段
+print(p.x)  # 输出: 10
+print(p.y)  # 输出: 20
+
+# 修改字段(如果支持)
+p.x = 30
+
+# 带有更多字段的结构体
+struct Person:
+    name: string
+    age: int
+    email: string
+
+let alice = Person{name: "Alice", age: 25, email: "alice@example.com"}
+```
+
+结构体特点：
+- 字段需要类型标注
+- 使用花括号语法创建实例
+- 使用点号访问字段
+- 所有字段必须在创建时初始化
+
+### 6. 类和接口
+
+实现接口类型，类似rust的 trait，可以
+
+1. 定义接口
+2. 可以有关联类型，常量
+3. 可以有默认实现
+4. 给任何类型实现，包括内置类型
+5. 用接口实现运算符重载
+6. 支持像go一样的隐式实现(编译时检查)，或显式实现
 
 ```python
 # 接口定义
@@ -118,7 +162,7 @@ class Puppy(Dog):
         self.age = age
 ```
 
-### 6. 模式匹配
+### 7. 模式匹配
 
 ```python
 # 值匹配
@@ -153,7 +197,7 @@ match point:
         print(f"point: ({x}, {y})")
 ```
 
-### 7. AI 专用特性（Phase 2）
+### 8. AI 专用特性（Phase 2）
 
 ```python
 # Vector 类型

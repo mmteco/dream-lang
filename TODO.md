@@ -181,15 +181,67 @@
   - [ ] 代码生成
 
 #### P3 - 面向对象
+- [x] 结构体 **完整功能完成**
+  - [x] 结构体定义语法 `struct Name:`
+  - [x] 字段类型标注
+  - [x] 结构体字面量 `StructName{field1: value1, field2: value2}`
+  - [x] 字段访问 `obj.field`
+  - [x] 字段赋值 `obj.field = value` (语法解析)
+  - [x] AST 节点扩展 (SStruct, EStructLiteral, EStructAccess, SFieldAssign)
+  - [x] 词法分析器支持 (struct 关键字)
+  - [x] 语法解析器支持
+  - [x] 类型系统扩展 (TyStruct)
+  - [x] 环境扩展 (结构体定义存储)
+  - [x] 类型检查器实现
+    - [x] 结构体定义验证
+    - [x] 字段初始化完整性检查
+    - [x] 字段类型匹配检查
+  - [x] LLVM 代码生成器实现
+    - [x] 堆内存分配 (malloc)
+    - [x] 结构体注册表 (struct_registry)
+    - [x] 字段访问通过 getelementptr
+    - [x] 字段赋值代码生成
+  - [x] **结构体方法** (Go 风格内部方法定义)
+    - [x] 方法定义语法 (struct 内部 def)
+    - [x] 方法调用 `obj.method()`
+    - [x] 方法名称重整 (StructName_methodname)
+    - [x] self 参数自动类型推导
+    - [x] self.field 字段访问支持
+    - [x] 变量到结构体类型的映射 (var_struct_types)
+  - [x] 示例和测试 (examples/struct_demo.dm, test/test_struct_methods_*.dm)
+  - [x] 文档更新 (SPEC.md)
+
 - [ ] 类和对象
   - [ ] 类定义
   - [ ] 实例化
   - [ ] 方法调用
   - [ ] 继承
 
-- [ ] 接口
-  - [ ] 接口定义
-  - [ ] 接口实现检查
+- [x] 接口系统 **代码生成完成**
+  - [x] 接口定义语法 `interface Name[T]:`
+  - [x] 接口成员：方法声明、默认实现、关联类型、关联常量
+  - [x] impl 块语法 `impl Interface for Type:` 和 `impl Interface[T] for Type:`
+  - [x] 泛型接口支持
+  - [x] AST 节点扩展（interface_member, impl_block）
+  - [x] 词法分析器支持（impl, type, const 关键字）
+  - [x] 语法解析器支持
+  - [x] 示例代码（examples/interface_demo.dm）
+  - [x] SPEC.md 文档更新
+  - [x] 类型系统扩展（TyInterface 类型）
+  - [x] 环境扩展（接口和impl块存储）
+  - [x] 类型检查器实现
+    - [x] 接口定义验证（成员签名检查）
+    - [x] impl块完整性检查（必需方法检测）
+    - [x] impl块多余方法检测
+    - [x] 默认实现支持
+    - [x] 关联类型和常量验证
+  - [x] LLVM 代码生成器实现
+    - [x] impl块方法生成（静态分发）
+    - [x] 方法名重整（Interface_method_for_Type）
+  - [ ] 运算符重载支持（需要语法扩展）
+  - [ ] 接口约束的泛型函数（需要语法扩展）
+  - [ ] 隐式实现检查（Go风格duck typing）
+  - [ ] 动态方法调用（需要 vtable）
 
 ### 📚 低优先级
 

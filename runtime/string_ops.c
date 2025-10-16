@@ -165,7 +165,7 @@ int string_is_whitespace(char c) {
     return isspace(c) ? 1 : 0;
 }
 
-struct dynarray_ptr* string_split(const char* str, const char* delimiter) {
+dynarray_ptr* string_split(const char* str, const char* delimiter) {
     if (str == NULL || delimiter == NULL) return NULL;
 
     dynarray_ptr* result = create_dynarray_ptr(10);
@@ -210,7 +210,7 @@ struct dynarray_ptr* string_split(const char* str, const char* delimiter) {
     return result;
 }
 
-char* string_join(struct dynarray_ptr* arr, const char* separator) {
+char* string_join(dynarray_ptr* arr, const char* separator) {
     if (arr == NULL || separator == NULL) return NULL;
 
     int arr_len = len_dynarray_ptr(arr);

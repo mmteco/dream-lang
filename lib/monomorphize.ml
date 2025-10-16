@@ -38,6 +38,10 @@ let rec ty_to_mangle_string = function
   | TyResult (ok, err) -> "res_" ^ ty_to_mangle_string ok ^ "_" ^ ty_to_mangle_string err
   | TyEnum (name, []) -> name
   | TyEnum (name, params) -> name ^ "_" ^ String.concat "_" (List.map ty_to_mangle_string params)
+  | TyInterface (name, []) -> "iface_" ^ name
+  | TyInterface (name, params) -> "iface_" ^ name ^ "_" ^ String.concat "_" (List.map ty_to_mangle_string params)
+  | TyStruct (name, []) -> "struct_" ^ name
+  | TyStruct (name, params) -> "struct_" ^ name ^ "_" ^ String.concat "_" (List.map ty_to_mangle_string params)
   | TyUnknown -> "unknown"
 
 (* 生成重整后的函数名 *)
@@ -104,6 +108,8 @@ let rec substitute_type_params type_params type_args ty =
       )
   | TyEnum (name, params) ->
       TyEnum (name, List.map (substitute_type_params type_params type_args) params)
+  | TyInterface (name, params) ->
+      TyInterface (name, List.map (substitute_type_params type_params type_args) params)
   | _ -> ty
 
 (* 在类型表达式中替换类型参数 *)
@@ -155,6 +161,7 @@ and type_expr_of_ty = function
   | TyOption t -> TOption (type_expr_of_ty t)
   | TyResult (ok, err) -> TResult (type_expr_of_ty ok, type_expr_of_ty err)
   | TyEnum (name, params) -> TEnum (name, List.map type_expr_of_ty params)
+  | TyInterface (_, _) -> TNone  (* 接口类型暂时没有对应的 type_expr *)
   | _ -> TNone
 
 (* 在表达式中替换类型参数并重命名泛型函数调用 *)

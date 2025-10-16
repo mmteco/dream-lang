@@ -14,7 +14,7 @@ Dream 是一门面向 AI 应用开发的现代编译型语言，结合了 Python
 
 ### 关键字
 ```
-let def class interface implements enum
+let def class interface implements impl type const enum
 if else elif match case for while return
 import from as async await
 True False None
@@ -23,7 +23,11 @@ self super in
 and or not
 ```
 
-注意：`Some`、`Ok`、`Err` 不再是关键字，现在通过标准枚举实现 Option 和 Result 类型。
+注意：
+- `Some`、`Ok`、`Err` 不再是关键字，现在通过标准枚举实现 Option 和 Result 类型
+- `impl` 用于为类型实现接口
+- `type` 用于关联类型声明
+- `const` 用于关联常量声明
 
 ### 标识符
 - 以字母或下划线开头
@@ -415,6 +419,226 @@ let sum = 1 + 2                # int + int -> int
 let combined = [1, 2] + [3, 4] # [int] + [int] -> [int]
 ```
 
+### 接口系统 🚧
+
+Dream 语言支持类似 Rust trait 和 Go interface 的接口系统，允许为类型定义和实现共同的行为。
+
+#### 接口定义
+
+```python
+# 基本接口
+interface Printable:
+    def show() -> string
+
+# 带泛型参数的接口
+interface Container[T]:
+    def size() -> int
+    def get(index: int) -> T
+
+    # 默认实现
+    def is_empty() -> bool:
+        return self.size() == 0
+
+# 带关联类型和常量的接口
+interface Collection[T]:
+    type Item                 # 关联类型
+    const MAX_SIZE: int = 100 # 关联常量
+
+    def add(item: T) -> bool
+    def remove(index: int) -> T
+```
+
+**接口成员**：
+- 方法声明（必须实现）
+- 方法默认实现（可选重写）
+- 关联类型（`type Name`）
+- 关联常量（`const NAME: type = value`）
+
+#### 接口实现
+
+##### 显式实现（impl 块）
+
+使用 `impl` 关键字为类型实现接口：
+
+```python
+# 为枚举类型实现接口
+enum Option[T]:
+    Some(T)
+    Nothing
+
+impl Printable for Option[int]:
+    def show() -> string:
+        match self:
+            Option.Some(x):
+                return "Some(" + string(x) + ")"
+            Option.Nothing:
+                return "Nothing"
+
+# 为内置类型实现接口（运算符重载）
+interface Add[T]:
+    def add(other: T) -> T
+
+impl Add[int] for int:
+    def add(other: int) -> int:
+        return self + other
+
+# 带泛型参数的实现
+impl[T] Container[T] for [T]:
+    def size() -> int:
+        return len(self)
+
+    def get(index: int) -> T:
+        return self[index]
+```
+
+##### 隐式实现
+
+Go 风格的隐式实现（编译时检查）：
+
+```python
+# 定义接口
+interface Drawable:
+    def draw() -> string
+
+# 定义类型（无需显式声明实现接口）
+enum Shape:
+    Circle(int)
+    Rectangle(int, int)
+
+# 只要实现了所需方法，就隐式满足接口
+def draw(self: Shape) -> string:
+    match self:
+        Shape.Circle(r):
+            return "Circle"
+        Shape.Rectangle(w, h):
+            return "Rectangle"
+
+# 接口约束的泛型函数
+def render[T: Drawable](obj: T):
+    print(obj.draw())
+
+# 自动检查 Shape 是否实现了 Drawable
+render(Shape.Circle(5))  # 编译时验证
+```
+
+#### 运算符重载
+
+通过接口实现运算符重载：
+
+```python
+# 算术运算符
+interface Add[T]:
+    def add(other: T) -> T
+
+interface Mul[T]:
+    def mul(other: T) -> T
+
+# 为自定义类型实现
+enum Point:
+    P(int, int)
+
+impl Add[Point] for Point:
+    def add(other: Point) -> Point:
+        match self:
+            Point.P(x1, y1):
+                match other:
+                    Point.P(x2, y2):
+                        return Point.P(x1 + x2, y1 + y2)
+
+# 使用
+let p1 = Point.P(10, 20)
+let p2 = Point.P(5, 15)
+let p3 = p1.add(p2)  # Point.P(15, 35)
+```
+
+#### 接口约束
+
+泛型函数可以添加接口约束：
+
+```python
+# 单个约束
+def print_any[T: Printable](item: T):
+    print(item.show())
+
+# 多个约束
+def compare_and_print[T: Comparable + Printable](a: T, b: T):
+    if a.compare(b) > 0:
+        print(a.show())
+    else:
+        print(b.show())
+```
+
+#### 关联类型示例
+
+```python
+interface Iterator:
+    type Item
+
+    def next() -> Option[Item]
+    def has_next() -> bool
+
+# 实现
+enum Range:
+    R(int, int, int)  # start, end, current
+
+impl Iterator for Range:
+    type Item = int
+
+    def next() -> Option[int]:
+        match self:
+            Range.R(start, end, current):
+                if current < end:
+                    return Option.Some(current)
+                return Option.Nothing
+
+    def has_next() -> bool:
+        match self:
+            Range.R(start, end, current):
+                return current < end
+```
+
+#### 接口继承
+
+```python
+# 接口可以要求实现其他接口
+interface PrintableComparable[T]:
+    implements Printable
+    implements Comparable[T]
+
+    def format() -> string:
+        return self.show()
+```
+
+**实现状态**：
+- ✅ AST 和语法解析完成
+- ✅ 词法分析支持 `impl`, `type`, `const` 关键字
+- ✅ 类型系统扩展（TyInterface 类型）
+- ✅ 类型检查器接口验证
+  - ✅ 接口定义验证（成员签名检查）
+  - ✅ impl块完整性检查（必需方法检测）
+  - ✅ impl块多余方法检测
+  - ✅ 默认实现支持
+  - ✅ 关联类型和常量验证
+- ✅ LLVM 代码生成（静态分发）
+  - ✅ impl块方法生成
+  - ✅ 方法名重整（Interface_method_for_Type格式）
+  - ✅ 程序级别impl块处理
+- 🚧 动态方法调用（需要vtable，待实现）
+- 🚧 隐式实现检查（Go风格duck typing，待实现）
+- 🚧 运算符重载语法支持（待实现）
+- 🚧 接口约束泛型函数（待实现）
+
+**与其他语言对比**：
+
+| 特性 | Dream | Rust | Go | Swift |
+|------|-------|------|-------|-------|
+| 显式实现 | ✅ `impl` | ✅ `impl` | ❌ | ✅ `extension` |
+| 隐式实现 | ✅ | ❌ | ✅ | ❌ |
+| 关联类型 | ✅ `type` | ✅ `type` | ❌ | ✅ `associatedtype` |
+| 默认实现 | ✅ | ✅ | ❌ | ✅ |
+| 运算符重载 | ✅ | ✅ | ❌ | ✅ |
+| 内置类型扩展 | ✅ | ✅ | ❌ | ✅ |
+
 ## 语法结构
 
 ### 变量声明
@@ -463,6 +687,69 @@ def factorial(n: int) -> int:
         return 1
     return n * factorial(n - 1)
 ```
+
+### 结构体 ✅
+
+#### 结构体定义
+
+```python
+struct Point:
+    x: int
+    y: int
+
+struct Rectangle:
+    width: int
+    height: int
+```
+
+#### 结构体字面量
+
+```python
+let p = Point{x: 10, y: 20}
+let rect = Rectangle{width: 100, height: 50}
+```
+
+#### 字段访问
+
+```python
+print(p.x)      # 10
+print(p.y)      # 20
+```
+
+#### 字段赋值
+
+```python
+p.x = 15
+p.y = 25
+```
+
+#### 结构体方法 (Go 风格)
+
+结构体可以在内部定义方法，支持 `self` 参数：
+
+```python
+struct Counter:
+    value: int
+
+    def get(self) -> int:
+        return self.value
+
+    def increment(self):
+        self.value = self.value + 1
+
+# 使用
+let counter = Counter{value: 100}
+let v = counter.get()      # 调用方法，返回 100
+counter.increment()        # 修改字段
+```
+
+**特性**：
+- 方法定义在 struct 内部 (类似 Go)
+- 第一个参数名为 `self` 时自动推导为结构体类型
+- `self.field` 访问结构体字段
+- 方法调用使用点号语法 `obj.method()`
+- 编译时方法名重整为 `StructName_methodname`
+- 完整的类型检查和代码生成支持
 
 ### 控制流
 

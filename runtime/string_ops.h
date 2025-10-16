@@ -1,6 +1,8 @@
 #ifndef DREAM_STRING_OPS_H
 #define DREAM_STRING_OPS_H
 
+#include "dynarray.h"
+
 int string_length(const char* str);
 char string_char_at(const char* str, int index);
 char* string_concat(const char* s1, const char* s2);
@@ -17,11 +19,8 @@ int string_is_digit(char c);
 int string_is_alpha(char c);
 int string_is_whitespace(char c);
 
-// 前向声明动态数组类型
-struct dynarray_ptr;
-
 // split 和 join 函数
-struct dynarray_ptr* string_split(const char* str, const char* delimiter);
-char* string_join(struct dynarray_ptr* arr, const char* separator);
+dynarray_ptr* string_split(const char* str, const char* delimiter);
+char* string_join(dynarray_ptr* arr, const char* separator);
 
 #endif

@@ -361,6 +361,31 @@ let rec infer_expr env = function
                   (Printf.sprintf "String type has no method '%s'" attr) in
                 report_error err;
                 (TyUnknown, obj_subst))
+       | TyStruct (struct_name, _) ->
+           (* 结构体字段或方法 *)
+           (match Env.find_struct struct_name env with
+            | None ->
+                let err = make_error (NameError struct_name) pos
+                  (Printf.sprintf "Struct '%s' is not defined" struct_name) in
+                report_error err;
+                (TyUnknown, obj_subst)
+            | Some struct_def ->
+                (* 先查找字段 *)
+                (match List.assoc_opt attr struct_def.struct_fields with
+                 | Some field_type ->
+                     (* 字段访问 *)
+                     (field_type, obj_subst)
+                 | None ->
+                     (* 再查找方法 *)
+                     (match Env.StringMap.find_opt attr struct_def.struct_methods with
+                      | Some method_type ->
+                          (* 方法访问 *)
+                          (method_type, obj_subst)
+                      | None ->
+                          let err = make_error (TypeError "Unknown field or method") pos
+                            (Printf.sprintf "Struct '%s' has no field or method '%s'" struct_name attr) in
+                          report_error err;
+                          (TyUnknown, obj_subst))))
        | _ ->
            let err = make_error (TypeError "Attributes not implemented") pos
              "Attribute access not yet implemented for this type" in
@@ -510,6 +535,91 @@ let rec infer_expr env = function
       let (_arg_types, _arg_substs) = List.split (List.map (infer_expr env) args) in
       let combined_subst = List.fold_left compose_subst empty_subst _arg_substs in
       (TyEnum (enum_name, []), combined_subst)
+
+  | EStructLiteral (struct_name, field_inits, pos) ->
+      (* 查找结构体定义 *)
+      (match Env.find_struct struct_name env with
+       | None ->
+           let err = make_error (NameError struct_name) pos
+             (Printf.sprintf "Struct '%s' is not defined" struct_name) in
+           report_error err;
+           (TyUnknown, empty_subst)
+       | Some struct_def ->
+           (* 检查字段初始化 *)
+           let (field_types, field_substs) = List.split (List.map (fun (_, expr) ->
+             infer_expr env expr
+           ) field_inits) in
+           let combined_subst = List.fold_left compose_subst empty_subst field_substs in
+
+           (* 验证所有字段都已初始化且类型正确 *)
+           let init_field_names = List.map fst field_inits in
+           let struct_field_names = List.map fst struct_def.struct_fields in
+
+           (* 检查是否有缺失的字段 *)
+           let missing_fields = List.filter (fun name ->
+             not (List.mem name init_field_names)
+           ) struct_field_names in
+
+           if missing_fields <> [] then begin
+             let err = make_error (TypeError "Missing fields") pos
+               (Printf.sprintf "Struct '%s' is missing fields: %s"
+                 struct_name (String.concat ", " missing_fields)) in
+             report_error err
+           end;
+
+           (* 检查是否有多余的字段 *)
+           let extra_fields = List.filter (fun name ->
+             not (List.mem name struct_field_names)
+           ) init_field_names in
+
+           if extra_fields <> [] then begin
+             let err = make_error (TypeError "Unknown fields") pos
+               (Printf.sprintf "Struct '%s' has no fields: %s"
+                 struct_name (String.concat ", " extra_fields)) in
+             report_error err
+           end;
+
+           (* 检查字段类型是否匹配 *)
+           List.iter2 (fun (field_name, _) field_type ->
+             match List.assoc_opt field_name struct_def.struct_fields with
+             | None -> ()  (* 已经在上面检查过 *)
+             | Some expected_type ->
+                 (try
+                    let _ = unify (apply_subst combined_subst field_type) expected_type in ()
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) pos
+                      (Printf.sprintf "Field '%s' type mismatch: %s" field_name msg) in
+                    report_error err)
+           ) field_inits field_types;
+
+           (TyStruct (struct_name, []), combined_subst))
+
+  | EStructAccess (obj, field, pos) ->
+      let (obj_type, obj_subst) = infer_expr env obj in
+      (match apply_subst obj_subst obj_type with
+       | TyStruct (struct_name, _) ->
+           (* 查找结构体定义 *)
+           (match Env.find_struct struct_name env with
+            | None ->
+                let err = make_error (NameError struct_name) pos
+                  (Printf.sprintf "Struct '%s' is not defined" struct_name) in
+                report_error err;
+                (TyUnknown, obj_subst)
+            | Some struct_def ->
+                (* 查找字段类型 *)
+                (match List.assoc_opt field struct_def.struct_fields with
+                 | None ->
+                     let err = make_error (TypeError "Unknown field") pos
+                       (Printf.sprintf "Struct '%s' has no field '%s'" struct_name field) in
+                     report_error err;
+                     (TyUnknown, obj_subst)
+                 | Some field_type ->
+                     (field_type, obj_subst)))
+       | _ ->
+           let err = make_error (TypeError "Not a struct") pos
+             "Cannot access field of non-struct type" in
+           report_error err;
+           (TyUnknown, obj_subst))
 
 and apply_subst_to_env subst env =
   {env with bindings = Env.StringMap.map (apply_subst subst) env.bindings}
@@ -761,18 +871,331 @@ let rec check_statement env = function
       report_error err;
       (env, empty_subst)
 
-  | SInterface (_, _, pos) ->
-      let err = make_error (TypeError "Interfaces not implemented") pos
-        "Interfaces not yet implemented" in
-      report_error err;
-      (env, empty_subst)
+  | SInterface (name, type_params, members, pos) ->
+      (* 检查接口是否已定义 *)
+      (match Env.find_interface name env with
+       | Some _ ->
+           let err = make_error (TypeError "Interface already defined") pos
+             (Printf.sprintf "Interface '%s' is already defined" name) in
+           report_error err;
+           (env, empty_subst)
+       | None ->
+           (* 验证接口成员 *)
+           let check_interface_member = function
+             | IMethod (_, _, params, ret_ty_opt, default_impl_opt, _) ->
+                 (* 检查方法签名 *)
+                 let param_types = List.map (fun (_, ty_opt) ->
+                   match ty_opt with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> fresh_type_var ()
+                 ) params in
+                 let ret_type = match ret_ty_opt with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> TyNone
+                 in
+                 (* 如果有默认实现,检查其类型 *)
+                 (match default_impl_opt with
+                  | Some body ->
+                      let method_env = List.fold_left
+                        (fun e (pname, pty_opt) ->
+                          let pty = match pty_opt with
+                            | Some t -> type_expr_to_ty t
+                            | None -> fresh_type_var ()
+                          in
+                          Env.add_binding pname pty e)
+                        (Env.create_child_env env) params
+                      in
+                      let (_, _) = check_statements method_env body in
+                      ()
+                  | None -> ());
+                 TyFunc (param_types, ret_type)
+
+             | IAssocType (_, default_ty_opt, _) ->
+                 (* 关联类型,如果有默认值则转换 *)
+                 (match default_ty_opt with
+                  | Some ty -> type_expr_to_ty ty
+                  | None -> fresh_type_var ())
+
+             | IAssocConst (const_name, const_ty, const_val, c_pos) ->
+                 (* 检查常量类型和值的类型是否匹配 *)
+                 let expected_ty = type_expr_to_ty const_ty in
+                 let (actual_ty, val_subst) = infer_expr env const_val in
+                 (try
+                    let _ = unify (apply_subst val_subst actual_ty) expected_ty in
+                    expected_ty
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) c_pos
+                      (Printf.sprintf "Constant '%s' type mismatch: %s" const_name msg) in
+                    report_error err;
+                    expected_ty)
+
+             | _ -> TyUnknown
+           in
+
+           (* 检查所有成员 *)
+           List.iter (fun member ->
+             let _ = check_interface_member member in ()
+           ) members;
+
+           (* 将接口定义添加到环境 *)
+           let iface_def = {
+             Env.iface_name = name;
+             Env.iface_type_params = type_params;
+             Env.iface_members = members;
+           } in
+           let new_env = Env.add_interface name iface_def env in
+           (new_env, empty_subst))
+
+  | SImpl (impl_block, pos) ->
+      let target_ty = type_expr_to_ty impl_block.impl_target in
+
+      (* 检查接口是否指定 *)
+      (match impl_block.impl_interface with
+       | None ->
+           (* 没有指定接口，只是为类型定义方法 *)
+           (* TODO: 存储这些方法到环境中 *)
+           (env, empty_subst)
+       | Some interface_name ->
+           (* 检查接口是否存在 *)
+           (match Env.find_interface interface_name env with
+            | None ->
+                let err = make_error (TypeError "Interface not found") pos
+                  (Printf.sprintf "Interface '%s' is not defined" interface_name) in
+                report_error err;
+                (env, empty_subst)
+            | Some iface_def ->
+           (* 提取接口要求的方法 *)
+           let required_methods = List.filter_map (function
+             | IMethod (name, _, params, ret_ty_opt, default_impl_opt, _) ->
+                 (* 如果有默认实现,则不是必需的 *)
+                 if default_impl_opt = None then
+                   let param_types = List.map (fun (_, ty_opt) ->
+                     match ty_opt with
+                     | Some ty -> type_expr_to_ty ty
+                     | None -> fresh_type_var ()
+                   ) params in
+                   let ret_type = match ret_ty_opt with
+                     | Some ty -> type_expr_to_ty ty
+                     | None -> TyNone
+                   in
+                   Some (name, TyFunc (param_types, ret_type))
+                 else
+                   None
+             | _ -> None
+           ) iface_def.iface_members in
+
+           (* 检查impl中实现的方法 *)
+           let impl_methods = List.filter_map (function
+             | ImplMethod (name, _, params, ret_ty_opt, body, _) ->
+                 let param_types = List.map (fun (_, ty_opt) ->
+                   match ty_opt with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> fresh_type_var ()
+                 ) params in
+                 let ret_type = match ret_ty_opt with
+                   | Some ty -> type_expr_to_ty ty
+                   | None -> TyNone
+                 in
+
+                 (* 检查方法体 *)
+                 let method_env = List.fold_left
+                   (fun e (pname, pty_opt) ->
+                     let pty = match pty_opt with
+                       | Some t -> type_expr_to_ty t
+                       | None -> fresh_type_var ()
+                     in
+                     Env.add_binding pname pty e)
+                   (Env.create_child_env env) params
+                 in
+                 let (_, _) = check_statements method_env body in
+
+                 Some (name, TyFunc (param_types, ret_type))
+             | _ -> None
+           ) impl_block.impl_members in
+
+           (* 检查是否所有必需的方法都已实现 *)
+           let missing_methods = List.filter (fun (req_name, req_ty) ->
+             not (List.exists (fun (impl_name, impl_ty) ->
+               impl_name = req_name &&
+               (* 检查类型是否兼容 *)
+               (try
+                  let _ = unify impl_ty req_ty in true
+                with Failure _ -> false)
+             ) impl_methods)
+           ) required_methods in
+
+           if missing_methods <> [] then begin
+             let missing_names = String.concat ", " (List.map fst missing_methods) in
+             let err = make_error (TypeError "Incomplete implementation") pos
+               (Printf.sprintf "Impl block for '%s' is missing required methods: %s"
+                 interface_name missing_names) in
+             report_error err
+           end;
+
+           (* 检查是否有多余的方法(不在接口定义中) *)
+           let all_interface_methods = List.filter_map (function
+             | IMethod (name, _, _, _, _, _) -> Some name
+             | _ -> None
+           ) iface_def.iface_members in
+
+           List.iter (fun (impl_method_name, _) ->
+             if not (List.mem impl_method_name all_interface_methods) then
+               let err = make_error (TypeError "Unknown method") pos
+                 (Printf.sprintf "Method '%s' is not defined in interface '%s'"
+                   impl_method_name interface_name) in
+               report_error err
+           ) impl_methods;
+
+           (* 创建impl定义并添加到环境 *)
+           let impl_methods_map = List.fold_left (fun map (name, ty) ->
+             Env.StringMap.add name ty map
+           ) Env.StringMap.empty impl_methods in
+
+           let impl_def = {
+             Env.impl_interface_name = interface_name;
+             Env.impl_target_type = target_ty;
+             Env.impl_methods = impl_methods_map;
+           } in
+           let new_env = Env.add_impl impl_def env in
+           (new_env, empty_subst)))
 
   | SImport (_, _) | SFromImport (_, _, _) -> (env, empty_subst)
+
+  | SStruct (name, type_params, members, pos) ->
+      (* 检查结构体是否已定义 *)
+      (match Env.find_struct name env with
+       | Some _ ->
+           let err = make_error (TypeError "Struct already defined") pos
+             (Printf.sprintf "Struct '%s' is already defined" name) in
+           report_error err;
+           (env, empty_subst)
+       | None ->
+           (* 分离字段和方法 *)
+           let field_list = List.filter_map (function
+             | SField field -> Some field
+             | SMethod _ -> None
+           ) members in
+
+           let method_list = List.filter_map (function
+             | SField _ -> None
+             | SMethod (method_name, type_params, params, ret_ty_opt, body, _) ->
+                 Some (method_name, type_params, params, ret_ty_opt, body)
+           ) members in
+
+           (* 转换字段类型 *)
+           let struct_fields = List.map (fun field ->
+             (field.field_name, type_expr_to_ty field.field_type)
+           ) field_list in
+
+           (* 处理方法：检查方法体并生成方法类型 *)
+           let struct_methods = List.fold_left (fun methods_map (method_name, _type_params, params, ret_ty_opt, body) ->
+             (* 创建方法环境 *)
+             let method_env =
+               let base_env = create_child_env env in
+               let (_, final_env) = List.fold_left
+                 (fun (is_first, e) (pname, pty_opt) ->
+                   let pty =
+                     (* 如果是第一个参数且名为 self，则给它结构体类型 *)
+                     if is_first && pname = "self" then
+                       TyStruct (name, [])
+                     else
+                       match pty_opt with
+                       | Some t -> type_expr_to_ty t
+                       | None -> fresh_type_var ()
+                   in
+                   (false, add_binding pname pty e))
+                 (true, base_env) params
+               in
+               final_env
+             in
+
+             (* 检查方法体 *)
+             let (_, _) = check_statements method_env body in
+
+             (* 生成方法类型 *)
+             let param_types =
+               let (_, types) = List.fold_left
+                 (fun (is_first, acc) (pname, pty_opt) ->
+                   let pty =
+                     (* 如果是第一个参数且名为 self，则给它结构体类型 *)
+                     if is_first && pname = "self" then
+                       TyStruct (name, [])
+                     else
+                       match pty_opt with
+                       | Some t -> type_expr_to_ty t
+                       | None -> fresh_type_var ()
+                   in
+                   (false, acc @ [pty]))
+                 (true, []) params
+               in
+               types
+             in
+
+             let ret_type = match ret_ty_opt with
+               | Some t -> type_expr_to_ty t
+               | None -> TyNone
+             in
+
+             let method_type = TyFunc (param_types, ret_type) in
+             Env.StringMap.add method_name method_type methods_map
+           ) Env.StringMap.empty method_list in
+
+           (* 创建结构体定义 *)
+           let struct_def = {
+             Env.struct_name = name;
+             Env.struct_type_params = type_params;
+             Env.struct_fields = struct_fields;
+             Env.struct_methods = struct_methods;
+           } in
+
+           (* 添加到环境 *)
+           let new_env = Env.add_struct name struct_def env in
+           (* 同时将结构体类型添加到绑定中，这样可以用作类型名 *)
+           let struct_type = TyStruct (name, []) in
+           let new_env = add_binding name struct_type new_env in
+           (new_env, empty_subst))
 
   | SEnum (name, _type_params, _variants, _) ->
       let enum_type = TyEnum (name, []) in
       let new_env = add_binding name enum_type env in
       (new_env, empty_subst)
+
+  | SFieldAssign (obj, field, value, pos) ->
+      let (obj_type, obj_subst) = infer_expr env obj in
+      let (value_type, value_subst) = infer_expr env value in
+      let combined_subst = compose_subst value_subst obj_subst in
+      (match apply_subst combined_subst obj_type with
+       | TyStruct (struct_name, _) ->
+           (* 查找结构体定义 *)
+           (match Env.find_struct struct_name env with
+            | None ->
+                let err = make_error (NameError struct_name) pos
+                  (Printf.sprintf "Struct '%s' is not defined" struct_name) in
+                report_error err;
+                (env, empty_subst)
+            | Some struct_def ->
+                (* 检查字段是否存在 *)
+                (match List.assoc_opt field struct_def.struct_fields with
+                 | None ->
+                     let err = make_error (TypeError "Unknown field") pos
+                       (Printf.sprintf "Struct '%s' has no field '%s'" struct_name field) in
+                     report_error err;
+                     (env, empty_subst)
+                 | Some field_type ->
+                     (* 检查类型是否匹配 *)
+                     (try
+                        let _ = unify (apply_subst combined_subst value_type) field_type in
+                        (apply_subst_to_env combined_subst env, combined_subst)
+                      with Failure msg ->
+                        let err = make_error (TypeError msg) pos
+                          (Printf.sprintf "Field '%s' type mismatch: %s" field msg) in
+                        report_error err;
+                        (env, empty_subst))))
+       | _ ->
+           let err = make_error (TypeError "Not a struct") pos
+             "Cannot assign field of non-struct type" in
+           report_error err;
+           (env, empty_subst))
 
   | SIndexAssign (arr, idx, value, pos) ->
       let (arr_type, arr_subst) = infer_expr env arr in
