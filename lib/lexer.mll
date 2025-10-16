@@ -54,6 +54,7 @@
         ("import", IMPORT);
         ("from", FROM);
         ("as", AS);
+        ("of", OF);
         ("async", ASYNC);
         ("await", AWAIT);
         ("True", BOOL true);
@@ -103,6 +104,13 @@ rule token = parse
       update_pos lexbuf;
       let end_pos = make_lexing_pos () in
       (FLOAT (float_of_string f), start_pos, end_pos)
+    }
+  | "'''" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let str_tok = read_triple_single_string (Buffer.create 16) lexbuf in
+      let end_pos = make_lexing_pos () in
+      (str_tok, start_pos, end_pos)
     }
   | '"' {
       let start_pos = make_lexing_pos () in
@@ -324,6 +332,19 @@ and read_single_string buf = parse
   | eof { raise (LexError "Unterminated string") }
   | _ as c { Buffer.add_char buf c; read_single_string buf lexbuf }
 
+and read_triple_single_string buf = parse
+  | "'''" {
+      update_pos lexbuf;
+      STRING (Buffer.contents buf)
+    }
+  | newline { newline lexbuf; Buffer.add_char buf '\n'; read_triple_single_string buf lexbuf }
+  | eof { raise (LexError "Unterminated triple-quoted string") }
+  | _ as c {
+      update_pos lexbuf;
+      Buffer.add_char buf c;
+      read_triple_single_string buf lexbuf
+    }
+
 {
   let peek_char lexbuf =
     if lexbuf.Lexing.lex_curr_pos >= lexbuf.Lexing.lex_buffer_len then
@@ -397,7 +418,8 @@ and read_single_string buf = parse
             if tok = EOF then begin
               let (final_dedents, _) = handle_indent 0 in
               let eof_pos = make_lexing_pos () in
-              let final_with_pos = List.map (fun t -> (t, start_pos, end_pos)) final_dedents @ [(EOF, eof_pos, eof_pos)] in
+              let dedents_with_pos = List.map (fun t -> (t, start_pos, end_pos)) final_dedents in
+              let final_with_pos = (EOF, eof_pos, eof_pos) :: dedents_with_pos in
               List.rev (final_with_pos @ acc)
             end else
               next_tokens ((tok, start_pos, end_pos) :: acc) true
@@ -414,7 +436,8 @@ and read_single_string buf = parse
         if tok = EOF then begin
           let (final_dedents, _) = handle_indent 0 in
           let eof_pos = make_lexing_pos () in
-          let final_with_pos = List.map (fun t -> (t, start_pos, end_pos)) final_dedents @ [(EOF, eof_pos, eof_pos)] in
+          let dedents_with_pos = List.map (fun t -> (t, start_pos, end_pos)) final_dedents in
+          let final_with_pos = (EOF, eof_pos, eof_pos) :: dedents_with_pos in
           List.rev (final_with_pos @ acc)
         end else
           next_tokens ((tok, start_pos, end_pos) :: acc) (tok = NEWLINE)

@@ -29,6 +29,7 @@ type token =
   | IMPORT
   | FROM
   | AS
+  | OF
   | ASYNC
   | AWAIT
   | SELF

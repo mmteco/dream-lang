@@ -57,6 +57,7 @@ let tok_to_string = function
   | Parser.IMPORT -> "IMPORT"
   | Parser.FROM -> "FROM"
   | Parser.AS -> "AS"
+  | Parser.OF -> "OF"
   | Parser.ASYNC -> "ASYNC"
   | Parser.AWAIT -> "AWAIT"
   | Parser.SELF -> "SELF"

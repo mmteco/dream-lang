@@ -61,7 +61,7 @@ let format_error err =
     (severity_to_string err.severity)
     (error_kind_to_string err.kind)
     (err.position.line + 1)  (* 内部使用 0-based 行号，输出时转换为 1-based *)
-    err.position.column
+    (err.position.column + 1)  (* 内部使用 0-based 列号，输出时转换为 1-based *)
     err.message
 
 let report_error err =

@@ -1,6 +1,7 @@
 # Dream Standard Library - File Module
 # 使用类型模式匹配实现统一的文件 I/O 接口
 
+
 def write_file(path: str, content: str | bytes) -> int:
     """
     写入文件
@@ -10,11 +11,11 @@ def write_file(path: str, content: str | bytes) -> int:
       content - 文件内容，可以是 string 或 bytes
     返回: 1=成功, 0=失败
     """
-    match content:
-        data: str:
-            return file_write(path, data)
-        data: bytes:
-            return file_write_bytes(path, data)
+    match type of content:
+        str:
+            return __c_file_write(path, content)
+        bytes:
+            return __c_file_write_bytes(path, content)
         _:
             return 0
 
@@ -29,9 +30,9 @@ def read_file(path: str, as_bytes: int) -> str | bytes:
     """
     match as_bytes:
         0:
-            return file_read(path)
+            return __c_file_read(path)
         _:
-            return file_read_bytes(path)
+            return __c_file_read_bytes(path)
 
 def append_file(path: str, content: str | bytes) -> int:
     """
@@ -42,10 +43,10 @@ def append_file(path: str, content: str | bytes) -> int:
       content - 要追加的内容，可以是 string 或 bytes
     返回: 1=成功, 0=失败
     """
-    match content:
-        data: str:
-            return file_append(path, data)
-        data: bytes:
-            return file_append_bytes(path, data)
+    match type of content:
+        str:
+            return __c_file_append(path, content)
+        bytes:
+            return __c_file_append_bytes(path, content)
         _:
             return 0

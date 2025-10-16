@@ -22,7 +22,7 @@
 %token <string> IDENT
 %token LET DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
 %token IF ELSE ELIF MATCH CASE FOR WHILE RETURN
-%token IMPORT FROM AS ASYNC AWAIT SELF SUPER IN
+%token IMPORT FROM AS OF ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
 %token PLUS MINUS TIMES DIV MOD
 %token EQ NEQ LT GT LTE GTE
@@ -33,6 +33,7 @@
 %token INDENT DEDENT NEWLINE
 %token EOF
 
+%left PIPE
 %left OR
 %left AND
 %left EQ NEQ
@@ -40,6 +41,7 @@
 %left PLUS MINUS
 %left TIMES DIV MOD
 %right NOT
+%left AS
 %left DOT
 %left LPAREN LBRACKET
 
@@ -134,6 +136,8 @@ statement:
       { SFor (pat, iter, body, get_expr_pos iter) }
   | MATCH e = expr COLON newline_sep INDENT cases = case_list DEDENT
       { SMatch (e, cases, get_expr_pos e) }
+  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list DEDENT
+      { SMatch (e, cases, get_expr_pos e) }
   | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
       { SInterface {
           interface_name = name;
@@ -221,6 +225,13 @@ case_list:
       { (p, Some guard, body) :: rest }
   | p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
       { (p, None, body) :: rest }
+
+type_case_list:
+  | { [] }
+  | ty = type_expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list
+      { (PType ("_matched_value", ty), None, body) :: rest }
+  | UNDERSCORE COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list
+      { (PWildcard, None, body) :: rest }
 
 interface_member_list:
   | { [] }
@@ -311,7 +322,6 @@ pattern:
       { PEnumVariant (enum_name, variant_name, []) }
   | variant_name = IDENT LPAREN patterns = separated_list(COMMA, pattern) RPAREN
       { PEnumVariant ("", variant_name, patterns) }
-  | name = IDENT COLON ty = type_expr { PType (name, ty) }
   | name = IDENT
       { (* None 单独出现时作为枚举变体，其他作为变量 *)
         if name = "None" then PEnumVariant ("", "None", [])
@@ -352,7 +362,6 @@ match_pattern:
       { PEnumVariant ("Result", "Err", patterns) }
   | variant_name = IDENT LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
       { PEnumVariant ("", variant_name, patterns) }
-  | name = IDENT COLON ty = type_expr { PType (name, ty) }
   | name = IDENT
       { PVar name }
 

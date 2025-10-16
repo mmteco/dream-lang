@@ -35,7 +35,23 @@ let compile_to_llvm ?(silent=false) input_file =
   in
 
   let lexbuf = Lexing.from_string source in
-  let ast = Parser.program next_token lexbuf in
+  let ast =
+    try
+      Parser.program next_token lexbuf
+    with Parser.Error ->
+      let pos = lexbuf.Lexing.lex_curr_p in
+      let line = pos.Lexing.pos_lnum in
+      let col = pos.Lexing.pos_cnum - pos.Lexing.pos_bol + 1 in
+      Printf.eprintf "Parse error at line %d, column %d\n" line col;
+      (* 尝试显示出错位置的上下文 *)
+      let lines = String.split_on_char '\n' source in
+      if line > 0 && line <= List.length lines then begin
+        let error_line = List.nth lines (line - 1) in
+        Printf.eprintf "%s\n" error_line;
+        Printf.eprintf "%s^\n" (String.make col ' ')
+      end;
+      exit 1
+  in
 
   (* 在用户代码前插入内置枚举定义 *)
   (* 暂时使用 int 类型，避免泛型复杂性 *)
@@ -88,7 +104,7 @@ let compile_to_llvm ?(silent=false) input_file =
   if not silent then Printf.printf "Generated LLVM IR: %s\n" output_ll;
   output_ll
 
-let compile_to_exe ?(silent=false) output_ll =
+let compile_to_exe output_ll =
   let output_exe = Filename.remove_extension output_ll in
   let runtime_files = [
     "runtime/runtime.c";
@@ -107,10 +123,9 @@ let compile_to_exe ?(silent=false) output_ll =
     output_exe output_ll runtime_args in
   let exit_code = Sys.command compile_cmd in
   if exit_code = 0 then begin
-    if not silent then Printf.printf "Compiled successfully: %s\n" output_exe;
     output_exe
   end else begin
-    Printf.eprintf "Compilation failed\n";
+    Printf.eprintf "Compile failed\n";
     exit 1
   end
 
@@ -118,17 +133,13 @@ let build_command input_file =
   try
     let output_ll = compile_to_llvm input_file in
     let output_exe = compile_to_exe output_ll in
-    Printf.printf "Build complete: %s\n" output_exe;
-    Printf.printf "Run with: ./%s\n" output_exe
+    Printf.printf "Build complete: %s\n" output_exe
   with
   | Sys_error msg ->
       Printf.eprintf "Error: %s\n" msg;
       exit 1
   | Lexer.LexError msg ->
       Printf.eprintf "Lexical error: %s\n" msg;
-      exit 1
-  | Parser.Error ->
-      Printf.eprintf "Parse error\n";
       exit 1
   | Failure msg ->
       Printf.eprintf "Error: %s\n" msg;
@@ -156,7 +167,7 @@ let run_command input_file =
 
     (* 生成编译 - 先编译到临时位置 *)
     let temp_ll = compile_to_llvm ~silent:true input_file in
-    let temp_exe = compile_to_exe ~silent:true temp_ll in
+    let temp_exe = compile_to_exe temp_ll in
 
     (* 移动文件到 .dream 目录 *)
     let final_ll = Filename.concat program_cache_dir (basename ^ ".ll") in
@@ -183,6 +194,10 @@ let run_command input_file =
     (* 运行程序 *)
     let exit_code = Sys.command final_exe in
 
+    (* 清理生成的文件 *)
+    (try Sys.remove final_ll with _ -> ());
+    (try Sys.remove final_exe with _ -> ());
+
     exit exit_code
   with
   | Sys_error msg ->
@@ -190,9 +205,6 @@ let run_command input_file =
       exit 1
   | Lexer.LexError msg ->
       Printf.eprintf "Lexical error: %s\n" msg;
-      exit 1
-  | Parser.Error ->
-      Printf.eprintf "Parse error\n";
       exit 1
   | Failure msg ->
       Printf.eprintf "Error: %s\n" msg;
