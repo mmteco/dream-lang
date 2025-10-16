@@ -10,6 +10,7 @@ typedef enum {
     UNION_FLOAT,
     UNION_STRING,
     UNION_BOOL,
+    UNION_BYTES,
     UNION_NONE,
 } UnionTag;
 
@@ -23,6 +24,7 @@ typedef struct {
         double as_float;
         char* as_string;
         bool as_bool;
+        void* as_bytes;  // 指向 dynarray 结构
     } value;
 } union_t;
 
@@ -42,6 +44,9 @@ union_t* union_create_string(const char* value);
 // 创建 bool union
 union_t* union_create_bool(bool value);
 
+// 创建 bytes union (dynarray)
+union_t* union_create_bytes(void* bytes_array);
+
 // 创建 None union
 union_t* union_create_none();
 
@@ -54,6 +59,7 @@ bool union_is_int(union_t* u);
 bool union_is_float(union_t* u);
 bool union_is_string(union_t* u);
 bool union_is_bool(union_t* u);
+bool union_is_bytes(union_t* u);
 bool union_is_none(union_t* u);
 
 // ============================================================================
@@ -65,6 +71,7 @@ int32_t union_get_int(union_t* u);
 double union_get_float(union_t* u);
 char* union_get_string(union_t* u);
 bool union_get_bool(union_t* u);
+void* union_get_bytes(union_t* u);
 
 // ============================================================================
 // Union 值提取（安全版本，类型不匹配时返回 false）

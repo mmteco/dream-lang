@@ -60,6 +60,12 @@
 - [x] `file_append_bytes(path, bytes)` - 追加字节数组到文件
 - [x] 标准库 `stdlib/file.dm` - 统一的文件 I/O 接口
 - [x] Union 类型集成 - `str | bytes` 参数支持
+- [x] **Bytes 类型完整支持**
+  - [x] Union bytes 类型（UNION_BYTES）
+  - [x] Runtime 实现（union_create_bytes, union_is_bytes, union_get_bytes）
+  - [x] 类型模式匹配（match type of 支持 bytes）
+  - [x] 装箱/拆箱（Ptr (DynArray I32) ↔ union_t*）
+  - [x] LLVM 代码生成完整支持
 
 ### 3. 错误处理 ✅ **枚举实现完成**
 - [x] Option 类型 `Option[T] = Some(T) | Nothing` (使用标准枚举)
@@ -141,31 +147,34 @@
 - [x] 整数、字符串、布尔值匹配
 - [x] 元组解构
 - [x] 枚举变体匹配 `Color.Red`
-- [x] **枚举变体带数据的模式匹配** 
+- [x] **枚举变体带数据的模式匹配**
   - [x] 单参数变体：`Circle(r)` → 提取 r 并绑定
   - [x] 多参数变体：`Rectangle(w, h)` → 提取 w, h 并绑定
 - [x] 通配符模式 `_`
 - [x] 变量模式绑定 `PVar`
 - [x] 类型检查和环境绑定
-- [x] **LLVM 代码生成** 
+- [x] **LLVM 代码生成**
   - [x] SMatch 语句生成（基本块 + 条件跳转）
   - [x] EMatch 表达式生成（phi 节点）
   - [x] gen_pattern_test（模式测试条件生成）
   - [x] gen_pattern_bindings（模式变量绑定，包括枚举数据提取）
-- [x] **守卫条件 `if` 子句** 
+- [x] **守卫条件 `if` 子句**
   - [x] 解析器支持 `pattern if guard_expr:` 语法
   - [x] AST 扩展（EMatch 和 SMatch 的 case 支持可选守卫）
   - [x] 类型检查器验证守卫表达式为布尔类型
   - [x] LLVM 代码生成（守卫失败跳转到下一个 case）
   - [x] 完整的测试用例（test_match_guard.dm）
-
-- [x] **穷尽性检查** 
+- [x] **穷尽性检查**
   - [x] 缺失模式分支检测（如缺少 None、Err 等）
   - [x] 不可达模式检测（重复或完全覆盖的分支）
   - [x] 通配符模式正确处理
   - [x] Bool 类型穷尽性检查（true/false）
   - [x] Enum 类型穷尽性检查（所有变体）
   - [x] 完整测试套件（test_*.dm）
+- [x] **Match 表达式语义验证**
+  - [x] 禁止在 match 表达式分支中使用 return 语句
+  - [x] 类型检查器检测并报错
+  - [x] 正确形式：`return match ...` 或 `let x = match ...`
 
 **待完成功能**：
 - [ ] 列表解构
@@ -197,7 +206,7 @@
   - [x] 语法支持：`variable: type` 模式
   - [x] Union 类型拆箱和类型检查
   - [x] 自动类型窄化（type narrowing）
-  - [x] 支持类型：int, str, bool
+  - [x] 支持类型：int, str, bool, bytes
   - [x] 完整测试套件（test_type_pattern.dm, test_file_io.dm）
   - [x] 文档：docs/type_pattern_matching.md
 

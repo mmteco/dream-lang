@@ -42,6 +42,14 @@ union_t* union_create_bool(bool value) {
     return u;
 }
 
+union_t* union_create_bytes(void* bytes_array) {
+    union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
+    if (!u) return NULL;
+    u->tag = UNION_BYTES;
+    u->value.as_bytes = bytes_array;
+    return u;
+}
+
 union_t* union_create_none() {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
@@ -67,6 +75,10 @@ bool union_is_string(union_t* u) {
 
 bool union_is_bool(union_t* u) {
     return u != NULL && u->tag == UNION_BOOL;
+}
+
+bool union_is_bytes(union_t* u) {
+    return u != NULL && u->tag == UNION_BYTES;
 }
 
 bool union_is_none(union_t* u) {
@@ -103,6 +115,13 @@ bool union_get_bool(union_t* u) {
         return u->value.as_bool;
     }
     return false;  // 默认值
+}
+
+void* union_get_bytes(union_t* u) {
+    if (union_is_bytes(u)) {
+        return u->value.as_bytes;
+    }
+    return NULL;  // 默认值
 }
 
 // ============================================================================
@@ -173,6 +192,9 @@ union_t* union_clone(union_t* u) {
             return union_create_string(u->value.as_string);
         case UNION_BOOL:
             return union_create_bool(u->value.as_bool);
+        case UNION_BYTES:
+            // bytes需要深拷贝，暂时返回同一个指针
+            return union_create_bytes(u->value.as_bytes);
         case UNION_NONE:
             return union_create_none();
         default:
@@ -203,6 +225,9 @@ void union_print(union_t* u) {
         case UNION_BOOL:
             printf("Union(bool: %s)", u->value.as_bool ? "true" : "false");
             break;
+        case UNION_BYTES:
+            printf("Union(bytes: %p)", u->value.as_bytes);
+            break;
         case UNION_NONE:
             printf("Union(None)");
             break;
@@ -220,6 +245,7 @@ const char* union_type_name(union_t* u) {
         case UNION_FLOAT: return "float";
         case UNION_STRING: return "string";
         case UNION_BOOL: return "bool";
+        case UNION_BYTES: return "bytes";
         case UNION_NONE: return "none";
         default: return "unknown";
     }
@@ -244,6 +270,9 @@ void union_print_value(union_t* u) {
             break;
         case UNION_BOOL:
             printf("%s\n", u->value.as_bool ? "true" : "false");
+            break;
+        case UNION_BYTES:
+            printf("<bytes at %p>\n", u->value.as_bytes);
             break;
         case UNION_NONE:
             printf("None\n");

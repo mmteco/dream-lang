@@ -112,7 +112,12 @@ type type_expr =
   | TEnum of string * type_expr list
   | TStruct of string * type_expr list
 
-type expr =
+(* Match 分支体：可以是单个表达式或语句块 *)
+type match_body =
+  | MExpr of expr  (* 单行表达式 *)
+  | MStmts of statement list  (* 多行语句块 *)
+
+and expr =
   | EInt of int * position
   | EFloat of float * position
   | EString of string * position
@@ -129,7 +134,7 @@ type expr =
   | EAttr of expr * string * position
   | ELambda of (string * type_expr option) list * expr * position
   | EIf of expr * expr * expr option * position
-  | EMatch of expr * (pattern * expr option * expr) list * position  (* pattern * guard * body *)
+  | EMatch of expr * (pattern * expr option * match_body) list * position  (* pattern * guard * body *)
   | EListComp of expr * string * expr * expr option * position
   | EEnumVariant of string * string * expr list * position
   | EStructLiteral of string * (string * expr) list * position  (* 结构体字面量 *)
@@ -243,7 +248,6 @@ and statement =
   | SIf of expr * statement list * (expr * statement list) list * statement list option * position
   | SWhile of expr * statement list * position
   | SFor of pattern * expr * statement list * position
-  | SMatch of expr * (pattern * expr option * statement list) list * position  (* pattern * guard * body *)
   | SStruct of struct_def
   | SInterface of interface_def
   | SImport of string list * string option * position  (* module path * alias * position *)

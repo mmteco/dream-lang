@@ -81,14 +81,16 @@ let gen_function buf ctx name params ret_ty body =
   (* 检查是否需要默认 return *)
   let rec has_return_stmt = function
     | SReturn _ -> true
-    | SMatch (_, cases, _) ->
-        (* match 的所有分支都有 return *)
-        List.for_all (fun (_, _, body_stmts) ->
-          List.exists has_return_stmt body_stmts
-        ) cases
     | SIf (_, then_body, _, Some else_body, _) ->
         (* if-else 两个分支都有 return *)
         List.exists has_return_stmt then_body && List.exists has_return_stmt else_body
+    | SExpr (EMatch (_, cases, _), _) ->
+        (* match 表达式的所有分支都有 return *)
+        List.for_all (fun (_, _, body) ->
+          match body with
+          | MExpr _ -> false  (* 单行表达式不算 return *)
+          | MStmts stmts -> List.exists has_return_stmt stmts
+        ) cases
     | _ -> false
   in
 
@@ -230,16 +232,19 @@ let gen_program program =
   Buffer.add_string buf "declare %union_t* @union_create_float(double)\n";
   Buffer.add_string buf "declare %union_t* @union_create_string(i8*)\n";
   Buffer.add_string buf "declare %union_t* @union_create_bool(i1)\n";
+  Buffer.add_string buf "declare %union_t* @union_create_bytes(i8*)\n";
   Buffer.add_string buf "declare %union_t* @union_create_none()\n";
   Buffer.add_string buf "declare i1 @union_is_int(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_float(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_string(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_bool(%union_t*)\n";
+  Buffer.add_string buf "declare i1 @union_is_bytes(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_none(%union_t*)\n";
   Buffer.add_string buf "declare i32 @union_get_int(%union_t*)\n";
   Buffer.add_string buf "declare double @union_get_float(%union_t*)\n";
   Buffer.add_string buf "declare i8* @union_get_string(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_get_bool(%union_t*)\n";
+  Buffer.add_string buf "declare i8* @union_get_bytes(%union_t*)\n";
   Buffer.add_string buf "declare void @union_free(%union_t*)\n";
   Buffer.add_string buf "declare %union_t* @union_clone(%union_t*)\n";
   Buffer.add_string buf "declare void @union_print_value(%union_t*)\n\n";

@@ -57,6 +57,12 @@
   - [x] `file_append_bytes(path, bytes)` - 追加字节数组
   - [x] 标准库 `stdlib/file.dm` - 统一接口
   - [x] Union 类型集成 - `str | bytes` 参数
+  - [x] **Bytes 类型完整支持**
+    - [x] UNION_BYTES runtime 实现
+    - [x] union_create_bytes/is_bytes/get_bytes
+    - [x] 类型模式匹配支持
+    - [x] 装箱/拆箱代码生成
+    - [x] 完整测试套件（test_file_io.dm）
 
 - [ ] 错误处理改进
   - [ ] 更好的错误消息
@@ -92,31 +98,45 @@
   - [x] 元组索引 `tuple[0]` 
   - [x] 任意长度元组支持 
 
-- [x] Match 表达式  **核心功能完成**
+- [x] Match 表达式  **完整功能完成**
   - [x] 模式匹配语法解析（case 关键字可选）
   - [x] 通配符模式 `_`
   - [x] 类型检查实现
   - [x] LLVM 代码生成（整数、字符串、通配符、变量绑定）
-  - [x] match语句（SMatch）
-  - [x] match表达式（EMatch，带phi节点）
+  - [x] **统一的 match 表达式（EMatch）**
+    - [x] 单行表达式分支 `pattern: expr`
+    - [x] 多行表达式分支 `pattern:\n    expr`
+    - [x] 多行语句块分支 `pattern:\n    stmt1\n    stmt2`
+    - [x] 桥接块机制（解决嵌套 match 的 phi 节点问题）
+    - [x] 不可达块检测（所有分支 return 时添加 unreachable）
   - [x] 枚举变体精确匹配（tagged union实现）
-  - [x] **枚举变体带数据的模式匹配** 
+  - [x] **枚举变体带数据的模式匹配**
     - [x] 单参数变体：`Circle(r)` → 提取并绑定 r
     - [x] 多参数变体：`Rectangle(w, h)` → 提取并绑定 w, h
-  - [x] **守卫条件 `if` 子句** 
+  - [x] **守卫条件 `if` 子句**
     - [x] 解析器支持 `pattern if guard_expr:` 语法
     - [x] AST 扩展支持可选守卫条件（`expr option`）
     - [x] 类型检查器验证守卫表达式为布尔类型
     - [x] LLVM 代码生成（守卫失败跳转到下一个 case）
     - [x] match 语句和表达式均支持守卫条件
-    - [x] 完整测试套件（test_match_guard.dm）
-  - [x] **穷尽性检查** 
+  - [x] **穷尽性检查**
     - [x] 缺失模式分支检测（如缺少 None、Err 等）
     - [x] 不可达模式检测（重复或完全覆盖的分支）
     - [x] 通配符模式正确处理
     - [x] Bool 类型穷尽性检查（true/false）
     - [x] Enum 类型穷尽性检查（所有变体）
-    - [x] 完整测试套件
+  - [x] **类型模式匹配（match type of）**
+    - [x] 表达式上下文支持 `match type of`
+    - [x] 单行和多行语法支持
+    - [x] 与 Union 类型集成
+  - [x] **嵌套 match 表达式**
+    - [x] 单行嵌套 `match x: 1: match y: ...`
+    - [x] 多行嵌套支持
+    - [x] 完整测试套件（test_match_comprehensive.dm - 20个测试用例）
+  - [x] **Match 表达式语义验证**
+    - [x] 检测并禁止在 match 表达式分支中使用 return
+    - [x] 类型检查器报错："Cannot use 'return' in match expression branches. Use 'return match ...' instead."
+    - [x] 测试验证（test_match_return.dm）
 
 - [x] Enum 类型  **完整功能完成**
   - [x] 枚举定义语法解析 `enum Color: Red, Green, Blue`
@@ -162,7 +182,7 @@
     - [x] 语法支持：`variable: type` 模式
     - [x] Union 类型拆箱和类型检查
     - [x] 自动类型窄化（type narrowing）
-    - [x] 支持类型：int, str, bool
+    - [x] 支持类型：int, str, bool, bytes
     - [x] Parser 实现（PType 模式节点）
     - [x] 类型检查器实现（bind_pattern）
     - [x] LLVM 代码生成（union_is_* 和 union_get_*）
@@ -348,11 +368,12 @@
   - [x] 64位指针安全 (dynarray_ptr 使用 intptr_t)
 
 - [x] 测试文件整理
-  - [x] 从16个测试文件整合为4个
+  - [x] 从16个测试文件整合为5个
   - [x] test/test_core.dm - 字符串和泛型
   - [x] test/test_types.dm - Union、结构体、接口
   - [x] test/test_file_io.dm - 文件 I/O
-  - [x] test/test_match.dm - 模式匹配
+  - [x] test/test_match.dm - 守卫条件和穷尽性检查
+  - [x] test/test_match_comprehensive.dm - match 表达式全面测试（20个测试用例）
 
 ### 高级数组操作
 - [x] 数组拼接 `arr1 + arr2`

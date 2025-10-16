@@ -143,10 +143,10 @@ let flag = True         # 类型推导为 bool（也可以用 true）
 let ready: bool = false # 显式类型注解（也可以用 False）
 ```
 
-#### string - 字符串类型
+#### str - 字符串类型
 ```python
-let name = "Alice"      # 类型推导为 string
-let msg: string = "Hi"  # 显式类型注解
+let name = "Alice"      # 类型推导为 str
+let msg: str = "Hi"  # 显式类型注解
 ```
 
 ### 复合类型
@@ -164,7 +164,7 @@ let inferred = [1, 2, 3]    # 推导为 [int]
 
 #### 元组 ✅
 ```python
-let pair: (int, string) = (1, "one")
+let pair: (int, str) = (1, "one")
 let triple = (1, 2.0, "three")
 let coords = (10, 20, 30)
 
@@ -185,14 +185,14 @@ for (k, v) in dict_items(d):
 #### 字典 ✅
 ```python
 # 整数键值对
-let ages: dict[string, int] = {"Alice": 30, "Bob": 25}
+let ages: dict[str, int] = {"Alice": 30, "Bob": 25}
 let scores = {1: 100, 2: 95, 3: 88}
 
 # 字符串键值对
 let config = {"host": "localhost", "port": "8080"}
 
 # 混合类型
-let data: dict[int, string] = {1: "one", 2: "two"}
+let data: dict[int, str] = {1: "one", 2: "two"}
 
 # 字典操作
 let age = ages["Alice"]         # 读取
@@ -234,14 +234,14 @@ def double(x: int):
 
 #### 变量类型注解
 ```python
-let name: string = "Alice"
+let name: str = "Alice"
 let age: int = 30
 let scores: [int] = [95, 87, 92]
 ```
 
 #### 函数类型注解
 ```python
-def greet(name: string) -> string:
+def greet(name: str) -> str:
     return "Hello, " + name
 
 def calculate(a: int, b: int) -> int:
@@ -256,8 +256,8 @@ Union 类型允许一个值拥有多个可能的类型：
 
 ```python
 # 基本 Union 类型
-let x: int | string = 42
-let y: int | string = "hello"
+let x: int | str = 42
+let y: int | str = "hello"
 
 # 函数参数 Union 类型
 def process(v: int | bool) -> int:
@@ -270,14 +270,25 @@ print(process(42))      # 输出 10
 print(process(true))    # 输出 20
 
 # 函数返回值 Union 类型
-def get_value(flag: int) -> int | string:
+def get_value(flag: int) -> int | str:
     if flag == 1:
         return 42
     else:
         return "hello"
 
-let result = get_value(1)  # result: int | string
+let result = get_value(1)  # result: int | str
 print(result)              # 输出 42
+
+# Bytes 类型支持
+def read_file(path: str) -> str | bytes:
+    return file_read_bytes(path)
+
+let content = read_file("data.bin")
+match type of content:
+    bytes:
+        print("Binary file")
+    str:
+        print("Text file")
 ```
 
 **特性**：
@@ -285,6 +296,7 @@ print(result)              # 输出 42
 - 自动拆箱：Match 表达式自动拆箱并类型检查
 - 支持 print：union_print_value 自动识别类型并打印
 - 完整的 GC 支持：自动内存管理
+- **支持类型**：int, str, bool, bytes
 
 #### 泛型 ✅
 
@@ -296,14 +308,14 @@ def identity[T](x: T) -> T:
     return x
 
 let a = identity(42)       # T = int
-let b = identity("hello")  # T = string
+let b = identity("hello")  # T = str
 
 # 泛型列表操作
 def first[T](arr: [T]) -> T:
     return arr[0]
 
 let num = first([1, 2, 3])      # T = int, 返回 1
-let str = first(["a", "b"])     # T = string, 返回 "a"
+let str = first(["a", "b"])     # T = str, 返回 "a"
 ```
 
 **实现方式**：单态化（Monomorphization）
@@ -376,25 +388,38 @@ match failure_result:
 模式匹配支持：
 
 ```python
-# 基本模式匹配
-def classify(x: int) -> string:
-    match x:
-        0: return "zero"
-        1: return "one"
-        _: return "other"
-
-# Match 表达式（可用于赋值）
+# Match 表达式（可用于赋值或返回）
 let result = match value:
     42: 10
     100: 20
     _: 0
 
+# 正确：使用 return match 形式
+def classify(x: int) -> str:
+    return match x:
+        0: "zero"
+        1: "one"
+        _: "other"
+
+# 错误：不能在 match 表达式分支中使用 return
+def wrong_classify(x: int) -> str:
+    match x:
+        0: return "zero"   # ❌ 编译错误
+        1: return "one"    # ❌ 编译错误
+        _: return "other"  # ❌ 编译错误
+
 # Union 类型匹配
-def process(v: int | string) -> int:
-    match v:
-        42: return 10
-        "test": return 20
-        _: return 0
+def process(v: int | str) -> int:
+    return match v:
+        42: 10
+        "test": 20
+        _: 0
+
+# 类型模式匹配（match type of）
+def handle_content(data: str | bytes) -> int:
+    return match type of data:
+        str: text.length()
+        bytes: len(binary)
 
 # 变量绑定模式
 match x:
@@ -409,6 +434,12 @@ match x:
 - None：`none`
 - 变量绑定：`n`, `x`
 - 通配符：`_`
+- 类型模式：`variable: type`（用于 Union 类型拆箱）
+
+**重要限制**：
+- Match 表达式分支不能包含 return 语句
+- 正确形式：`return match ...` 或 `let x = match ...`
+- 这确保 match 作为表达式的语义一致性
 
 ### 多态类型
 
@@ -428,7 +459,7 @@ Dream 语言支持类似 Rust trait 和 Go interface 的接口系统，允许为
 ```python
 # 基本接口
 interface Printable:
-    def show() -> string
+    def show() -> str
 
 # 带泛型参数的接口
 interface Container[T]:
@@ -467,10 +498,10 @@ enum Option[T]:
     Nothing
 
 impl Printable for Option[int]:
-    def show() -> string:
+    def show() -> str:
         match self:
             Option.Some(x):
-                return "Some(" + string(x) + ")"
+                return "Some(" + str(x) + ")"
             Option.Nothing:
                 return "Nothing"
 
@@ -498,7 +529,7 @@ Go 风格的隐式实现（编译时检查）：
 ```python
 # 定义接口
 interface Drawable:
-    def draw() -> string
+    def draw() -> str
 
 # 定义类型（无需显式声明实现接口）
 enum Shape:
@@ -506,7 +537,7 @@ enum Shape:
     Rectangle(int, int)
 
 # 只要实现了所需方法，就隐式满足接口
-def draw(self: Shape) -> string:
+def draw(self: Shape) -> str:
     match self:
         Shape.Circle(r):
             return "Circle"
@@ -605,7 +636,7 @@ interface PrintableComparable[T]:
     implements Printable
     implements Comparable[T]
 
-    def format() -> string:
+    def format() -> str:
         return self.show()
 ```
 
@@ -647,7 +678,7 @@ interface PrintableComparable[T]:
 ```python
 let x = 42                  # 类型推导
 let y: int = 100            # 显式类型
-let name: string = "Alice"
+let name: str = "Alice"
 let numbers = [1, 2, 3, 4, 5]
 ```
 
@@ -678,7 +709,7 @@ def function_name(param1: type1, param2: type2) -> return_type:
 def add(a: int, b: int) -> int:
     return a + b
 
-def greet(name: string):
+def greet(name: str):
     print("Hello, " + name)
 
 # 递归函数
@@ -765,7 +796,7 @@ else:
 
 示例:
 ```python
-def classify(x: int) -> string:
+def classify(x: int) -> str:
     if x > 0:
         return "positive"
     elif x < 0:
@@ -884,7 +915,7 @@ def main():
 
 #### 字符串索引
 ```python
-let s: string = "Hello"
+let s: str = "Hello"
 let char_code = s[0]  # 72 ('H' 的 ASCII 码)
 let c2 = s[1]         # 101 ('e' 的 ASCII 码)
 ```
@@ -896,7 +927,7 @@ let c2 = s[1]         # 101 ('e' 的 ASCII 码)
 
 #### 字符串切片
 ```python
-let s: string = "World"
+let s: str = "World"
 
 let sub1 = s[0:3]   # "Wor" - 索引 0 到 2
 let sub2 = s[1:]    # "orld" - 索引 1 到结尾
@@ -907,12 +938,12 @@ let sub4 = s[:]     # "World" - 完整复制
 **语义**:
 - `str[start:end]` - 包含 start，不包含 end
 - 负索引暂不支持
-- 底层调用 `string_substring()` 运行时函数
+- 底层调用 `str_sub()` 运行时函数
 
 #### 字符串分割和连接 ✅
 ```python
 # 字符串分割
-let text: string = "apple,banana,orange"
+let text: str = "apple,banana,orange"
 let parts = text.split(",")  # 返回字符串数组
 
 # 字符串连接
@@ -928,7 +959,7 @@ print(result)
 
 #### 字符级别方法 ✅
 ```python
-let s: string = "A1 B2"
+let s: str = "A1 B2"
 
 # 检查指定位置的字符类型
 print(s.is_alpha(0))       # true (A 是字母)
@@ -954,7 +985,7 @@ print(true)            # 打印布尔值（输出 "true"）
 print(False)           # 打印布尔值（输出 "false"）
 
 # Union 类型自动打印 ✅
-let x: int | string = 42
+let x: int | str = 42
 print(x)               # 自动识别类型并打印 "42"
 ```
 
@@ -983,8 +1014,8 @@ let y = x + 10
 
 # ❌ Error - 类型不匹配
 let a: int = 42
-let b: string = "hello"
-let c = a + b          # Error: 不能将 int 和 string 相加
+let b: str = "hello"
+let c = a + b          # Error: 不能将 int 和 str 相加
 ```
 
 ### 函数调用检查
@@ -1024,7 +1055,7 @@ let bad = [1, 2] + ["3", "4"]
 | int       | i32      |
 | bool      | i1       |
 | float     | i32 (临时) |
-| string    | i32* (指针) |
+| str       | i32* (指针) |
 | [T]       | [n x T]  |
 
 ### 数组操作实现

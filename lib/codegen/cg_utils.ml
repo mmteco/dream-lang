@@ -87,6 +87,15 @@ let box_to_union buf ctx value src_type =
        let str_i8 = fresh_temp () in
        Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 value;
        Printf.bprintf buf "  %s = call %%union_t* @union_create_string(i8* %s)\n" result str_i8
+   | Ptr (DynArray I32) ->
+       (* bytes 类型（指针） - 需要先转换为 i8* *)
+       let bytes_i8 = fresh_temp () in
+       Printf.bprintf buf "  %s = bitcast { i32, i32, i32* }* %s to i8*\n" bytes_i8 value;
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_bytes(i8* %s)\n" result bytes_i8
+   | DynArray I32 ->
+       (* bytes 类型（值） - 应该不会直接装箱值类型 *)
+       Printf.bprintf buf "  ; ERROR: Cannot box bytes value type to union\n";
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_none()\n" result
    | _ ->
        (* 其他类型暂不支持 *)
        Printf.bprintf buf "  ; TODO: box type %s to union\n" (llvm_type_to_string src_type);

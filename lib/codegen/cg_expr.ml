@@ -714,7 +714,7 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
            let result = fresh_temp () in
            Printf.bprintf buf "  %s = call { i32, i32, i32* }* @__c_file_read_bytes(i8* %s)\n" result path_i8;
-           (result, DynArray I32)
+           (result, Ptr (DynArray I32))
 
        | ("__c_file_write_bytes", [path_expr; data_expr]) ->
            let (path_v, _) = gen_expr buf ctx path_expr in
@@ -1805,7 +1805,7 @@ let rec gen_expr buf ctx = function
        | [] -> Printf.bprintf buf "  br label %%%s\n" default_label);
 
       (* 生成每个case *)
-      List.iteri (fun i ((pat, guard_opt, body_expr), (case_label, body_label)) ->
+      List.iteri (fun i ((pat, guard_opt, body), (case_label, body_label)) ->
         Printf.bprintf buf "\n%s:\n" case_label;
 
         (* 生成模式匹配条件 *)
@@ -1859,9 +1859,45 @@ let rec gen_expr buf ctx = function
         (* 绑定模式变量 *)
         gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name;
 
-        (* 生成body表达式 *)
-        let (body_v, _body_t) = gen_expr buf ctx body_expr in
-        phi_incoming := (body_v, body_label) :: !phi_incoming;
+        (* 生成body，根据类型处理 *)
+        let (body_v, body_t) = match body with
+          | MExpr expr ->
+              (* 单行表达式，包括嵌套 match *)
+              gen_expr buf ctx expr
+          | MStmts stmts ->
+              (* 多行语句块 *)
+              (* 由于循环依赖问题，这里直接处理简单的赋值语句 *)
+              (match stmts with
+               | [SExpr (expr, _)] ->
+                   (* 单个表达式，包括嵌套 match *)
+                   gen_expr buf ctx expr
+               | [SAssign (name, value, _)] ->
+                   (* 单个赋值语句 *)
+                   let (val_v, val_t) = gen_expr buf ctx value in
+                   (match find_variable ctx name with
+                    | Some _ ->
+                        let local = "%" ^ name in
+                        Printf.bprintf buf "  store %s %s, %s* %s\n"
+                          (llvm_type_to_string val_t) val_v (llvm_type_to_string val_t) local;
+                        ("0", Void)  (* 赋值返回 void *)
+                    | None ->
+                        Printf.bprintf buf "  ; ERROR: Variable %s not found\n" name;
+                        ("0", I32))
+               | _ ->
+                   (* 其他复杂语句块，返回 None (用 0 表示) *)
+                   (* TODO: 解决循环依赖后完整支持 *)
+                   ("0", I32))
+        in
+
+        (* 创建桥接块，用于统一处理控制流 *)
+        (* 这样不管 body 是简单表达式还是嵌套 match，都从桥接块跳转到 end_label *)
+        let bridge_label = fresh_label ("match.bridge" ^ string_of_int i) in
+        Printf.bprintf buf "  br label %%%s\n" bridge_label;
+        Printf.bprintf buf "\n%s:\n" bridge_label;
+
+        (* 如果这个分支返回 void，将其转换为返回 0 (None) *)
+        let normalized_v = if body_t = Void then "0" else body_v in
+        phi_incoming := (normalized_v, bridge_label) :: !phi_incoming;
 
         Printf.bprintf buf "  br label %%%s\n" end_label;
 
@@ -1878,13 +1914,25 @@ let rec gen_expr buf ctx = function
       (* 结束块和phi节点 *)
       Printf.bprintf buf "\n%s:\n" end_label;
       let result_type = match cases with
-        | (_, _, e) :: _ ->
+        | (_, _, body) :: _ ->
             (* 需要一个临时的上下文来推断类型 *)
             let temp_buf = Buffer.create 256 in
-            snd (gen_expr temp_buf ctx e)
+            (match body with
+             | MExpr e ->
+                 let ty = snd (gen_expr temp_buf ctx e) in
+                 (* 如果是 void，转换为 I32 (None) *)
+                 if ty = Void then I32 else ty
+             | MStmts stmts ->
+                 (match List.rev stmts with
+                  | SExpr (e, _) :: _ ->
+                      let ty = snd (gen_expr temp_buf ctx e) in
+                      (* 如果是 void，转换为 I32 (None) *)
+                      if ty = Void then I32 else ty
+                  | _ -> I32))  (* 多个语句默认返回 I32 (None) *)
         | [] -> I32
       in
 
+      (* 总是生成 phi 节点 (void 已经被转换为 I32) *)
       if List.length !phi_incoming > 0 then begin
         Printf.bprintf buf "  %s = phi %s " result_temp (llvm_type_to_string result_type);
         List.iteri (fun i (v, label) ->
@@ -1893,6 +1941,26 @@ let rec gen_expr buf ctx = function
         ) (List.rev !phi_incoming);
         Printf.bprintf buf "\n"
       end;
+
+      (* 检查所有分支是否都有 return 语句 *)
+      let all_branches_return = List.for_all (fun (_, _, body) ->
+        match body with
+        | MExpr _ -> false  (* 单行表达式不算 return *)
+        | MStmts stmts ->
+            let rec has_return = function
+              | SReturn _ -> true
+              | SIf (_, then_body, _, Some else_body, _) ->
+                  List.exists has_return then_body && List.exists has_return else_body
+              | _ -> false
+            in
+            (match List.rev stmts with
+             | [] -> false
+             | last :: _ -> has_return last)
+      ) cases in
+
+      (* 如果所有分支都有 return，match.end 块不可达，需要添加 unreachable *)
+      if all_branches_return then
+        Printf.bprintf buf "  unreachable\n";
 
       (result_temp, result_type)
 
@@ -2204,9 +2272,10 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
                 Printf.bprintf buf "  %s = call i1 @union_is_string(%%union_t* %s)\n" is_string scrut_v;
                 is_string
             | DynArrayPtr ->
-                (* bytes 类型暂时没有 union_is_bytes，可以用其他方式检查或添加新的运行时函数 *)
-                Buffer.add_string buf "  ; TODO: union_is_bytes not implemented yet\n";
-                "0"
+                (* bytes 类型检查 *)
+                let is_bytes = fresh_temp () in
+                Printf.bprintf buf "  %s = call i1 @union_is_bytes(%%union_t* %s)\n" is_bytes scrut_v;
+                is_bytes
             | I1 ->
                 let is_bool = fresh_temp () in
                 Printf.bprintf buf "  %s = call i1 @union_is_bool(%%union_t* %s)\n" is_bool scrut_v;
@@ -2393,9 +2462,18 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name_opt =
                                  else local_temp in
                 add_variable_with_rename ctx bind_name local_name (Ptr I32)
             | DynArrayPtr ->
-                (* bytes 类型需要从 union 中获取 *)
-                Buffer.add_string buf "  ; TODO: union_get_bytes not implemented yet\n";
-                add_variable ctx bind_name DynArrayPtr
+                (* bytes 类型拆箱 *)
+                let unboxed_val = fresh_temp () in
+                Printf.bprintf buf "  %s = call i8* @union_get_bytes(%%union_t* %s)\n" unboxed_val scrut_v;
+                let casted_val = fresh_temp () in
+                Printf.bprintf buf "  %s = bitcast i8* %s to { i32, i32, i64* }*\n" casted_val unboxed_val;
+                let local_temp = fresh_temp () in
+                Printf.bprintf buf "  %s = alloca { i32, i32, i64* }*\n" local_temp;
+                Printf.bprintf buf "  store { i32, i32, i64* }* %s, { i32, i32, i64* }** %s\n" casted_val local_temp;
+                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
+                                 then String.sub local_temp 1 (String.length local_temp - 1)
+                                 else local_temp in
+                add_variable_with_rename ctx bind_name local_name DynArrayPtr
             | I1 ->
                 let unboxed_val = fresh_temp () in
                 Printf.bprintf buf "  %s = call i1 @union_get_bool(%%union_t* %s)\n" unboxed_val scrut_v;

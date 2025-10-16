@@ -134,10 +134,10 @@ statement:
       { SWhile (cond, body, get_expr_pos cond) }
   | FOR pat = for_pattern IN iter = expr COLON newline_sep INDENT body = statement_list DEDENT
       { SFor (pat, iter, body, get_expr_pos iter) }
-  | MATCH e = expr COLON newline_sep INDENT cases = case_list DEDENT
-      { SMatch (e, cases, get_expr_pos e) }
-  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list DEDENT
-      { SMatch (e, cases, get_expr_pos e) }
+  | MATCH e = expr COLON newline_sep INDENT cases = expr_case_list DEDENT
+      { SExpr (EMatch (e, cases, get_expr_pos e), get_expr_pos e) }
+  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list_as_expr DEDENT
+      { SExpr (EMatch (e, cases, get_expr_pos e), get_expr_pos e) }
   | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
       { SInterface {
           interface_name = name;
@@ -221,23 +221,39 @@ else_opt:
   | ELSE COLON newline_sep INDENT body = statement_list DEDENT
       { Some body }
 
-case_list:
+type_case_list_as_expr:
   | { [] }
-  | CASE p = match_pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
-      { (p, Some guard, body) :: rest }
-  | CASE p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
-      { (p, None, body) :: rest }
-  | p = match_pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
-      { (p, Some guard, body) :: rest }
-  | p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = case_list
-      { (p, None, body) :: rest }
+  | ty = type_expr COLON newline_sep body = expr newline_sep rest = type_case_list_as_expr
+      { (PType ("_matched_value", ty), None, MExpr body) :: rest }
+  | ty = type_expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list_as_expr
+      { (PType ("_matched_value", ty), None, MStmts body) :: rest }
+  | UNDERSCORE COLON newline_sep body = expr newline_sep rest = type_case_list_as_expr
+      { (PWildcard, None, MExpr body) :: rest }
+  | UNDERSCORE COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list_as_expr
+      { (PWildcard, None, MStmts body) :: rest }
 
-type_case_list:
+expr_case_list:
   | { [] }
-  | ty = type_expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list
-      { (PType ("_matched_value", ty), None, body) :: rest }
-  | UNDERSCORE COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list
-      { (PWildcard, None, body) :: rest }
+  | CASE p = match_pattern IF guard = expr COLON newline_sep body = expr newline_sep rest = expr_case_list
+      { (p, Some guard, MExpr body) :: rest }
+  | CASE p = match_pattern COLON newline_sep body = expr newline_sep rest = expr_case_list
+      { (p, None, MExpr body) :: rest }
+  | CASE p = match_pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = expr_case_list
+      { (p, Some guard, MStmts body) :: rest }
+  | CASE p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = expr_case_list
+      { (p, None, MStmts body) :: rest }
+  | p = match_pattern IF guard = expr COLON newline_sep body = expr newline_sep rest = expr_case_list
+      { (p, Some guard, MExpr body) :: rest }
+  | p = match_pattern COLON newline_sep body = expr newline_sep rest = expr_case_list
+      { (p, None, MExpr body) :: rest }
+  | p = match_pattern IF guard = expr COLON newline_sep name = IDENT ASSIGN value = expr newline_sep rest = expr_case_list
+      { (p, Some guard, MStmts [SAssign (name, value, { line = 0; column = 0 })]) :: rest }
+  | p = match_pattern COLON newline_sep name = IDENT ASSIGN value = expr newline_sep rest = expr_case_list
+      { (p, None, MStmts [SAssign (name, value, { line = 0; column = 0 })]) :: rest }
+  | p = match_pattern IF guard = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = expr_case_list
+      { (p, Some guard, MStmts body) :: rest }
+  | p = match_pattern COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = expr_case_list
+      { (p, None, MStmts body) :: rest }
 
 interface_member_list:
   | { [] }
@@ -476,6 +492,10 @@ expr:
       { EEnumVariant (enum_name, variant_name, [], { line = 0; column = 0 }) }
   | struct_name = IDENT LBRACE fields = separated_list(COMMA, struct_field_init) RBRACE
       { EStructLiteral (struct_name, fields, { line = 0; column = 0 }) }
+  | MATCH e = expr COLON newline_sep INDENT cases = expr_case_list DEDENT
+      { EMatch (e, cases, get_expr_pos e) }
+  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list_as_expr DEDENT
+      { EMatch (e, cases, get_expr_pos e) }
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }

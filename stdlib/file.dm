@@ -7,11 +7,10 @@ def read_file(path: str, as_bytes: bool = false) -> str | bytes:
       as_bytes - 0=读取为字符串, 1=读取为字节数组
     返回: 文件内容（string 或 bytes）
     '''
-    match as_bytes:
-        false:
-            return __c_file_read(path)
-        true:
-            return __c_file_read_bytes(path)
+    if as_bytes:
+        return __c_file_read(path)
+    else:
+        return __c_file_read_bytes(path)
 
 
 def write_file(path: str, content: str | bytes) -> Result[int, str]:
@@ -22,12 +21,9 @@ def write_file(path: str, content: str | bytes) -> Result[int, str]:
       content - 文件内容（字符串或字节数组）
     返回: Result[int, str] - 成功时返回 Ok(字节数)，失败时返回 Err(错误信息)
     '''
-    let bytes_written: int = 0
-    match type of content:
-        str:
-            bytes_written = __c_file_write(path, content)
-        bytes:
-            bytes_written = __c_file_write_bytes(path, content)
+    let bytes_written = match type of content:
+        str: __c_file_write(path, content)
+        bytes: __c_file_write_bytes(path, content)
 
     if bytes_written == -1:
         return Err("Failed to write file")
@@ -43,12 +39,9 @@ def append_file(path: str, content: str | bytes) -> Result[int, str]:
       content - 追加的内容（字符串或字节数组）
     返回: Result[int, str] - 成功时返回 Ok(字节数)，失败时返回 Err(错误信息)
     '''
-    let bytes_written: int = 0
-    match type of content:
-        str:
-            bytes_written = __c_file_append(path, content)
-        bytes:
-            bytes_written = __c_file_append_bytes(path, content)
+    let bytes_written = match type of content:
+        str:  __c_file_append(path, content)
+        bytes: __c_file_append_bytes(path, content)
 
     if bytes_written == -1:
         return Err("Failed to append to file")
@@ -70,8 +63,6 @@ def delete_file(path: str) -> Result[bool, str]:
 
 
 def exists_file(path: str) -> bool:
-    match __c_file_exists(path):
-        1:
-            return true
-        _:
-            return false
+    return match __c_file_exists(path):
+        1: true
+        _: false

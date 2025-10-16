@@ -603,7 +603,7 @@ let rec infer_expr env = function
       let result_type = fresh_type_var () in
       let rec check_cases combined_subst = function
         | [] -> (result_type, combined_subst)
-        | (pat, guard_opt, expr) :: rest ->
+        | (pat, guard_opt, body) :: rest ->
             (* 创建模式绑定的新环境 *)
             let rec bind_pattern env pat expected_type =
               match pat with
@@ -651,7 +651,38 @@ let rec infer_expr env = function
                      report_error err;
                      (case_env, combined_g))
             in
-            let (case_type, case_subst) = infer_expr guard_env expr in
+            (* 根据 body 类型处理 *)
+            let (case_type, case_subst) = match body with
+              | MExpr expr ->
+                  infer_expr guard_env expr
+              | MStmts stmts ->
+                  (* 检查是否包含 return 语句 *)
+                  let has_return = List.exists (function
+                    | SReturn _ -> true
+                    | _ -> false
+                  ) stmts in
+                  if has_return then begin
+                    let err = make_error (TypeError "Invalid return in match expression") pos
+                      "Cannot use 'return' in match expression branches. Use 'return match ...' instead." in
+                    report_error err
+                  end;
+                  (* 对于语句块，推导最后一条语句的类型 *)
+                  let (_, stmt_subst) = check_statements guard_env stmts in
+                  let branch_type = match List.rev stmts with
+                    | [] -> TyNone
+                    | last_stmt :: _ ->
+                        (match last_stmt with
+                         | SExpr (expr, _) ->
+                             let (expr_type, _) = infer_expr guard_env expr in
+                             expr_type
+                         | SReturn (Some expr, _) ->
+                             let (expr_type, _) = infer_expr guard_env expr in
+                             expr_type
+                         | SReturn (None, _) -> TyNone
+                         | _ -> TyNone)
+                  in
+                  (branch_type, stmt_subst)
+            in
             let combined = compose_subst case_subst guard_subst in
             (try
                let unify_subst = unify (apply_subst combined result_type) (apply_subst combined case_type) in
@@ -801,7 +832,7 @@ and apply_subst_to_env subst env =
     if is_polymorphic ty then ty else apply_subst subst ty
   ) env.bindings}
 
-let rec check_statement env = function
+and check_statement env = function
   | SExpr (e, _) ->
       let (_, subst) = infer_expr env e in
       (apply_subst_to_env subst env, subst)
@@ -1025,93 +1056,6 @@ let rec check_statement env = function
          report_error err;
          (env, empty_subst))
 
-  | SMatch (scrut, cases, _pos) ->
-      let (scrut_type, scrut_subst) = infer_expr env scrut in
-      let env' = apply_subst_to_env scrut_subst env in
-
-      (* 检查每个case分支 *)
-      let rec check_cases combined_subst = function
-        | [] -> combined_subst
-        | (pat, guard_opt, body) :: rest ->
-            (* 创建模式绑定的新环境 *)
-            let rec bind_pattern env pat expected_type =
-              match pat with
-              | PVar name -> add_binding name expected_type env
-              | PInt _ | PFloat _ | PString _ | PBool _ | PWildcard -> env
-              | PTuple pats ->
-                  (match expected_type with
-                   | TyTuple elem_types when List.length pats = List.length elem_types ->
-                       List.fold_left2 bind_pattern env pats elem_types
-                   | _ -> env)
-              | PList _ -> env  (* TODO: 实现列表模式 *)
-              | PType (var_name, type_pattern) ->
-                  (* 类型模式：检查 expected_type 是否兼容 type_pattern，然后绑定变量 *)
-                  let target_type = type_expr_to_ty type_pattern in
-                  (match expected_type with
-                   | TyUnion type_list ->
-                       (* 如果 expected_type 是 Union，检查 target_type 是否是其成员之一 *)
-                       if List.mem target_type type_list then
-                         add_binding var_name target_type env
-                       else
-                         env
-                   | _ ->
-                       (* 如果不是 Union，检查类型是否直接匹配 *)
-                       (try
-                          let _ = unify expected_type target_type in
-                          add_binding var_name target_type env
-                        with Failure _ -> env))
-              | PEnumVariant (_, _, pats) ->
-                  (* 枚举模式暂时不检查内部参数类型 *)
-                  List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
-            in
-            let case_env = bind_pattern env' pat (apply_subst combined_subst scrut_type) in
-            (* 检查守卫条件类型 *)
-            let (guard_env, guard_subst) = match guard_opt with
-              | None -> (case_env, combined_subst)
-              | Some guard_expr ->
-                  let (guard_type, g_subst) = infer_expr case_env guard_expr in
-                  let combined_g = compose_subst g_subst combined_subst in
-                  (try
-                     let bool_subst = unify (apply_subst combined_g guard_type) TyBool in
-                     (case_env, compose_subst bool_subst combined_g)
-                   with Failure msg ->
-                     let err = make_error (TypeError msg) _pos
-                       (Printf.sprintf "Guard condition must be bool: %s" msg) in
-                     report_error err;
-                     (case_env, combined_g))
-            in
-            let (_, case_subst) = check_statements guard_env body in
-            let combined = compose_subst case_subst guard_subst in
-            check_cases combined rest
-      in
-      let final_subst = check_cases scrut_subst cases in
-
-      (* 穷尽性检查 *)
-      (match Exhaustiveness.check_exhaustiveness env' (apply_subst scrut_subst scrut_type) cases _pos with
-       | Some (pos, missing) ->
-           let missing_str = String.concat ", " missing in
-           let err = make_error (TypeError "Non-exhaustive match") pos
-             (Printf.sprintf "Match is not exhaustive. Missing cases: %s" missing_str) in
-           report_error err
-       | None -> ());
-
-      (* 不可达模式检查 *)
-      let unreachable_indices = Exhaustiveness.check_reachability env' (apply_subst scrut_subst scrut_type) cases in
-      List.iter (fun idx ->
-        let (pat, _, _) = List.nth cases idx in
-        let pat_str = match pat with
-          | PEnumVariant (_, v, _) -> v
-          | PInt n -> string_of_int n
-          | PBool b -> string_of_bool b
-          | PWildcard -> "_"
-          | _ -> "_"
-        in
-        let err = make_error (TypeError "Unreachable pattern") _pos
-          (Printf.sprintf "Pattern '%s' is unreachable (branch #%d in the match expression)" pat_str (idx + 1)) in
-        report_error err
-      ) unreachable_indices;
-
-      (env, final_subst)
 
   | SInterface interface_info ->
       let name = interface_info.interface_name in
@@ -1566,7 +1510,55 @@ and check_statements env stmts =
     (env, empty_subst) stmts
 
 (* AST转换：填充默认参数 *)
-let rec fill_default_params env expr =
+let rec fill_default_params_stmt env stmt =
+  match stmt with
+  | SExpr (e, pos) -> SExpr (fill_default_params env e, pos)
+  | SLet let_info ->
+      SLet { let_info with let_value = fill_default_params env let_info.let_value }
+  | SLetPat (pat, value, pos) ->
+      SLetPat (pat, fill_default_params env value, pos)
+  | SAssign (name, value, pos) ->
+      SAssign (name, fill_default_params env value, pos)
+  | SDef def_info ->
+      let new_body = List.map (fill_default_params_stmt env) def_info.def_body in
+      SDef { def_info with def_body = new_body }
+  | SReturn (expr_opt, pos) ->
+      SReturn (Option.map (fill_default_params env) expr_opt, pos)
+  | SIf (cond, then_body, elifs, else_opt, pos) ->
+      let new_then = List.map (fill_default_params_stmt env) then_body in
+      let new_elifs = List.map (fun (c, b) ->
+        (fill_default_params env c, List.map (fill_default_params_stmt env) b)
+      ) elifs in
+      let new_else = Option.map (List.map (fill_default_params_stmt env)) else_opt in
+      SIf (fill_default_params env cond, new_then, new_elifs, new_else, pos)
+  | SWhile (cond, body, pos) ->
+      SWhile (fill_default_params env cond, List.map (fill_default_params_stmt env) body, pos)
+  | SFor (pat, iter, body, pos) ->
+      SFor (pat, fill_default_params env iter, List.map (fill_default_params_stmt env) body, pos)
+  | SImpl (impl_block, pos) ->
+      let new_members = List.map (function
+        | ImplMethod (name, type_params, params, ret_ty_opt, body, mpos) ->
+            ImplMethod (name, type_params, params, ret_ty_opt,
+                       List.map (fill_default_params_stmt env) body, mpos)
+        | other -> other
+      ) impl_block.impl_members in
+      SImpl ({ impl_block with impl_members = new_members }, pos)
+  | SStruct struct_info ->
+      let new_members = List.map (function
+        | SMethod (name, type_params, params, ret_ty_opt, body, mpos) ->
+            SMethod (name, type_params, params, ret_ty_opt,
+                    List.map (fill_default_params_stmt env) body, mpos)
+        | other -> other
+      ) struct_info.struct_members in
+      SStruct { struct_info with struct_members = new_members }
+  | SFieldAssign (obj, field, value, pos) ->
+      SFieldAssign (fill_default_params env obj, field, fill_default_params env value, pos)
+  | SIndexAssign (arr, idx, value, pos) ->
+      SIndexAssign (fill_default_params env arr, fill_default_params env idx,
+                   fill_default_params env value, pos)
+  | _ -> stmt
+
+and fill_default_params env expr =
   match expr with
   | ECall (EVar (func_name, func_pos), args, pos) ->
       (* 检查是否需要填充默认参数 *)
@@ -1617,8 +1609,12 @@ let rec fill_default_params env expr =
       EIf (fill_default_params env cond, fill_default_params env then_expr,
            Option.map (fill_default_params env) else_opt, pos)
   | EMatch (scrut, cases, pos) ->
-      let new_cases = List.map (fun (pat, guard_opt, expr) ->
-        (pat, Option.map (fill_default_params env) guard_opt, fill_default_params env expr)
+      let new_cases = List.map (fun (pat, guard_opt, body) ->
+        let new_body = match body with
+          | MExpr expr -> MExpr (fill_default_params env expr)
+          | MStmts stmts -> MStmts (List.map (fill_default_params_stmt env) stmts)
+        in
+        (pat, Option.map (fill_default_params env) guard_opt, new_body)
       ) cases in
       EMatch (fill_default_params env scrut, new_cases, pos)
   | EListComp (elem, var, iter, cond_opt, pos) ->
@@ -1633,60 +1629,6 @@ let rec fill_default_params env expr =
   | EStructAccess (obj, field, pos) ->
       EStructAccess (fill_default_params env obj, field, pos)
   | _ -> expr
-
-let rec fill_default_params_stmt env stmt =
-  match stmt with
-  | SExpr (e, pos) -> SExpr (fill_default_params env e, pos)
-  | SLet let_info ->
-      SLet { let_info with let_value = fill_default_params env let_info.let_value }
-  | SLetPat (pat, value, pos) ->
-      SLetPat (pat, fill_default_params env value, pos)
-  | SAssign (name, value, pos) ->
-      SAssign (name, fill_default_params env value, pos)
-  | SDef def_info ->
-      let new_body = List.map (fill_default_params_stmt env) def_info.def_body in
-      SDef { def_info with def_body = new_body }
-  | SReturn (expr_opt, pos) ->
-      SReturn (Option.map (fill_default_params env) expr_opt, pos)
-  | SIf (cond, then_body, elifs, else_opt, pos) ->
-      let new_then = List.map (fill_default_params_stmt env) then_body in
-      let new_elifs = List.map (fun (c, b) ->
-        (fill_default_params env c, List.map (fill_default_params_stmt env) b)
-      ) elifs in
-      let new_else = Option.map (List.map (fill_default_params_stmt env)) else_opt in
-      SIf (fill_default_params env cond, new_then, new_elifs, new_else, pos)
-  | SWhile (cond, body, pos) ->
-      SWhile (fill_default_params env cond, List.map (fill_default_params_stmt env) body, pos)
-  | SFor (pat, iter, body, pos) ->
-      SFor (pat, fill_default_params env iter, List.map (fill_default_params_stmt env) body, pos)
-  | SMatch (scrut, cases, pos) ->
-      let new_cases = List.map (fun (pat, guard_opt, body) ->
-        (pat, Option.map (fill_default_params env) guard_opt,
-         List.map (fill_default_params_stmt env) body)
-      ) cases in
-      SMatch (fill_default_params env scrut, new_cases, pos)
-  | SImpl (impl_block, pos) ->
-      let new_members = List.map (function
-        | ImplMethod (name, type_params, params, ret_ty_opt, body, mpos) ->
-            ImplMethod (name, type_params, params, ret_ty_opt,
-                       List.map (fill_default_params_stmt env) body, mpos)
-        | other -> other
-      ) impl_block.impl_members in
-      SImpl ({ impl_block with impl_members = new_members }, pos)
-  | SStruct struct_info ->
-      let new_members = List.map (function
-        | SMethod (name, type_params, params, ret_ty_opt, body, mpos) ->
-            SMethod (name, type_params, params, ret_ty_opt,
-                    List.map (fill_default_params_stmt env) body, mpos)
-        | other -> other
-      ) struct_info.struct_members in
-      SStruct { struct_info with struct_members = new_members }
-  | SFieldAssign (obj, field, value, pos) ->
-      SFieldAssign (fill_default_params env obj, field, fill_default_params env value, pos)
-  | SIndexAssign (arr, idx, value, pos) ->
-      SIndexAssign (fill_default_params env arr, fill_default_params env idx,
-                   fill_default_params env value, pos)
-  | _ -> stmt
 
 let typecheck program =
   let (final_env, _) = check_statements builtin_env program in

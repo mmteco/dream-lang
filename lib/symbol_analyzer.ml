@@ -225,7 +225,9 @@ let rec analyze_expr ctx expr =
       analyze_expr ctx scrut;
       List.iter (fun (_, guard_opt, body) ->
         (match guard_opt with Some g -> analyze_expr ctx g | None -> ());
-        analyze_expr ctx body
+        match body with
+        | MExpr expr -> analyze_expr ctx expr
+        | MStmts _ -> ()  (* 语句块在 statement 级别处理 *)
       ) cases
 
   | ELambda (params, body, _) ->
@@ -401,16 +403,6 @@ let rec analyze_stmt ctx stmt : symbol_def list =
       let defs = List.concat (List.map (analyze_stmt ctx) body) in
       exit_scope ctx;
       defs
-
-  | SMatch (scrut, cases, _) ->
-      analyze_expr ctx scrut;
-      List.concat (List.map (fun (_, guard_opt, body) ->
-        (match guard_opt with Some g -> analyze_expr ctx g | None -> ());
-        enter_scope ctx;
-        let defs = List.concat (List.map (analyze_stmt ctx) body) in
-        exit_scope ctx;
-        defs
-      ) cases)
 
   | SExpr (expr, _) ->
       analyze_expr ctx expr;
