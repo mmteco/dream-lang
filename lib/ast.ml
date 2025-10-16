@@ -175,7 +175,7 @@ and impl_block = {
 
 (* 结构体字段定义 *)
 and struct_field = {
-  field_name: string;
+  field_name: string option;  (* None 表示匿名嵌入字段 *)
   field_type: type_expr;
   field_pos: position;
 }

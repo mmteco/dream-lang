@@ -308,9 +308,14 @@ let rec analyze_stmt ctx stmt : symbol_def list =
       (* 处理成员，记录 ID *)
       let member_defs = List.concat (List.map (function
         | SField field ->
-            let field_id = add_definition ctx field.field_name Field field.field_pos in
-            let field_ref = Hashtbl.find ctx.definitions_table field_id in
-            [!field_ref]
+            (match field.field_name with
+             | Some name ->
+                 let field_id = add_definition ctx name Field field.field_pos in
+                 let field_ref = Hashtbl.find ctx.definitions_table field_id in
+                 [!field_ref]
+             | None ->
+                 (* 匿名嵌入字段,不创建定义 *)
+                 [])
         | SMethod (method_name, _, params, _, body, method_pos) ->
             let method_id = add_definition ctx method_name Method method_pos in
             enter_scope ctx;

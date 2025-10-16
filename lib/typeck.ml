@@ -438,10 +438,52 @@ let rec infer_expr env = function
                           (* 方法访问 *)
                           (method_type, obj_subst)
                       | None ->
-                          let err = make_error (TypeError "Unknown field or method") pos
-                            (Printf.sprintf "Struct '%s' has no field or method '%s'" struct_name attr) in
-                          report_error err;
-                          (TyUnknown, obj_subst))))
+                          (* 最后查找嵌入字段中的字段和方法(字段提升) *)
+                          (* 查找所有嵌入字段:字段名与类型名相同的字段 *)
+                          let embedded_fields = List.filter (fun (field_name, field_ty) ->
+                            match field_ty with
+                            | TyStruct (embedded_struct_name, _) when field_name = embedded_struct_name ->
+                                true
+                            | _ -> false
+                          ) struct_def.struct_fields in
+
+                          (* 在每个嵌入字段中查找属性 *)
+                          let found_in_embedded = List.filter_map (fun (_, field_ty) ->
+                            match field_ty with
+                            | TyStruct (embedded_struct_name, _) ->
+                                (match Env.find_struct embedded_struct_name env with
+                                 | None -> None
+                                 | Some embedded_def ->
+                                     (* 查找字段 *)
+                                     (match List.assoc_opt attr embedded_def.struct_fields with
+                                      | Some embedded_field_type ->
+                                          Some (embedded_struct_name, embedded_field_type)
+                                      | None ->
+                                          (* 查找方法 *)
+                                          (match Env.StringMap.find_opt attr embedded_def.struct_methods with
+                                           | Some embedded_method_type ->
+                                               Some (embedded_struct_name, embedded_method_type)
+                                           | None -> None)))
+                            | _ -> None
+                          ) embedded_fields in
+
+                          (match found_in_embedded with
+                           | [] ->
+                               (* 没有找到,报错 *)
+                               let err = make_error (TypeError "Unknown field or method") pos
+                                 (Printf.sprintf "Struct '%s' has no field or method '%s'" struct_name attr) in
+                               report_error err;
+                               (TyUnknown, obj_subst)
+                           | [(_, promoted_type)] ->
+                               (* 唯一匹配,返回提升的类型 *)
+                               (promoted_type, obj_subst)
+                           | multiple ->
+                               (* 多个匹配,报错 *)
+                               let struct_names = String.concat ", " (List.map fst multiple) in
+                               let err = make_error (TypeError "Ambiguous field or method") pos
+                                 (Printf.sprintf "Field or method '%s' is ambiguous (found in embedded structs: %s)" attr struct_names) in
+                               report_error err;
+                               (TyUnknown, obj_subst)))))
        | _ ->
            let err = make_error (TypeError "Attributes not implemented") pos
              "Attribute access not yet implemented for this type" in
@@ -1227,8 +1269,21 @@ let rec check_statement env = function
            ) members in
 
            (* 转换字段类型 *)
+           (* 对于匿名嵌入（field_name = None），使用类型名作为字段名 *)
            let struct_fields = List.map (fun field ->
-             (field.field_name, type_expr_to_ty field.field_type)
+             let field_name = match field.field_name with
+               | Some name -> name
+               | None ->
+                   (* 匿名嵌入：从类型表达式提取类型名 *)
+                   (match field.field_type with
+                    | TVar type_name -> type_name
+                    | _ ->
+                        let err = make_error (TypeError "Invalid embedded field") field.field_pos
+                          "Embedded field must be a named type" in
+                        report_error err;
+                        "_invalid_")
+             in
+             (field_name, type_expr_to_ty field.field_type)
            ) field_list in
 
            (* 处理方法：检查方法体并生成方法类型 *)

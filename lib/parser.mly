@@ -260,7 +260,9 @@ struct_member_list:
 
 struct_member:
   | name = IDENT COLON ty = type_expr
-      { SField { field_name = name; field_type = ty; field_pos = make_position $startpos } }
+      { SField { field_name = Some name; field_type = ty; field_pos = make_position $startpos } }
+  | ty = type_expr
+      { SField { field_name = None; field_type = ty; field_pos = make_position $startpos } }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
       { SMethod (name, [], params, None, body, make_position $startpos) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT

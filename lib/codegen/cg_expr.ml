@@ -470,24 +470,44 @@ let rec gen_expr buf ctx = function
                 Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
                 (result, I1)
             | _ ->
-                (* 不是字符串方法，可能是结构体方法调用 *)
-                (* 尝试从对象的类型信息中获取结构体名称 *)
+                (* 不是字符串方法，可能是结构体字段或方法调用 *)
                 (match obj_t with
                  | StructPtr struct_name ->
-                     (* 根据对象的实际类型调用对应的方法 *)
-                     let mangled_name = Printf.sprintf "%s_%s" struct_name method_name in
-                     let arg_vals_types = List.map (gen_expr buf ctx) args in
-                     let arg_vals = List.map fst arg_vals_types in
-                     let result = fresh_temp () in
+                     (* 先检查是否是字段访问（直接字段或通过嵌入提升的字段） *)
+                     let is_field =
+                       match Hashtbl.find_opt struct_registry struct_name with
+                       | None -> false
+                       | Some struct_def ->
+                           (* 检查直接字段 *)
+                           if List.exists (fun f -> f.field_name = method_name) struct_def.fields then
+                             true
+                           else
+                             (* 检查嵌入字段提升 *)
+                             match List.find_opt (fun f -> Hashtbl.mem struct_registry f.field_name) struct_def.fields with
+                             | None -> false
+                             | Some embedded_field_info ->
+                                 match Hashtbl.find_opt struct_registry embedded_field_info.field_name with
+                                 | None -> false
+                                 | Some embedded_struct_def ->
+                                     List.exists (fun f -> f.field_name = method_name) embedded_struct_def.fields
+                     in
 
-                     (* 调用 StructName_method_name(obj, args...) *)
-                     Printf.bprintf buf "  %s = call i32 %s(i32* %s"
-                       result (mangle_name mangled_name) obj_v;
-                     List.iter (fun arg_val ->
-                       Printf.bprintf buf ", i32 %s" arg_val
-                     ) arg_vals;
-                     Printf.bprintf buf ")\n";
-                     (result, I32)
+                     if is_field then
+                       (* 这实际上是字段访问，直接求值 EAttr *)
+                       gen_expr buf ctx (EAttr (obj, method_name, { line = 0; column = 0 }))
+                     else
+                       (* 真正的方法调用 *)
+                       let mangled_name = Printf.sprintf "%s_%s" struct_name method_name in
+                       let arg_vals_types = List.map (gen_expr buf ctx) args in
+                       let arg_vals = List.map fst arg_vals_types in
+                       let result = fresh_temp () in
+                       Printf.bprintf buf "  %s = call i32 %s(i32* %s"
+                         result (mangle_name mangled_name) obj_v;
+                       List.iter (fun arg_val ->
+                         Printf.bprintf buf ", i32 %s" arg_val
+                       ) arg_vals;
+                       Printf.bprintf buf ")\n";
+                       (result, I32)
                  | _ ->
                      (* 如果不是 StructPtr,回退到旧的全局查找方式 *)
                      (match Hashtbl.find_opt struct_method_registry method_name with
@@ -1486,7 +1506,7 @@ let rec gen_expr buf ctx = function
                        let field_info_opt = List.find_opt (fun f -> f.field_name = variant_name) struct_def.fields in
                        (match field_info_opt with
                         | Some field_info ->
-                            (* 字段访问 *)
+                            (* 直接字段访问 *)
                             let field_ptr = fresh_temp () in
                             Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
                               field_ptr obj_v field_info.field_index;
@@ -1494,12 +1514,48 @@ let rec gen_expr buf ctx = function
                             Printf.bprintf buf "  %s = load i32, i32* %s\n" result field_ptr;
                             (result, I32)
                         | None ->
-                            (* 不是字段，可能是无参数方法 *)
-                            let mangled_name = Printf.sprintf "%s_%s" struct_name variant_name in
-                            let result = fresh_temp () in
-                            Printf.bprintf buf "  %s = call i32 %s(i32* %s)\n"
-                              result (mangle_name mangled_name) obj_v;
-                            (result, I32)))
+                            (* 不是直接字段,尝试字段提升 *)
+                            let embedded_field_opt = List.find_opt (fun f ->
+                              Hashtbl.mem struct_registry f.field_name
+                            ) struct_def.fields in
+                            (match embedded_field_opt with
+                             | None ->
+                                 (* 不是字段，是无参数方法 *)
+                                 let mangled_name = Printf.sprintf "%s_%s" struct_name variant_name in
+                                 let result = fresh_temp () in
+                                 Printf.bprintf buf "  %s = call i32 %s(i32* %s)\n"
+                                   result (mangle_name mangled_name) obj_v;
+                                 (result, I32)
+                             | Some embedded_field_info ->
+                                 (match Hashtbl.find_opt struct_registry embedded_field_info.field_name with
+                                  | None ->
+                                      Printf.bprintf buf "  ; ERROR: Embedded struct '%s' not found\n" embedded_field_info.field_name;
+                                      ("0", I32)
+                                  | Some embedded_struct_def ->
+                                      let embedded_attr_info_opt = List.find_opt (fun f -> f.field_name = variant_name) embedded_struct_def.fields in
+                                      (match embedded_attr_info_opt with
+                                       | None ->
+                                           (* 嵌入结构体中也没有这个字段，是方法调用 *)
+                                           let mangled_name = Printf.sprintf "%s_%s" struct_name variant_name in
+                                           let result = fresh_temp () in
+                                           Printf.bprintf buf "  %s = call i32 %s(i32* %s)\n"
+                                             result (mangle_name mangled_name) obj_v;
+                                           (result, I32)
+                                       | Some embedded_attr_info ->
+                                           (* 通过嵌入字段提升访问 *)
+                                           let embedded_ptr_field = fresh_temp () in
+                                           Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                                             embedded_ptr_field obj_v embedded_field_info.field_index;
+                                           let embedded_ptr_int = fresh_temp () in
+                                           Printf.bprintf buf "  %s = load i32, i32* %s\n" embedded_ptr_int embedded_ptr_field;
+                                           let embedded_ptr = fresh_temp () in
+                                           Printf.bprintf buf "  %s = inttoptr i32 %s to i32*\n" embedded_ptr embedded_ptr_int;
+                                           let attr_ptr = fresh_temp () in
+                                           Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                                             attr_ptr embedded_ptr embedded_attr_info.field_index;
+                                           let result = fresh_temp () in
+                                           Printf.bprintf buf "  %s = load i32, i32* %s\n" result attr_ptr;
+                                           (result, I32))))))
                 end else begin
                   (* 方法调用 *)
                   let mangled_name = Printf.sprintf "%s_%s" struct_name variant_name in
@@ -1853,16 +1909,52 @@ let rec gen_expr buf ctx = function
             | Some struct_def ->
                 let field_info_opt = List.find_opt (fun f -> f.field_name = attr) struct_def.fields in
                 (match field_info_opt with
-                 | None ->
-                     Printf.bprintf buf "  ; ERROR: Field '%s' not found\n" attr;
-                     ("0", I32)
                  | Some field_info ->
+                     (* 直接字段访问 *)
                      let field_ptr = fresh_temp () in
                      Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
                        field_ptr obj_v field_info.field_index;
                      let result = fresh_temp () in
                      Printf.bprintf buf "  %s = load i32, i32* %s\n" result field_ptr;
-                     (result, I32)))
+                     (result, I32)
+                 | None ->
+                     (* 字段不存在,尝试字段提升 *)
+                     let embedded_field_opt = List.find_opt (fun f ->
+                       Hashtbl.mem struct_registry f.field_name
+                     ) struct_def.fields in
+
+                     (match embedded_field_opt with
+                      | None ->
+                          Printf.bprintf buf "  ; ERROR: Field '%s' not found in struct '%s'\n" attr struct_name;
+                          ("0", I32)
+                      | Some embedded_field_info ->
+                          (match Hashtbl.find_opt struct_registry embedded_field_info.field_name with
+                           | None ->
+                               Printf.bprintf buf "  ; ERROR: Embedded struct '%s' not found\n" embedded_field_info.field_name;
+                               ("0", I32)
+                           | Some embedded_struct_def ->
+                               let embedded_attr_info_opt = List.find_opt (fun f -> f.field_name = attr) embedded_struct_def.fields in
+                               (match embedded_attr_info_opt with
+                                | None ->
+                                    Printf.bprintf buf "  ; ERROR: Field '%s' not found in embedded struct '%s'\n" attr embedded_field_info.field_name;
+                                    ("0", I32)
+                                | Some embedded_attr_info ->
+                                    (* 先获取嵌入字段的指针 *)
+                                    let embedded_ptr_field = fresh_temp () in
+                                    Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                                      embedded_ptr_field obj_v embedded_field_info.field_index;
+                                    let embedded_ptr_int = fresh_temp () in
+                                    Printf.bprintf buf "  %s = load i32, i32* %s\n" embedded_ptr_int embedded_ptr_field;
+                                    (* 将 i32 转换回指针 *)
+                                    let embedded_ptr = fresh_temp () in
+                                    Printf.bprintf buf "  %s = inttoptr i32 %s to i32*\n" embedded_ptr embedded_ptr_int;
+                                    (* 从嵌入结构体中获取字段 *)
+                                    let attr_ptr = fresh_temp () in
+                                    Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                                      attr_ptr embedded_ptr embedded_attr_info.field_index;
+                                    let result = fresh_temp () in
+                                    Printf.bprintf buf "  %s = load i32, i32* %s\n" result attr_ptr;
+                                    (result, I32))))))
        | Ptr I32 ->
            (* 可能是结构体字段访问或字符串属性 *)
            (* 首先尝试从变量名推断结构体类型 *)
@@ -1942,12 +2034,22 @@ let rec gen_expr buf ctx = function
            (* 初始化每个字段 *)
            List.iter (fun (field_name, field_expr) ->
              let field_info = List.find (fun f -> f.field_name = field_name) struct_def.fields in
-             let (field_val, _field_ty) = gen_expr buf ctx field_expr in
+             let (field_val, field_ty) = gen_expr buf ctx field_expr in
 
              let field_ptr = fresh_temp () in
              Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
                field_ptr struct_ptr field_info.field_index;
-             Printf.bprintf buf "  store i32 %s, i32* %s\n" field_val field_ptr
+
+             (* 检查字段类型: 如果是结构体指针,需要特殊处理 *)
+             (match field_ty with
+              | StructPtr _ | Ptr I32 ->
+                  (* 字段值是指针,需要先转换为 i32 再存储 *)
+                  let ptr_as_int = fresh_temp () in
+                  Printf.bprintf buf "  %s = ptrtoint i32* %s to i32\n" ptr_as_int field_val;
+                  Printf.bprintf buf "  store i32 %s, i32* %s\n" ptr_as_int field_ptr
+              | _ ->
+                  (* 普通值类型,直接存储 *)
+                  Printf.bprintf buf "  store i32 %s, i32* %s\n" field_val field_ptr)
            ) field_inits;
 
            (struct_ptr, StructPtr struct_name))

@@ -566,8 +566,16 @@ let rec gen_statement buf ctx = function
 
       let field_infos = List.mapi (fun i field ->
         let field_ty = type_expr_to_llvm_type field.Ast.field_type in
+        (* 对于匿名嵌入字段,从类型表达式提取类型名作为字段名 *)
+        let field_name = match field.Ast.field_name with
+          | Some name -> name
+          | None ->
+              (match field.Ast.field_type with
+               | TVar type_name -> type_name
+               | _ -> "_invalid_")
+        in
         {
-          field_name = field.Ast.field_name;
+          field_name = field_name;
           field_index = i;
           field_llvm_type = field_ty;
         }
