@@ -14,6 +14,7 @@ type llvm_type =
   | DictStrPtr (* 字符串键字典指针 dict[string,int] *)
   | UnionPtr   (* Union 类型指针 *)
   | EnumPtr    (* Enum 类型指针 *)
+  | StructPtr of string  (* 结构体指针，保存结构体名称 *)
 
 type llvm_value = string
 

@@ -672,18 +672,63 @@ let rec check_statement env = function
            (locked_env, value_subst)
        | Some ty_annot ->
            let expected_type = type_expr_to_ty ty_annot in
-           (try
-              let unify_subst = unify (apply_subst value_subst value_type) expected_type in
-              let final_subst = compose_subst unify_subst value_subst in
-              let new_env = add_binding name (apply_subst final_subst expected_type) (apply_subst_to_env final_subst env') in
-              let locked_env = lock_binding name new_env in
-              (locked_env, final_subst)
-            with Failure msg ->
-              let err = make_error (TypeError msg) pos
-                (Printf.sprintf "Type annotation mismatch for '%s': %s" name msg) in
-              report_error err;
-              let new_env = add_binding name expected_type env' in
-              (new_env, value_subst)))
+
+           (* 特殊处理接口类型: 检查结构体是否实现了接口 *)
+           (match (ty_annot, apply_subst value_subst value_type) with
+            | (TVar interface_name, TyStruct (struct_name, _)) ->
+                (* 检查是否是接口 *)
+                (match Env.find_interface interface_name env' with
+                 | Some iface_def ->
+                     (* 这是一个接口类型，检查结构体是否实现了它 *)
+                     (match Env.find_struct struct_name env' with
+                      | Some struct_def ->
+                          if Env.struct_implements_interface struct_def iface_def then
+                            (* 结构体实现了接口，允许赋值 *)
+                            let new_env = add_binding name expected_type env' in
+                            let locked_env = lock_binding name new_env in
+                            (locked_env, value_subst)
+                          else
+                            (* 结构体没有实现接口，报错 *)
+                            let err = make_error (TypeError "Interface not implemented") pos
+                              (Printf.sprintf "Struct '%s' does not implement interface '%s'" struct_name interface_name) in
+                            report_error err;
+                            let new_env = add_binding name expected_type env' in
+                            (new_env, value_subst)
+                      | None ->
+                          (* 找不到结构体定义，报错 *)
+                          let err = make_error (NameError struct_name) pos
+                            (Printf.sprintf "Struct '%s' is not defined" struct_name) in
+                          report_error err;
+                          let new_env = add_binding name expected_type env' in
+                          (new_env, value_subst))
+                 | None ->
+                     (* 不是接口，使用默认的类型统一检查 *)
+                     (try
+                        let unify_subst = unify (apply_subst value_subst value_type) expected_type in
+                        let final_subst = compose_subst unify_subst value_subst in
+                        let new_env = add_binding name (apply_subst final_subst expected_type) (apply_subst_to_env final_subst env') in
+                        let locked_env = lock_binding name new_env in
+                        (locked_env, final_subst)
+                      with Failure msg ->
+                        let err = make_error (TypeError msg) pos
+                          (Printf.sprintf "Type annotation mismatch for '%s': %s" name msg) in
+                        report_error err;
+                        let new_env = add_binding name expected_type env' in
+                        (new_env, value_subst)))
+            | _ ->
+                (* 默认的类型统一检查 *)
+                (try
+                   let unify_subst = unify (apply_subst value_subst value_type) expected_type in
+                   let final_subst = compose_subst unify_subst value_subst in
+                   let new_env = add_binding name (apply_subst final_subst expected_type) (apply_subst_to_env final_subst env') in
+                   let locked_env = lock_binding name new_env in
+                   (locked_env, final_subst)
+                 with Failure msg ->
+                   let err = make_error (TypeError msg) pos
+                     (Printf.sprintf "Type annotation mismatch for '%s': %s" name msg) in
+                   report_error err;
+                   let new_env = add_binding name expected_type env' in
+                   (new_env, value_subst))))
 
   | SLetPat (pat, value, pos) ->
       let (value_type, value_subst) = infer_expr env value in
@@ -1200,6 +1245,14 @@ let rec check_statement env = function
            (* 同时将结构体类型添加到绑定中，这样可以用作类型名 *)
            let struct_type = TyStruct (name, []) in
            let new_env = add_binding name struct_type new_env in
+
+           (* 检查是否隐式实现了接口 *)
+           let implemented_interfaces = Env.find_implicit_interfaces_for_struct name new_env in
+           if List.length implemented_interfaces > 0 then begin
+             (* 可选：记录或进行额外处理，这里只是静默检查 *)
+             ()
+           end;
+
            (new_env, empty_subst))
 
   | SEnum (name, _type_params, _variants, _) ->

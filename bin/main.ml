@@ -13,6 +13,9 @@ let write_file filename content =
   close_out oc
 
 let compile_to_llvm input_file =
+  (* 重置错误计数器 *)
+  Error.reset_counters ();
+
   let source = read_file input_file in
 
   let tokens = Lexer.tokenize_string source in
@@ -46,6 +49,15 @@ let compile_to_llvm input_file =
   let full_ast = builtin_enums @ ast in
 
   Typeck.typecheck full_ast;
+
+  (* 打印错误和警告摘要 *)
+  Error.print_summary ();
+
+  (* 如果有错误，终止编译 *)
+  if Error.has_errors () then begin
+    Printf.eprintf "\nCompilation failed due to errors.\n";
+    exit 1
+  end;
 
   (* 获取收集到的泛型实例 *)
   let generic_instances = Typeck.get_generic_instances () in

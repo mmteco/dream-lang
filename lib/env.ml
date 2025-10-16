@@ -133,6 +133,53 @@ let rec find_struct name env =
       | Some parent -> find_struct name parent
       | None -> None
 
+(* 检查结构体是否隐式实现了接口 (Duck Typing) *)
+let struct_implements_interface struct_def iface_def =
+  (* 提取接口要求的方法 *)
+  let required_methods = List.filter_map (function
+    | IMethod (name, _, params, ret_ty_opt, default_impl_opt, _) ->
+        (* 如果有默认实现，则不是必需的 *)
+        if default_impl_opt = None then
+          let param_types = List.map (fun (_, ty_opt) ->
+            match ty_opt with
+            | Some ty -> type_expr_to_ty ty
+            | None -> TyVar "T"  (* 参数类型未指定，使用泛型 *)
+          ) params in
+          let ret_type = match ret_ty_opt with
+            | Some ty -> type_expr_to_ty ty
+            | None -> TyNone
+          in
+          Some (name, TyFunc (param_types, ret_type))
+        else
+          None
+    | _ -> None
+  ) iface_def.iface_members in
+
+  (* 检查结构体是否有所有必需的方法 *)
+  List.for_all (fun (method_name, expected_type) ->
+    match StringMap.find_opt method_name struct_def.struct_methods with
+    | None -> false
+    | Some actual_type ->
+        (* 检查方法签名是否兼容 *)
+        (try
+           let _ = unify actual_type expected_type in
+           true
+         with Failure _ -> false)
+  ) required_methods
+
+(* 查找类型隐式实现的所有接口 *)
+let find_implicit_interfaces_for_struct struct_name env =
+  match find_struct struct_name env with
+  | None -> []
+  | Some struct_def ->
+      (* 遍历所有接口，检查结构体是否隐式实现 *)
+      StringMap.fold (fun iface_name iface_def acc ->
+        if struct_implements_interface struct_def iface_def then
+          iface_name :: acc
+        else
+          acc
+      ) env.interfaces []
+
 let builtin_env =
   let env = empty_env in
   let env = add_binding "print" (TyFunc ([TyVar "T"], TyNone)) env in

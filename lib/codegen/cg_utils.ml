@@ -35,6 +35,7 @@ let rec llvm_type_to_string = function
   | DictStrPtr -> "i8*" (* 字符串键字典指针也表示为i8* *)
   | UnionPtr -> "%union_t*"  (* Union 类型指针 *)
   | EnumPtr -> "%enum_t*"    (* Enum 类型指针 *)
+  | StructPtr _name -> "i32*"  (* 结构体指针表示为 i32* *)
 
 let mangle_name name =
   "@" ^ String.map (fun c -> if c = '_' then '_' else c) name
