@@ -59,6 +59,17 @@ let rec is_polymorphic = function
   | TyResult (ok, err) -> is_polymorphic ok || is_polymorphic err
   | _ -> false
 
+(* 当前正在编译的文件路径 *)
+let current_file = ref ""
+
+let set_current_file file =
+  current_file := file
+
+let is_stdlib_file () =
+  (* 检查当前文件是否在 stdlib/ 目录下 *)
+  let file = !current_file in
+  String.length file >= 7 && String.sub file 0 7 = "stdlib/"
+
 let rec infer_expr env = function
   | EInt (_, _) -> (TyInt, empty_subst)
   | EFloat (_, _) -> (TyFloat, empty_subst)
@@ -258,10 +269,16 @@ let rec infer_expr env = function
                   "Cannot call this attribute" in
                 report_error err;
                 (TyUnknown, combined_subst))
-       | EVar (func_name, _) ->
+       | EVar (func_name, func_pos) ->
            (* 普通函数调用 *)
-           (* 特殊处理 print 函数，它接受任何类型的参数 *)
-           if func_name = "print" && List.length args = 1 then begin
+           (* 禁止用户代码直接调用 C runtime 函数，但允许标准库调用 *)
+           if Env.is_c_runtime_function func_name && not (is_stdlib_file ()) then begin
+             let err = make_error (NameError func_name) func_pos
+               (Printf.sprintf "Cannot call internal C function '%s' directly. Use the Dream API instead." func_name) in
+             report_error err;
+             (TyUnknown, empty_subst)
+           end else if func_name = "print" && List.length args = 1 then begin
+             (* 特殊处理 print 函数，它接受任何类型的参数 *)
              let (arg_type, arg_subst) = infer_expr env (List.hd args) in
              add_generic_instance func_name [apply_subst arg_subst arg_type] pos;
              (TyNone, arg_subst)

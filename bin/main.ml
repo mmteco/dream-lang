@@ -63,6 +63,8 @@ let compile_to_llvm ?(silent=false) input_file =
   ] in
   let full_ast = builtin_enums @ ast in
 
+  (* 设置当前文件路径，用于类型检查中判断是否为标准库 *)
+  Typeck.set_current_file input_file;
   Typeck.typecheck full_ast;
 
   (* 打印错误和警告摘要 *)

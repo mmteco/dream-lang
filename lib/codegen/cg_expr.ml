@@ -654,102 +654,91 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "  ; dict_items() only works with dictionaries\n";
            ("0", I32))
 
-  (* File I/O functions - Dream 层函数名映射到 C runtime __c_ 前缀 *)
-  | ECall (EVar ("file_read", _), [path_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      (* 调用 __c_file_read 函数，返回 i8* *)
-      let result_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = call i8* @__c_file_read(i8* %s)\n" result_i8 path_i8;
-      (* 将 i8* 转换回 i32* 作为字符串类型 *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" result result_i8;
-      (result, Ptr I32)
+  (* C Runtime 函数统一处理 - 需要类型转换 i32* <-> i8* *)
+  | ECall (EVar (fname, _), args, _) when Env.is_c_runtime_function fname ->
+      (* 根据函数名分发到具体的处理逻辑 *)
+      (match (fname, args) with
+       | ("__c_file_read", [path_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let path_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           let result_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8* @__c_file_read(i8* %s)\n" result_i8 path_i8;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" result result_i8;
+           (result, Ptr I32)
 
-  | ECall (EVar ("file_write", _), [path_expr; content_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      let (content_v, _) = gen_expr buf ctx content_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      let content_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
-      (* 调用 __c_file_write 函数，返回 i32 (1=成功, 0=失败) *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = call i32 @__c_file_write(i8* %s, i8* %s)\n"
-        result path_i8 content_i8;
-      (result, I32)
+       | ("__c_file_write", [path_expr; content_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let (content_v, _) = gen_expr buf ctx content_expr in
+           let path_i8 = fresh_temp () in
+           let content_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_file_write(i8* %s, i8* %s)\n"
+             result path_i8 content_i8;
+           (result, I32)
 
-  | ECall (EVar ("file_exists", _), [path_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      (* 调用 __c_file_exists 函数，返回 i32 (1=存在, 0=不存在) *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = call i32 @__c_file_exists(i8* %s)\n" result path_i8;
-      (result, I32)
+       | ("__c_file_exists", [path_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let path_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_file_exists(i8* %s)\n" result path_i8;
+           (result, I32)
 
-  | ECall (EVar ("file_append", _), [path_expr; content_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      let (content_v, _) = gen_expr buf ctx content_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      let content_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
-      (* 调用 __c_file_append 函数，返回 i32 (1=成功, 0=失败) *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = call i32 @__c_file_append(i8* %s, i8* %s)\n"
-        result path_i8 content_i8;
-      (result, I32)
+       | ("__c_file_append", [path_expr; content_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let (content_v, _) = gen_expr buf ctx content_expr in
+           let path_i8 = fresh_temp () in
+           let content_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_file_append(i8* %s, i8* %s)\n"
+             result path_i8 content_i8;
+           (result, I32)
 
-  | ECall (EVar ("file_delete", _), [path_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      (* 调用 __c_file_delete 函数，返回 i32 (1=成功, 0=失败) *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = call i32 @__c_file_delete(i8* %s)\n" result path_i8;
-      (result, I32)
+       | ("__c_file_delete", [path_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let path_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_file_delete(i8* %s)\n" result path_i8;
+           (result, I32)
 
-  (* Byte mode File I/O functions *)
-  | ECall (EVar ("file_read_bytes", _), [path_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      (* 调用 __c_file_read_bytes 函数，返回 dynarray_i32* *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = call { i32, i32, i32* }* @__c_file_read_bytes(i8* %s)\n" result path_i8;
-      (result, DynArray I32)
+       | ("__c_file_read_bytes", [path_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let path_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call { i32, i32, i32* }* @__c_file_read_bytes(i8* %s)\n" result path_i8;
+           (result, DynArray I32)
 
-  | ECall (EVar ("file_write_bytes", _), [path_expr; data_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      let (data_v, _) = gen_expr buf ctx data_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      (* 调用 __c_file_write_bytes 函数，返回 i32 (1=成功, 0=失败) *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = call i32 @__c_file_write_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
-        result path_i8 data_v;
-      (result, I32)
+       | ("__c_file_write_bytes", [path_expr; data_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let (data_v, _) = gen_expr buf ctx data_expr in
+           let path_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_file_write_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
+             result path_i8 data_v;
+           (result, I32)
 
-  | ECall (EVar ("file_append_bytes", _), [path_expr; data_expr], _) ->
-      let (path_v, _) = gen_expr buf ctx path_expr in
-      let (data_v, _) = gen_expr buf ctx data_expr in
-      (* 将 i32* 字符串转换为 i8* *)
-      let path_i8 = fresh_temp () in
-      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
-      (* 调用 __c_file_append_bytes 函数，返回 i32 (1=成功, 0=失败) *)
-      let result = fresh_temp () in
-      Printf.bprintf buf "  %s = call i32 @__c_file_append_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
-        result path_i8 data_v;
-      (result, I32)
+       | ("__c_file_append_bytes", [path_expr; data_expr]) ->
+           let (path_v, _) = gen_expr buf ctx path_expr in
+           let (data_v, _) = gen_expr buf ctx data_expr in
+           let path_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_file_append_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
+             result path_i8 data_v;
+           (result, I32)
+
+       | _ ->
+           failwith (Printf.sprintf "Unsupported C runtime function: %s with %d args" fname (List.length args))
+      )
 
   | ECall (EVar (fname, _), args, _) ->
       let arg_vals = List.map (gen_expr buf ctx) args in

@@ -180,6 +180,22 @@ let find_implicit_interfaces_for_struct struct_name env =
           acc
       ) env.interfaces []
 
+(* C Runtime 函数列表 - 统一管理所有 __c_ 函数 *)
+let c_runtime_functions = [
+  ("__c_file_read", TyFunc ([TyStr], TyStr));
+  ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
+  ("__c_file_exists", TyFunc ([TyStr], TyInt));
+  ("__c_file_append", TyFunc ([TyStr; TyStr], TyInt));
+  ("__c_file_delete", TyFunc ([TyStr], TyInt));
+  ("__c_file_read_bytes", TyFunc ([TyStr], TyBytes));
+  ("__c_file_write_bytes", TyFunc ([TyStr; TyBytes], TyInt));
+  ("__c_file_append_bytes", TyFunc ([TyStr; TyBytes], TyInt));
+]
+
+(* 检查函数是否是 C Runtime 函数 *)
+let is_c_runtime_function name =
+  List.exists (fun (fn, _) -> fn = name) c_runtime_functions
+
 let builtin_env =
   let env = empty_env in
   let env = add_binding "print" (TyFunc ([TyVar "T"], TyNone)) env in
@@ -190,15 +206,8 @@ let builtin_env =
   let env = add_binding "dict_values" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "V"))) env in
   let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
   let env = add_binding "join" (TyFunc ([TyList TyStr; TyStr], TyStr)) env in
-  (* 文件 I/O 函数 - Dream 层函数名，映射到 C runtime 的 __c_ 前缀函数 *)
-  let env = add_binding "file_read" (TyFunc ([TyStr], TyStr)) env in
-  let env = add_binding "file_write" (TyFunc ([TyStr; TyStr], TyInt)) env in
-  let env = add_binding "file_exists" (TyFunc ([TyStr], TyInt)) env in
-  let env = add_binding "file_append" (TyFunc ([TyStr; TyStr], TyInt)) env in
-  let env = add_binding "file_delete" (TyFunc ([TyStr], TyInt)) env in
-  let env = add_binding "file_read_bytes" (TyFunc ([TyStr], TyBytes)) env in
-  let env = add_binding "file_write_bytes" (TyFunc ([TyStr; TyBytes], TyInt)) env in
-  let env = add_binding "file_append_bytes" (TyFunc ([TyStr; TyBytes], TyInt)) env in
+  (* 将所有 C Runtime 函数添加到环境中 *)
+  let env = List.fold_left (fun e (name, ty) -> add_binding name ty e) env c_runtime_functions in
   (* 预定义内置枚举类型 *)
   let env = add_binding "Option" (TyEnum ("Option", [])) env in
   let env = add_binding "Result" (TyEnum ("Result", [])) env in
