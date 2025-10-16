@@ -21,7 +21,9 @@
       "Bash(./test/test_file_io:*)",
       "Bash(find:*)",
       "Bash(./test/test_type_pattern)",
-      "Bash(./test/test_core)"
+      "Bash(./test/test_core)",
+      "Bash(python3:*)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []

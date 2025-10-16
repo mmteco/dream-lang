@@ -60,7 +60,7 @@ let format_error err =
   Printf.sprintf "%s: %s at line %d, column %d: %s"
     (severity_to_string err.severity)
     (error_kind_to_string err.kind)
-    err.position.line
+    (err.position.line + 1)  (* 内部使用 0-based 行号，输出时转换为 1-based *)
     err.position.column
     err.message
 

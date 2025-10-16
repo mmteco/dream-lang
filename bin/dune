@@ -1,7 +1,7 @@
 (executable
  (name main)
  (public_name dream)
- (libraries dream_lib))
+ (libraries dream_lib unix))
 
 (executable
  (name debug_tokens)

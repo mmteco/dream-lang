@@ -661,7 +661,11 @@ let rec check_statement env = function
       let (_, subst) = infer_expr env e in
       (apply_subst_to_env subst env, subst)
 
-  | SLet (name, ty_opt, value, pos) ->
+  | SLet let_info ->
+      let name = let_info.let_name in
+      let ty_opt = let_info.let_type in
+      let value = let_info.let_value in
+      let pos = let_info.let_name_pos in
       let (value_type, value_subst) = infer_expr env value in
       let env' = apply_subst_to_env value_subst env in
       (match ty_opt with
@@ -781,7 +785,11 @@ let rec check_statement env = function
              let new_env = update_binding name (apply_subst value_subst value_type) (apply_subst_to_env value_subst env) in
              (new_env, value_subst))
 
-  | SDef (name, _type_params, params, ret_opt, body, _) ->
+  | SDef def_info ->
+      let name = def_info.def_name in
+      let params = def_info.def_params in
+      let ret_opt = def_info.def_return_type in
+      let body = def_info.def_body in
       let param_env = List.fold_left
         (fun e (pname, pty_opt) ->
           let pty = match pty_opt with
@@ -957,13 +965,18 @@ let rec check_statement env = function
 
       (env, final_subst)
 
-  | SClass (_, _, _, _, pos) ->
+  | SClass class_info ->
+      let pos = class_info.class_pos in
       let err = make_error (TypeError "Classes not implemented") pos
         "Classes not yet implemented" in
       report_error err;
       (env, empty_subst)
 
-  | SInterface (name, type_params, members, pos) ->
+  | SInterface interface_info ->
+      let name = interface_info.interface_name in
+      let type_params = interface_info.interface_type_params in
+      let members = interface_info.interface_members in
+      let pos = interface_info.interface_pos in
       (* 检查接口是否已定义 *)
       (match Env.find_interface name env with
        | Some _ ->
@@ -1153,7 +1166,11 @@ let rec check_statement env = function
 
   | SImport (_, _) | SFromImport (_, _, _) -> (env, empty_subst)
 
-  | SStruct (name, type_params, members, pos) ->
+  | SStruct struct_info ->
+      let name = struct_info.struct_name in
+      let type_params = struct_info.struct_type_params in
+      let members = struct_info.struct_members in
+      let pos = struct_info.struct_pos in
       (* 检查结构体是否已定义 *)
       (match Env.find_struct name env with
        | Some _ ->
@@ -1255,7 +1272,8 @@ let rec check_statement env = function
 
            (new_env, empty_subst))
 
-  | SEnum (name, _type_params, _variants, _) ->
+  | SEnum enum_info ->
+      let name = enum_info.enum_name in
       let enum_type = TyEnum (name, []) in
       let new_env = add_binding name enum_type env in
       (new_env, empty_subst)

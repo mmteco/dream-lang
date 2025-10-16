@@ -1,4 +1,4 @@
-def quicksort[T](arr: list[T]) -> list[T]:
+def quicksort(arr: list[T]) -> list[T]:
     if len(arr) <= 1:
         return arr
     
@@ -7,6 +7,7 @@ def quicksort[T](arr: list[T]) -> list[T]:
     let greater = [x for x in arr[1:] if x >= pivot]
     
     return quicksort(less) + [pivot] + quicksort(greater)
+
 
 def main():
     let nums = [3, 7, 1, 9, 2, 5]

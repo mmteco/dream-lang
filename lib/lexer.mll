@@ -6,16 +6,30 @@
 
   let line_num = ref 1
   let col_num = ref 0
+  let byte_offset = ref 0        (* 累计字节偏移 *)
+  let line_start_offset = ref 0  (* 当前行开始的字节偏移 *)
   let indent_stack = ref [0]
 
   let get_pos () = { line = !line_num; column = !col_num }
 
+  let make_lexing_pos () =
+    {
+      Lexing.pos_fname = "";
+      pos_lnum = !line_num;
+      pos_bol = !line_start_offset;
+      pos_cnum = !byte_offset;
+    }
+
   let update_pos lexbuf =
-    col_num := !col_num + Lexing.lexeme_end lexbuf - Lexing.lexeme_start lexbuf
+    let len = Lexing.lexeme_end lexbuf - Lexing.lexeme_start lexbuf in
+    col_num := !col_num + len;
+    byte_offset := !byte_offset + len
 
   let newline _lexbuf =
     line_num := !line_num + 1;
-    col_num := 0
+    col_num := 0;
+    byte_offset := !byte_offset + 1;  (* 换行符占 1 字节 *)
+    line_start_offset := !byte_offset
 
   let keyword_table = Hashtbl.create 40
   let () =
@@ -72,55 +86,224 @@ let float = digit+ '.' digit*
 
 rule token = parse
   | whitespace+ { update_pos lexbuf; token lexbuf }
-  | newline { newline lexbuf; NEWLINE }
-  | '#' { line_comment lexbuf }
-  | integer as i { update_pos lexbuf; INT (int_of_string i) }
-  | float as f { update_pos lexbuf; FLOAT (float_of_string f) }
-  | '"' { update_pos lexbuf; read_string (Buffer.create 16) lexbuf }
-  | "'" { update_pos lexbuf; read_single_string (Buffer.create 16) lexbuf }
-  | '_' { update_pos lexbuf; UNDERSCORE }
-  | ident as id {
-      update_pos lexbuf;
-      try Hashtbl.find keyword_table id
-      with Not_found -> IDENT id
+  | newline {
+      let start_pos = make_lexing_pos () in
+      newline lexbuf;
+      let end_pos = make_lexing_pos () in
+      (NEWLINE, start_pos, end_pos)
     }
-  | "->" { update_pos lexbuf; ARROW }
-  | '+' { update_pos lexbuf; PLUS }
-  | '-' { update_pos lexbuf; MINUS }
-  | '*' { update_pos lexbuf; TIMES }
-  | '/' { update_pos lexbuf; DIV }
-  | '%' { update_pos lexbuf; MOD }
-  | "==" { update_pos lexbuf; EQ }
-  | "!=" { update_pos lexbuf; NEQ }
-  | "<=" { update_pos lexbuf; LTE }
-  | ">=" { update_pos lexbuf; GTE }
-  | '<' { update_pos lexbuf; LT }
-  | '>' { update_pos lexbuf; GT }
-  | '=' { update_pos lexbuf; ASSIGN }
-  | '|' { update_pos lexbuf; PIPE }
-  | '(' { update_pos lexbuf; LPAREN }
-  | ')' { update_pos lexbuf; RPAREN }
-  | '[' { update_pos lexbuf; LBRACKET }
-  | ']' { update_pos lexbuf; RBRACKET }
-  | '{' { update_pos lexbuf; LBRACE }
-  | '}' { update_pos lexbuf; RBRACE }
-  | ',' { update_pos lexbuf; COMMA }
-  | ':' { update_pos lexbuf; COLON }
-  | ';' { update_pos lexbuf; SEMICOLON }
-  | '.' { update_pos lexbuf; DOT }
-  | eof { EOF }
+  | '#' { line_comment lexbuf }
+  | integer as i {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (INT (int_of_string i), start_pos, end_pos)
+    }
+  | float as f {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (FLOAT (float_of_string f), start_pos, end_pos)
+    }
+  | '"' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let str_tok = read_string (Buffer.create 16) lexbuf in
+      let end_pos = make_lexing_pos () in
+      (str_tok, start_pos, end_pos)
+    }
+  | "'" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let str_tok = read_single_string (Buffer.create 16) lexbuf in
+      let end_pos = make_lexing_pos () in
+      (str_tok, start_pos, end_pos)
+    }
+  | '_' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (UNDERSCORE, start_pos, end_pos)
+    }
+  | ident as id {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      let tok = try Hashtbl.find keyword_table id
+                with Not_found -> IDENT id in
+      (tok, start_pos, end_pos)
+    }
+  | "->" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (ARROW, start_pos, end_pos)
+    }
+  | '+' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (PLUS, start_pos, end_pos)
+    }
+  | '-' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (MINUS, start_pos, end_pos)
+    }
+  | '*' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (TIMES, start_pos, end_pos)
+    }
+  | '/' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (DIV, start_pos, end_pos)
+    }
+  | '%' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (MOD, start_pos, end_pos)
+    }
+  | "==" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (EQ, start_pos, end_pos)
+    }
+  | "!=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (NEQ, start_pos, end_pos)
+    }
+  | "<=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (LTE, start_pos, end_pos)
+    }
+  | ">=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (GTE, start_pos, end_pos)
+    }
+  | '<' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (LT, start_pos, end_pos)
+    }
+  | '>' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (GT, start_pos, end_pos)
+    }
+  | '=' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (ASSIGN, start_pos, end_pos)
+    }
+  | '|' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (PIPE, start_pos, end_pos)
+    }
+  | '(' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (LPAREN, start_pos, end_pos)
+    }
+  | ')' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (RPAREN, start_pos, end_pos)
+    }
+  | '[' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (LBRACKET, start_pos, end_pos)
+    }
+  | ']' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (RBRACKET, start_pos, end_pos)
+    }
+  | '{' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (LBRACE, start_pos, end_pos)
+    }
+  | '}' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (RBRACE, start_pos, end_pos)
+    }
+  | ',' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (COMMA, start_pos, end_pos)
+    }
+  | ':' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (COLON, start_pos, end_pos)
+    }
+  | ';' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (SEMICOLON, start_pos, end_pos)
+    }
+  | '.' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (DOT, start_pos, end_pos)
+    }
+  | eof {
+      let pos = make_lexing_pos () in
+      (EOF, pos, pos)
+    }
   | _ as c {
       update_pos lexbuf;
       raise (LexError (Printf.sprintf "Unexpected character: %c" c))
     }
 
 and line_comment = parse
-  | newline { newline lexbuf; NEWLINE }
-  | eof { EOF }
+  | newline {
+      let start_pos = make_lexing_pos () in
+      newline lexbuf;
+      let end_pos = make_lexing_pos () in
+      (NEWLINE, start_pos, end_pos)
+    }
+  | eof {
+      let pos = make_lexing_pos () in
+      (EOF, pos, pos)
+    }
   | _ { line_comment lexbuf }
 
 and read_string buf = parse
-  | '"' { update_pos lexbuf; STRING (Buffer.contents buf) }
+  | '"' {
+      update_pos lexbuf;
+      STRING (Buffer.contents buf)
+    }
   | '\\' 'n' { Buffer.add_char buf '\n'; read_string buf lexbuf }
   | '\\' 't' { Buffer.add_char buf '\t'; read_string buf lexbuf }
   | '\\' '\\' { Buffer.add_char buf '\\'; read_string buf lexbuf }
@@ -130,7 +313,10 @@ and read_string buf = parse
   | _ as c { Buffer.add_char buf c; read_string buf lexbuf }
 
 and read_single_string buf = parse
-  | "'" { update_pos lexbuf; STRING (Buffer.contents buf) }
+  | "'" {
+      update_pos lexbuf;
+      STRING (Buffer.contents buf)
+    }
   | '\\' 'n' { Buffer.add_char buf '\n'; read_single_string buf lexbuf }
   | '\\' 't' { Buffer.add_char buf '\t'; read_single_string buf lexbuf }
   | '\\' '\\' { Buffer.add_char buf '\\'; read_single_string buf lexbuf }
@@ -181,9 +367,12 @@ and read_single_string buf = parse
       (dedents, true)
     end else ([], false)
 
-  let tokenize_string source =
+  (* 返回带位置信息的 token 列表: (token, start_pos, end_pos) list *)
+  let tokenize_string_with_pos source =
     line_num := 1;
     col_num := 0;
+    byte_offset := 0;
+    line_start_offset := 0;
     indent_stack := [0];
     let lexbuf = Lexing.from_string source in
     let rec next_tokens acc at_line_start =
@@ -192,9 +381,11 @@ and read_single_string buf = parse
           match peek_char lexbuf with
           | Some ' ' ->
               junk_char lexbuf;
+              byte_offset := !byte_offset + 1;
               count_spaces (acc + 1)
           | Some '\t' ->
               junk_char lexbuf;
+              byte_offset := !byte_offset + 1;
               count_spaces (acc + 8)
           | _ -> acc
         in
@@ -203,26 +394,36 @@ and read_single_string buf = parse
 
         match peek_char lexbuf with
         | Some '\n' | Some '\r' | Some '#' | None ->
-            let tok = token lexbuf in
+            let (tok, start_pos, end_pos) = token lexbuf in
             if tok = EOF then begin
               let (final_dedents, _) = handle_indent 0 in
-              List.rev (EOF :: final_dedents @ acc)
+              let eof_pos = make_lexing_pos () in
+              let final_with_pos = List.map (fun t -> (t, start_pos, end_pos)) final_dedents @ [(EOF, eof_pos, eof_pos)] in
+              List.rev (final_with_pos @ acc)
             end else
-              next_tokens (tok :: acc) true
+              next_tokens ((tok, start_pos, end_pos) :: acc) true
         | _ ->
+            let pos = make_lexing_pos () in
             let (indent_tokens, has_dedent) = handle_indent indent_level in
             let tokens_to_add = if has_dedent then [NEWLINE] @ indent_tokens else indent_tokens in
-            let acc_with_indents = List.fold_right (fun t a -> t :: a) tokens_to_add acc in
-            let tok = token lexbuf in
-            next_tokens (tok :: acc_with_indents) (tok = NEWLINE)
+            let tokens_with_pos = List.map (fun t -> (t, pos, pos)) tokens_to_add in
+            let acc_with_indents = List.fold_right (fun t a -> t :: a) tokens_with_pos acc in
+            let (tok, start_pos, end_pos) = token lexbuf in
+            next_tokens ((tok, start_pos, end_pos) :: acc_with_indents) (tok = NEWLINE)
       end else begin
-        let tok = token lexbuf in
+        let (tok, start_pos, end_pos) = token lexbuf in
         if tok = EOF then begin
           let (final_dedents, _) = handle_indent 0 in
-          List.rev (EOF :: final_dedents @ acc)
+          let eof_pos = make_lexing_pos () in
+          let final_with_pos = List.map (fun t -> (t, start_pos, end_pos)) final_dedents @ [(EOF, eof_pos, eof_pos)] in
+          List.rev (final_with_pos @ acc)
         end else
-          next_tokens (tok :: acc) (tok = NEWLINE)
+          next_tokens ((tok, start_pos, end_pos) :: acc) (tok = NEWLINE)
       end
     in
     next_tokens [] true
+
+  (* 保留旧的接口用于向后兼容 *)
+  let tokenize_string source =
+    List.map (fun (tok, _, _) -> tok) (tokenize_string_with_pos source)
 }

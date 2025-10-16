@@ -175,8 +175,8 @@ let rec substitute_expr ctx type_params type_args expr =
       let new_args = List.map (substitute_expr ctx type_params type_args) args in
       (try
         match List.find (fun (name, _) -> name = func_name) ctx.generic_funcs with
-        | (_, SDef (_, func_type_params, _, _, _, _)) ->
-            if List.length func_type_params > 0 then
+        | (_, SDef def_info) ->
+            if List.length def_info.def_type_params > 0 then
               (* 这是泛型函数调用，需要推断类型参数 *)
               ECall (EVar (func_name, p), new_args, pos)
             else
@@ -214,12 +214,16 @@ let rec substitute_expr ctx type_params type_args expr =
 (* 在语句中替换类型参数 *)
 let rec substitute_statement ctx type_params type_args stmt =
   match stmt with
-  | SLet (name, ty_opt, value, pos) ->
-      let new_ty = match ty_opt with
+  | SLet let_info ->
+      let new_ty = match let_info.let_type with
         | Some ty -> Some (substitute_type_expr type_params type_args ty)
         | None -> None
       in
-      SLet (name, new_ty, substitute_expr ctx type_params type_args value, pos)
+      SLet {
+        let_info with
+        let_type = new_ty;
+        let_value = substitute_expr ctx type_params type_args let_info.let_value
+      }
   | SExpr (e, pos) ->
       SExpr (substitute_expr ctx type_params type_args e, pos)
   | SReturn (Some e, pos) ->
@@ -258,13 +262,21 @@ let monomorphize_function ctx _func_name type_params params ret_ty body inst =
 
   let new_body = List.map (substitute_statement ctx type_params inst.type_args) body in
 
-  SDef (inst.mangled_name, [], new_params, new_ret_ty, new_body, { line = 0; column = 0 })
+  SDef {
+    def_name = inst.mangled_name;
+    def_name_pos = { line = 0; column = 0 };
+    def_type_params = [];
+    def_params = new_params;
+    def_return_type = new_ret_ty;
+    def_body = new_body;
+    def_pos = { line = 0; column = 0 };
+  }
 
 (* 收集程序中的泛型函数 *)
 let collect_generic_functions program =
   List.filter_map (function
-    | SDef (name, type_params, _, _, _, _) as def when List.length type_params > 0 ->
-        Some (name, def)
+    | SDef def_info as def when List.length def_info.def_type_params > 0 ->
+        Some (def_info.def_name, def)
     | _ -> None
   ) program
 
@@ -315,8 +327,11 @@ let rec rewrite_generic_calls generic_instances generic_funcs expr =
 (* 重写语句中的泛型函数调用 *)
 let rec rewrite_statement generic_instances generic_funcs stmt =
   match stmt with
-  | SLet (name, ty_opt, value, pos) ->
-      SLet (name, ty_opt, rewrite_generic_calls generic_instances generic_funcs value, pos)
+  | SLet let_info ->
+      SLet {
+        let_info with
+        let_value = rewrite_generic_calls generic_instances generic_funcs let_info.let_value
+      }
   | SExpr (e, pos) ->
       SExpr (rewrite_generic_calls generic_instances generic_funcs e, pos)
   | SReturn (Some e, pos) ->
@@ -357,8 +372,8 @@ let monomorphize program generic_instances =
     (* 查找对应的泛型函数定义 *)
     try
       match List.assoc inst.func_name ctx.generic_funcs with
-      | SDef (_name, type_params, _params, _ret_ty, _body, _pos) ->
-          let _ = add_instance ctx inst.func_name type_params inst.type_args in
+      | SDef def_info ->
+          let _ = add_instance ctx inst.func_name def_info.def_type_params inst.type_args in
           ()
       | _ -> ()
     with Not_found -> ()
@@ -367,14 +382,15 @@ let monomorphize program generic_instances =
   (* 为每个实例生成单态化的函数 *)
   let mono_funcs = List.map (fun inst ->
     match List.assoc inst.func_name ctx.generic_funcs with
-    | SDef (_, type_params, params, ret_ty, body, _) ->
-        monomorphize_function ctx inst.func_name type_params params ret_ty body inst
+    | SDef def_info ->
+        monomorphize_function ctx inst.func_name def_info.def_type_params
+          def_info.def_params def_info.def_return_type def_info.def_body inst
     | _ -> failwith "Expected function definition"
   ) ctx.instances in
 
   (* 过滤掉原始的泛型函数，保留非泛型的语句 *)
   let non_generic_stmts = List.filter (function
-    | SDef (_, type_params, _, _, _, _) -> List.length type_params = 0
+    | SDef def_info -> List.length def_info.def_type_params = 0
     | _ -> true
   ) program in
 

@@ -8,7 +8,10 @@ let gen_expr = Cg_expr.gen_expr
 let gen_pattern_test = Cg_expr.gen_pattern_test
 let gen_pattern_bindings = Cg_expr.gen_pattern_bindings
 let rec gen_statement buf ctx = function
-  | SLet (name, type_ann, value, _) ->
+  | SLet let_info ->
+      let name = let_info.let_name in
+      let type_ann = let_info.let_type in
+      let value = let_info.let_value in
       let (v, t) = gen_expr buf ctx value in
 
       (* 检查是否需要装箱为 union *)
@@ -427,7 +430,9 @@ let rec gen_statement buf ctx = function
        | _ ->
            Printf.bprintf buf "  ; for loops only work with dynamic arrays\n")
 
-  | SEnum (name, _type_params, variants, _) ->
+  | SEnum enum_info ->
+      let name = enum_info.enum_name in
+      let variants = enum_info.enum_variants in
       (* 注册枚举定义 *)
       let variant_infos = List.mapi (fun i variant ->
         match variant with
@@ -549,7 +554,9 @@ let rec gen_statement buf ctx = function
       (* impl块在程序级别处理,这里不生成代码 *)
       Buffer.add_string buf "  ; impl block (handled at program level)\n"
 
-  | SStruct (name, _type_params, members, _) ->
+  | SStruct struct_info ->
+      let name = struct_info.struct_name in
+      let members = struct_info.struct_members in
       (* 结构体定义：注册到 struct_registry *)
       (* 只处理字段，忽略方法（方法暂时不生成代码） *)
       let field_list = List.filter_map (function

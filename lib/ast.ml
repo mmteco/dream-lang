@@ -191,26 +191,83 @@ and struct_member =
   | SField of struct_field
   | SMethod of string * string list * (string * type_expr option) list * type_expr option * statement list * position
 
+(* let 语句详细信息 *)
+and let_stmt = {
+  let_name: string;
+  let_name_pos: position;  (* 变量名位置 *)
+  let_type: type_expr option;
+  let_value: expr;
+  let_pos: position;  (* 整个 let 语句位置 *)
+}
+
+(* def 语句详细信息 *)
+and def_stmt = {
+  def_name: string;
+  def_name_pos: position;  (* 函数名位置 *)
+  def_type_params: string list;
+  def_params: (string * type_expr option) list;
+  def_return_type: type_expr option;
+  def_body: statement list;
+  def_pos: position;  (* 整个 def 语句位置 *)
+}
+
+(* struct 定义详细信息 *)
+and struct_def = {
+  struct_name: string;
+  struct_name_pos: position;  (* 结构体名位置 *)
+  struct_type_params: string list;
+  struct_members: struct_member list;
+  struct_pos: position;  (* 整个 struct 定义位置 *)
+}
+
+(* class 定义详细信息 *)
+and class_def = {
+  class_name: string;
+  class_name_pos: position;  (* 类名位置 *)
+  class_base: string option;
+  class_interfaces: string list;
+  class_members: class_member list;
+  class_pos: position;  (* 整个 class 定义位置 *)
+}
+
+(* interface 定义详细信息 *)
+and interface_def = {
+  interface_name: string;
+  interface_name_pos: position;  (* 接口名位置 *)
+  interface_type_params: string list;
+  interface_members: interface_member list;
+  interface_pos: position;  (* 整个 interface 定义位置 *)
+}
+
+(* enum 定义详细信息 *)
+and enum_def = {
+  enum_name: string;
+  enum_name_pos: position;  (* 枚举名位置 *)
+  enum_type_params: string list;
+  enum_variants: enum_variant list;
+  enum_pos: position;  (* 整个 enum 定义位置 *)
+}
+
 (* 语句 *)
 and statement =
   | SExpr of expr * position
-  | SLet of string * type_expr option * expr * position
+  | SLet of let_stmt
   | SLetPat of pattern * expr * position  (* 元组解包: let (a,b) = tuple *)
-  | SDef of string * string list * (string * type_expr option) list * type_expr option * statement list * position
+  | SDef of def_stmt
   | SReturn of expr option * position
   | SIf of expr * statement list * (expr * statement list) list * statement list option * position
   | SWhile of expr * statement list * position
   | SFor of pattern * expr * statement list * position
   | SMatch of expr * (pattern * expr option * statement list) list * position  (* pattern * guard * body *)
-  | SClass of string * string option * string list * class_member list * position
-  | SStruct of string * string list * struct_member list * position  (* 结构体定义,支持字段和方法 *)
-  | SInterface of string * string list * interface_member list * position  (* 添加类型参数支持 *)
+  | SClass of class_def
+  | SStruct of struct_def
+  | SInterface of interface_def
   | SImport of string list * position
   | SFromImport of string * string list * position
   | SAssign of string * expr * position
   | SIndexAssign of expr * expr * expr * position
   | SFieldAssign of expr * string * expr * position  (* 字段赋值: obj.field = value *)
-  | SEnum of string * string list * enum_variant list * position
+  | SEnum of enum_def
   | SImpl of impl_block * position  (* impl 块 *)
 
 type program = statement list

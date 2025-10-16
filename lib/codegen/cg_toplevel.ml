@@ -266,24 +266,26 @@ let gen_program program =
 
   (* 扫描所有函数定义并注册它们的签名 *)
   List.iter (function
-    | SDef (name, _, _, ret_ty, _, _) ->
-        let ret_type = match ret_ty with
+    | SDef def_info ->
+        let ret_type = match def_info.def_return_type with
           | Some t -> type_expr_to_llvm_type t
           | None -> I32
         in
-        ctx.function_signatures <- (name, ret_type) :: ctx.function_signatures
+        ctx.function_signatures <- (def_info.def_name, ret_type) :: ctx.function_signatures
     | _ -> ()
   ) program;
 
   let has_main = List.exists (function
-    | SDef ("main", _, _, _, _, _) -> true
+    | SDef def_info -> def_info.def_name = "main"
     | _ -> false) program
   in
 
   if has_main then begin
     (* 先注册所有结构体定义 *)
     List.iter (function
-      | SStruct (name, _, members, _) ->
+      | SStruct struct_info ->
+          let name = struct_info.struct_name in
+          let members = struct_info.struct_members in
           let field_list = List.filter_map (function
             | Ast.SField field -> Some field
             | _ -> None
@@ -306,14 +308,16 @@ let gen_program program =
 
     (* 生成所有函数定义 *)
     List.iter (function
-      | SDef (name, _type_params, params, ret_ty, body, _) ->
-          gen_function code_buf ctx name params ret_ty body
+      | SDef def_info ->
+          gen_function code_buf ctx def_info.def_name def_info.def_params
+            def_info.def_return_type def_info.def_body
       | _ -> ()
     ) program;
 
     (* 生成所有结构体方法 *)
     List.iter (function
-      | SStruct (struct_name, _, members, _) ->
+      | SStruct struct_info ->
+          let struct_name = struct_info.struct_name in
           List.iter (function
             | Ast.SMethod (method_name, _type_params, params, ret_ty_opt, body, _) ->
                 (* 注册方法到 struct_method_registry *)
@@ -335,7 +339,7 @@ let gen_program program =
                 (* 方法生成后清理 var_struct_types *)
                 ctx.var_struct_types <- []
             | _ -> ()
-          ) members
+          ) struct_info.struct_members
       | _ -> ()
     ) program;
 
@@ -367,7 +371,9 @@ let gen_program program =
   end else begin
     (* 先注册所有结构体定义 *)
     List.iter (function
-      | SStruct (name, _, members, _) ->
+      | SStruct struct_info ->
+          let name = struct_info.struct_name in
+          let members = struct_info.struct_members in
           let field_list = List.filter_map (function
             | Ast.SField field -> Some field
             | _ -> None
@@ -390,14 +396,16 @@ let gen_program program =
 
     (* 生成所有函数定义 *)
     List.iter (function
-      | SDef (name, _type_params, params, ret_ty, body, _) ->
-          gen_function code_buf ctx name params ret_ty body
+      | SDef def_info ->
+          gen_function code_buf ctx def_info.def_name def_info.def_params
+            def_info.def_return_type def_info.def_body
       | _ -> ()
     ) program;
 
     (* 生成所有结构体方法 *)
     List.iter (function
-      | SStruct (struct_name, _, members, _) ->
+      | SStruct struct_info ->
+          let struct_name = struct_info.struct_name in
           List.iter (function
             | Ast.SMethod (method_name, _type_params, params, ret_ty_opt, body, _) ->
                 (* 注册方法到 struct_method_registry *)
@@ -419,7 +427,7 @@ let gen_program program =
                 (* 方法生成后清理 var_struct_types *)
                 ctx.var_struct_types <- []
             | _ -> ()
-          ) members
+          ) struct_info.struct_members
       | _ -> ()
     ) program;
 

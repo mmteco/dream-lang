@@ -8,6 +8,11 @@
     | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
     | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p)
     | EEnumVariant (_, _, _, p) | EStructLiteral (_, _, p) | EStructAccess (_, _, p) -> p
+
+  (* 从 Lexing.position 创建 AST position *)
+  (* VSCode 使用 0-based 行号，所以减 1 *)
+  let make_position (pos : Lexing.position) =
+    { line = pos.pos_lnum - 1; column = pos.pos_cnum - pos.pos_bol }
 %}
 
 %token <int> INT
@@ -56,23 +61,67 @@ newline_sep:
 statement:
   | e = expr { SExpr (e, get_expr_pos e) }
   | LET name = IDENT ASSIGN value = expr
-      { SLet (name, None, value, get_expr_pos value) }
+      { SLet {
+          let_name = name;
+          let_name_pos = make_position $startpos(name);
+          let_type = None;
+          let_value = value;
+          let_pos = make_position $startpos;
+        } }
   | LET name = IDENT COLON ty = type_expr ASSIGN value = expr
-      { SLet (name, Some ty, value, get_expr_pos value) }
+      { SLet {
+          let_name = name;
+          let_name_pos = make_position $startpos(name);
+          let_type = Some ty;
+          let_value = value;
+          let_pos = make_position $startpos;
+        } }
   | LET pat = pattern ASSIGN value = expr
-      { SLetPat (pat, value, get_expr_pos value) }
+      { SLetPat (pat, value, make_position $startpos) }
   | arr = expr LBRACKET idx = expr RBRACKET ASSIGN value = expr
       { SIndexAssign (arr, idx, value, get_expr_pos arr) }
   | name = IDENT ASSIGN value = expr
-      { SAssign (name, value, get_expr_pos value) }
+      { SAssign (name, value, make_position $startpos(name)) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
-      { SDef (name, [], params, None, body, { line = 0; column = 0 }) }
+      { SDef {
+          def_name = name;
+          def_name_pos = make_position $startpos(name);
+          def_type_params = [];
+          def_params = params;
+          def_return_type = None;
+          def_body = body;
+          def_pos = make_position $startpos;
+        } }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
-      { SDef (name, [], params, Some ret, body, { line = 0; column = 0 }) }
+      { SDef {
+          def_name = name;
+          def_name_pos = make_position $startpos(name);
+          def_type_params = [];
+          def_params = params;
+          def_return_type = Some ret;
+          def_body = body;
+          def_pos = make_position $startpos;
+        } }
   | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
-      { SDef (name, type_params, params, None, body, { line = 0; column = 0 }) }
+      { SDef {
+          def_name = name;
+          def_name_pos = make_position $startpos(name);
+          def_type_params = type_params;
+          def_params = params;
+          def_return_type = None;
+          def_body = body;
+          def_pos = make_position $startpos;
+        } }
   | DEF name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
-      { SDef (name, type_params, params, Some ret, body, { line = 0; column = 0 }) }
+      { SDef {
+          def_name = name;
+          def_name_pos = make_position $startpos(name);
+          def_type_params = type_params;
+          def_params = params;
+          def_return_type = Some ret;
+          def_body = body;
+          def_pos = make_position $startpos;
+        } }
   | RETURN
       { SReturn (None, { line = 0; column = 0 }) }
   | RETURN e = expr
@@ -86,15 +135,48 @@ statement:
   | MATCH e = expr COLON newline_sep INDENT cases = case_list DEDENT
       { SMatch (e, cases, get_expr_pos e) }
   | CLASS name = IDENT COLON newline_sep INDENT members = class_member_list DEDENT
-      { SClass (name, None, [], members, { line = 0; column = 0 }) }
+      { SClass {
+          class_name = name;
+          class_name_pos = make_position $startpos(name);
+          class_base = None;
+          class_interfaces = [];
+          class_members = members;
+          class_pos = make_position $startpos;
+        } }
   | CLASS name = IDENT LPAREN base = IDENT RPAREN COLON newline_sep INDENT members = class_member_list DEDENT
-      { SClass (name, Some base, [], members, { line = 0; column = 0 }) }
+      { SClass {
+          class_name = name;
+          class_name_pos = make_position $startpos(name);
+          class_base = Some base;
+          class_interfaces = [];
+          class_members = members;
+          class_pos = make_position $startpos;
+        } }
   | CLASS name = IDENT IMPLEMENTS interfaces = separated_list(COMMA, IDENT) COLON newline_sep INDENT members = class_member_list DEDENT
-      { SClass (name, None, interfaces, members, { line = 0; column = 0 }) }
+      { SClass {
+          class_name = name;
+          class_name_pos = make_position $startpos(name);
+          class_base = None;
+          class_interfaces = interfaces;
+          class_members = members;
+          class_pos = make_position $startpos;
+        } }
   | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
-      { SInterface (name, [], members, { line = 0; column = 0 }) }
+      { SInterface {
+          interface_name = name;
+          interface_name_pos = make_position $startpos(name);
+          interface_type_params = [];
+          interface_members = members;
+          interface_pos = make_position $startpos;
+        } }
   | INTERFACE name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET COLON newline_sep INDENT members = interface_member_list DEDENT
-      { SInterface (name, type_params, members, { line = 0; column = 0 }) }
+      { SInterface {
+          interface_name = name;
+          interface_name_pos = make_position $startpos(name);
+          interface_type_params = type_params;
+          interface_members = members;
+          interface_pos = make_position $startpos;
+        } }
   | IMPL interface_name = IDENT FOR target = type_expr COLON newline_sep INDENT members = impl_member_list DEDENT
       { SImpl ({ impl_interface = Some interface_name;
                  impl_type_params = [];
@@ -108,13 +190,37 @@ statement:
                  impl_members = members;
                  impl_pos = { line = 0; column = 0 } }, { line = 0; column = 0 }) }
   | STRUCT name = IDENT COLON newline_sep INDENT members = struct_member_list DEDENT
-      { SStruct (name, [], members, { line = 0; column = 0 }) }
+      { SStruct {
+          struct_name = name;
+          struct_name_pos = make_position $startpos(name);
+          struct_type_params = [];
+          struct_members = members;
+          struct_pos = make_position $startpos;
+        } }
   | STRUCT name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET COLON newline_sep INDENT members = struct_member_list DEDENT
-      { SStruct (name, type_params, members, { line = 0; column = 0 }) }
+      { SStruct {
+          struct_name = name;
+          struct_name_pos = make_position $startpos(name);
+          struct_type_params = type_params;
+          struct_members = members;
+          struct_pos = make_position $startpos;
+        } }
   | ENUM name = IDENT COLON newline_sep INDENT variants = enum_variant_list DEDENT
-      { SEnum (name, [], variants, { line = 0; column = 0 }) }
+      { SEnum {
+          enum_name = name;
+          enum_name_pos = make_position $startpos(name);
+          enum_type_params = [];
+          enum_variants = variants;
+          enum_pos = make_position $startpos;
+        } }
   | ENUM name = IDENT LBRACKET type_params = separated_list(COMMA, IDENT) RBRACKET COLON newline_sep INDENT variants = enum_variant_list DEDENT
-      { SEnum (name, type_params, variants, { line = 0; column = 0 }) }
+      { SEnum {
+          enum_name = name;
+          enum_name_pos = make_position $startpos(name);
+          enum_type_params = type_params;
+          enum_variants = variants;
+          enum_pos = make_position $startpos;
+        } }
   | obj = expr DOT field = IDENT ASSIGN value = expr
       { SFieldAssign (obj, field, value, get_expr_pos obj) }
   | IMPORT modules = separated_list(DOT, IDENT)
@@ -149,11 +255,11 @@ class_member_list:
 
 class_member:
   | name = IDENT COLON ty = type_expr
-      { CField (name, ty, { line = 0; column = 0 }) }
+      { CField (name, ty, make_position $startpos(name)) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
-      { CMethod (name, [], params, None, body, { line = 0; column = 0 }) }
+      { CMethod (name, [], params, None, body, make_position $startpos(name)) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
-      { CMethod (name, [], params, Some ret, body, { line = 0; column = 0 }) }
+      { CMethod (name, [], params, Some ret, body, make_position $startpos(name)) }
 
 interface_member_list:
   | { [] }
@@ -193,11 +299,11 @@ struct_member_list:
 
 struct_member:
   | name = IDENT COLON ty = type_expr
-      { SField { field_name = name; field_type = ty; field_pos = { line = 0; column = 0 } } }
+      { SField { field_name = name; field_type = ty; field_pos = make_position $startpos } }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
-      { SMethod (name, [], params, None, body, { line = 0; column = 0 }) }
+      { SMethod (name, [], params, None, body, make_position $startpos) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT
-      { SMethod (name, [], params, Some ret, body, { line = 0; column = 0 }) }
+      { SMethod (name, [], params, Some ret, body, make_position $startpos) }
 
 enum_variant_list:
   | { [] }
@@ -319,12 +425,12 @@ type_expr:
     }
 
 expr:
-  | n = INT { EInt (n, { line = 0; column = 0 }) }
-  | f = FLOAT { EFloat (f, { line = 0; column = 0 }) }
-  | s = STRING { EString (s, { line = 0; column = 0 }) }
-  | b = BOOL { EBool (b, { line = 0; column = 0 }) }
-  | name = IDENT { EVar (name, { line = 0; column = 0 }) }
-  | SELF { EVar ("self", { line = 0; column = 0 }) }
+  | n = INT { EInt (n, make_position $startpos) }
+  | f = FLOAT { EFloat (f, make_position $startpos) }
+  | s = STRING { EString (s, make_position $startpos) }
+  | b = BOOL { EBool (b, make_position $startpos) }
+  | name = IDENT { EVar (name, make_position $startpos) }
+  | SELF { EVar ("self", make_position $startpos) }
   | e1 = expr PLUS e2 = expr { EBinOp (e1, Add, e2, { line = 0; column = 0 }) }
   | e1 = expr MINUS e2 = expr { EBinOp (e1, Sub, e2, { line = 0; column = 0 }) }
   | e1 = expr TIMES e2 = expr { EBinOp (e1, Mul, e2, { line = 0; column = 0 }) }

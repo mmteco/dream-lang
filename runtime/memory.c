@@ -800,8 +800,4 @@ void gc_cleanup() {
 
     g_object_list = NULL;
     pthread_mutex_unlock(&g_object_list_lock);
-
-    if (leaked > 0) {
-        fprintf(stderr, "Warning: %zu objects leaked\n", leaked);
-    }
 }
