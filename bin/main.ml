@@ -70,7 +70,6 @@ let compile_to_llvm ?(silent=false) input_file =
 
   (* 如果有错误，终止编译 *)
   if Error.has_errors () then begin
-    Printf.eprintf "\nCompilation failed due to errors.\n";
     exit 1
   end;
 

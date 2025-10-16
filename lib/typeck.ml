@@ -25,6 +25,40 @@ let get_generic_instances () = !generic_instances
 
 let clear_generic_instances () = generic_instances := []
 
+(* 实例化多态类型：将类型中的 TyVar 替换为新的类型变量 *)
+let instantiate ty =
+  let var_map = ref [] in
+  let rec inst = function
+    | TyVar name ->
+        (match List.assoc_opt name !var_map with
+         | Some new_var -> new_var
+         | None ->
+             let new_var = fresh_type_var () in
+             var_map := (name, new_var) :: !var_map;
+             new_var)
+    | TyList t -> TyList (inst t)
+    | TyDict (k, v) -> TyDict (inst k, inst v)
+    | TyTuple ts -> TyTuple (List.map inst ts)
+    | TyFunc (params, ret) -> TyFunc (List.map inst params, inst ret)
+    | TyUnion ts -> TyUnion (List.map inst ts)
+    | TyOption t -> TyOption (inst t)
+    | TyResult (ok, err) -> TyResult (inst ok, inst err)
+    | t -> t
+  in
+  inst ty
+
+(* 检查类型是否包含未绑定的类型变量 (多态) *)
+let rec is_polymorphic = function
+  | TyVar _ -> true
+  | TyList t -> is_polymorphic t
+  | TyDict (k, v) -> is_polymorphic k || is_polymorphic v
+  | TyTuple ts -> List.exists is_polymorphic ts
+  | TyFunc (params, ret) -> List.exists is_polymorphic params || is_polymorphic ret
+  | TyUnion ts -> List.exists is_polymorphic ts
+  | TyOption t -> is_polymorphic t
+  | TyResult (ok, err) -> is_polymorphic ok || is_polymorphic err
+  | _ -> false
+
 let rec infer_expr env = function
   | EInt (_, _) -> (TyInt, empty_subst)
   | EFloat (_, _) -> (TyFloat, empty_subst)
@@ -33,7 +67,12 @@ let rec infer_expr env = function
 
   | EVar (name, pos) ->
       (match find_binding name env with
-       | Some ty -> (ty, empty_subst)
+       | Some ty ->
+           (* 如果类型是多态的,为其创建新的实例 *)
+           if is_polymorphic ty then
+             (instantiate ty, empty_subst)
+           else
+             (ty, empty_subst)
        | None ->
            let err = make_error (NameError name) pos
              (Printf.sprintf "Undefined variable '%s'" name) in
@@ -654,7 +693,10 @@ let rec infer_expr env = function
            (TyUnknown, obj_subst))
 
 and apply_subst_to_env subst env =
-  {env with bindings = Env.StringMap.map (apply_subst subst) env.bindings}
+  (* 只对非多态类型应用替换,保持多态函数类型不变 *)
+  {env with bindings = Env.StringMap.map (fun ty ->
+    if is_polymorphic ty then ty else apply_subst subst ty
+  ) env.bindings}
 
 let rec check_statement env = function
   | SExpr (e, _) ->
