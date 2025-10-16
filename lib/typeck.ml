@@ -394,7 +394,33 @@ let rec infer_expr env = function
                report_error err;
                check_cases combined rest)
       in
-      check_cases scrut_subst cases
+      let result = check_cases scrut_subst cases in
+
+      (* 穷尽性检查 *)
+      (match Exhaustiveness.check_exhaustiveness env' (apply_subst scrut_subst scrut_type) cases pos with
+       | Some (pos, missing) ->
+           let missing_str = String.concat ", " missing in
+           let err = make_error (TypeError "Non-exhaustive match") pos
+             (Printf.sprintf "Match is not exhaustive. Missing cases: %s" missing_str) in
+           report_error err
+       | None -> ());
+
+      (* 不可达模式检查 *)
+      let unreachable_indices = Exhaustiveness.check_reachability cases in
+      List.iter (fun idx ->
+        let (pat, _, _) = List.nth cases idx in
+        let pat_str = match pat with
+          | PEnumVariant (_, v, _) -> v
+          | PInt n -> string_of_int n
+          | PBool b -> string_of_bool b
+          | _ -> "_"
+        in
+        let err = make_error (TypeError "Unreachable pattern") pos
+          (Printf.sprintf "Pattern '%s' (case %d) is unreachable" pat_str (idx + 1)) in
+        report_error err
+      ) unreachable_indices;
+
+      result
 
   | EListComp (elem, var, iter, _cond_opt, pos) ->
       let (iter_type, iter_subst) = infer_expr env iter in
@@ -632,6 +658,31 @@ let rec check_statement env = function
             check_cases combined rest
       in
       let final_subst = check_cases scrut_subst cases in
+
+      (* 穷尽性检查 *)
+      (match Exhaustiveness.check_exhaustiveness env' (apply_subst scrut_subst scrut_type) cases _pos with
+       | Some (pos, missing) ->
+           let missing_str = String.concat ", " missing in
+           let err = make_error (TypeError "Non-exhaustive match") pos
+             (Printf.sprintf "Match is not exhaustive. Missing cases: %s" missing_str) in
+           report_error err
+       | None -> ());
+
+      (* 不可达模式检查 *)
+      let unreachable_indices = Exhaustiveness.check_reachability cases in
+      List.iter (fun idx ->
+        let (pat, _, _) = List.nth cases idx in
+        let pat_str = match pat with
+          | PEnumVariant (_, v, _) -> v
+          | PInt n -> string_of_int n
+          | PBool b -> string_of_bool b
+          | _ -> "_"
+        in
+        let err = make_error (TypeError "Unreachable pattern") _pos
+          (Printf.sprintf "Pattern '%s' (case %d) is unreachable" pat_str (idx + 1)) in
+        report_error err
+      ) unreachable_indices;
+
       (env, final_subst)
 
   | SClass (_, _, _, _, pos) ->
