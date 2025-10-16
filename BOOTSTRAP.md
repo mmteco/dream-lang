@@ -13,19 +13,25 @@
 - [x] 数组操作（索引、切片、拼接、列表推导式）
 - [x] 动态内存管理（引用计数 + 分代GC）
 - [x] LLVM IR 代码生成
-- [x] 字典类型（int->int，FNV-1a 哈希）✅ (2025-10)
-- [x] 元组解包（let、for 循环）✅ (2025-10)
-- [x] Runtime 模块化（string_ops, file_ops, dict, tuple, dynarray, memory）✅ (2025-10)
-- [x] 小写布尔和None关键字（true/false/none 支持）✅ (2025-10)
-- [x] print(bool) 函数支持（输出小写 true/false）✅ (2025-10)
+- [x] 字典类型（int->int，FNV-1a 哈希）
+- [x] 元组解包（let、for 循环）
+- [x] Runtime 模块化（string_ops, file_ops, dict, tuple, dynarray, memory）
+- [x] 小写布尔和None关键字（true/false/none 支持）
+- [x] print(bool) 函数支持（输出小写 true/false）
+- [x] 字符串索引和切片（`str[i]`, `str[start:end]`）
+- [x] print(string) 函数支持 
 
 ---
 
 ## 第一阶段：核心数据结构 (P0)
 
-### 1. 字符串增强 🔴 **高优先级**
-**Runtime 已实现** (`runtime/string_ops.c`)，需添加语言层绑定：
-- [ ] 字符串索引 `s[i]`、切片 `s[start:end]`
+### 1. 字符串增强 ✅ **部分完成**
+**Runtime 已实现** (`runtime/string_ops.c`)：
+- [x] 字符串索引 `s[i]` - 返回字符的 ASCII 码 
+- [x] 字符串切片 `s[start:end]` - 返回子字符串 
+- [x] print(string) 支持 
+
+**待添加语言层绑定**：
 - [ ] `split()`, `join()`, `find()`, `replace()`
 - [ ] `strip()`, `upper()`, `lower()`
 - [ ] `starts_with()`, `ends_with()`
@@ -37,7 +43,7 @@
 - [ ] `file_exists(path)`, `file_append(path, content)`
 - [ ] `file_delete(path)`
 
-### 3. 错误处理 ✅ **枚举实现完成** (2025-10)
+### 3. 错误处理 ✅ **枚举实现完成**
 - [x] Option 类型 `Option[T] = Some(T) | Nothing` (使用标准枚举)
 - [x] Result 类型 `Result[T, E] = Success(T) | Failure(E)` (使用标准枚举)
 - [ ] 错误传播语法 `?`
@@ -45,18 +51,18 @@
 ### 4. 字典类型 ✅ **完全泛型化完成**
 **已实现功能**：
 - [x] 字典字面量 `{1: 10, 2: 20}` (整数键)
-- [x] 字典字面量 `{"name": 100, "age": 25}` (字符串键) ✅ (2025-10)
-- [x] 字典字面量 `{1: "Alice", 2: "Bob"}` (字符串值) ✅ (2025-10)
-- [x] 字典字面量 `{"name": "Alice"}` (字符串键值对) ✅ (2025-10)
+- [x] 字典字面量 `{"name": 100, "age": 25}` (字符串键) 
+- [x] 字典字面量 `{1: "Alice", 2: "Bob"}` (字符串值) 
+- [x] 字典字面量 `{"name": "Alice"}` (字符串键值对) 
 - [x] 字典索引 `dict[key]`、赋值 `dict[key] = value`
 - [x] `dict_keys()`, `dict_values()`, `dict_items()`
 - [x] `for (k, v) in dict_items(d)` 迭代
 - [x] FNV-1a 哈希算法
 - [x] 64位指针安全（dynarray_ptr 使用 intptr_t）
-- [x] 泛型值类型 `dict[int, string]`, `dict[string, string]` ✅ (2025-10)
-- [x] **统一泛型实现** - 单一 dict_t 结构，参考 Golang 设计 ✅ (2025-10)
-- [x] **Runtime 层完全泛型化** - void* + 类型元数据，消除重复代码 ✅ (2025-10)
-- [x] **LLVM 代码生成器重构** - 统一 API (dict_set_int_int, dict_set_str_str 等) ✅ (2025-10)
+- [x] 泛型值类型 `dict[int, string]`, `dict[string, string]` 
+- [x] **统一泛型实现** - 单一 dict_t 结构，参考 Golang 设计 
+- [x] **Runtime 层完全泛型化** - void* + 类型元数据，消除重复代码 
+- [x] **LLVM 代码生成器重构** - 统一 API (dict_set_int_int, dict_set_str_str 等) 
 
 ### 5. 元组类型 ✅ **完整功能完成**
 **已实现功能**：
@@ -64,29 +70,29 @@
 - [x] `let (a, b) = tuple` 解包
 - [x] `for (k, v) in items` 解包
 - [x] `dict_items()` 返回元组数组
-- [x] 元组字面量 `(1, 2, 3)` ✅ (2025-10)
-- [x] 元组索引 `tuple[0]` ✅ (2025-10)
-- [x] 任意长度元组支持 (基于 void* + size 的通用结构) ✅ (2025-10)
+- [x] 元组字面量 `(1, 2, 3)` 
+- [x] 元组索引 `tuple[0]` 
+- [x] 任意长度元组支持 (基于 void* + size 的通用结构) 
 
 ---
 
 ## 第二阶段：语言特性 (P1)
 
-### 6. 枚举类型 ✅ **完整功能完成** (2025-10)
+### 6. 枚举类型 ✅ **完整功能完成**
 **已实现功能**：
 - [x] 枚举定义语法 `enum Color { Red, Green, Blue }`
 - [x] 带数据的枚举 `enum Shape { Circle(int), Rectangle(int, int) }`
 - [x] 泛型枚举 `enum Maybe[T] { Just(T), Nothing }`（语法解析）
 - [x] 枚举构造器 `Color.Red`, `Shape.Circle(5)`, `Shape.Rectangle(10, 20)`
 - [x] 模式匹配语法和类型检查
-- [x] **Runtime 层 Tagged Union 实现** ✅
+- [x] **Runtime 层 Tagged Union 实现** 
   - [x] enum.h/enum.c（enum_t 结构）
   - [x] enum_create_simple/int/string/bool 函数
   - [x] enum_create_tuple_ptr 函数（多参数变体）
   - [x] enum_get_tag/int/string/bool/data 函数
   - [x] enum_is_variant 类型检查函数
   - [x] enum_print_value 输出函数
-- [x] **LLVM 代码生成器集成** ✅
+- [x] **LLVM 代码生成器集成** 
   - [x] 枚举注册表（enum_registry）
   - [x] 单参数变体代码生成
   - [x] 多参数变体代码生成（使用元组存储）
@@ -95,12 +101,12 @@
   - [x] %enum_t 类型定义
   - [x] enum runtime 函数声明
   - [x] 链接 enum.c 到可执行文件
-- [x] **模式匹配数据提取** ✅ (2025-10)
+- [x] **模式匹配数据提取** 
   - [x] 单参数变体数据提取：`Circle(r)` → 绑定 r
   - [x] 多参数变体数据提取：`Rectangle(w, h)` → 绑定 w, h
   - [x] 变量重命名机制（避免 LLVM IR 名称冲突）
   - [x] gen_pattern_bindings 函数集成
-- [x] **GC 集成** ✅
+- [x] **GC 集成** 
   - [x] OBJ_ENUM 类型添加到 GC 系统
   - [x] enum_create_xxx 使用 gc_alloc
   - [x] 自动引用计数管理
@@ -110,32 +116,32 @@
 - [ ] 递归枚举（AST 节点类型）
 - [ ] 枚举方法支持
 
-### 7. 模式匹配 ✅ **核心功能完成** (2025-10)
+### 7. 模式匹配 ✅ **核心功能完成**
 **已实现功能**：
 - [x] match 语句和表达式语法
 - [x] case 关键字现在可选
 - [x] 整数、字符串、布尔值匹配
 - [x] 元组解构
 - [x] 枚举变体匹配 `Color.Red`
-- [x] **枚举变体带数据的模式匹配** ✅ (2025-10)
+- [x] **枚举变体带数据的模式匹配** 
   - [x] 单参数变体：`Circle(r)` → 提取 r 并绑定
   - [x] 多参数变体：`Rectangle(w, h)` → 提取 w, h 并绑定
 - [x] 通配符模式 `_`
 - [x] 变量模式绑定 `PVar`
 - [x] 类型检查和环境绑定
-- [x] **LLVM 代码生成** ✅
+- [x] **LLVM 代码生成** 
   - [x] SMatch 语句生成（基本块 + 条件跳转）
   - [x] EMatch 表达式生成（phi 节点）
   - [x] gen_pattern_test（模式测试条件生成）
   - [x] gen_pattern_bindings（模式变量绑定，包括枚举数据提取）
-- [x] **守卫条件 `if` 子句** ✅ (2025-10)
+- [x] **守卫条件 `if` 子句** 
   - [x] 解析器支持 `pattern if guard_expr:` 语法
   - [x] AST 扩展（EMatch 和 SMatch 的 case 支持可选守卫）
   - [x] 类型检查器验证守卫表达式为布尔类型
   - [x] LLVM 代码生成（守卫失败跳转到下一个 case）
   - [x] 完整的测试用例（test_match_guard.dm）
 
-- [x] **穷尽性检查** ✅ (2025-10)
+- [x] **穷尽性检查** 
   - [x] 缺失模式分支检测（如缺少 None、Err 等）
   - [x] 不可达模式检测（重复或完全覆盖的分支）
   - [x] 通配符模式正确处理
@@ -150,7 +156,7 @@
 - [ ] `struct Position { line: int, column: int }`
 - [ ] 结构体字面量、字段访问
 
-### 9. 泛型系统 ✅ **基础功能完成** (2025-10)
+### 9. 泛型系统 ✅ **基础功能完成**
 **已实现功能**：
 - [x] 函数泛型 `def identity[T](x: T) -> T`
 - [x] 类型参数语法解析
@@ -162,7 +168,7 @@
 - [ ] 高阶泛型 `def map[T, U](...)`
 - [ ] 泛型结构体和枚举
 
-### 10. Union 类型 ✅ **完整功能完成** (2025-10)
+### 10. Union 类型 ✅ **完整功能完成**
 
 **设计方案**：支持两种模式
 1. **编译时类型特化**（默认）：零运行时开销
@@ -172,32 +178,32 @@
 - [x] Union 类型语法 `int | string | bool`
 - [x] 自动扁平化嵌套 union
 - [x] 类型统一算法（子类型兼容性）
-- [x] 函数参数 union 类型支持 ✅
-- [x] 变量声明 union 类型支持 ✅
-- [x] 完整的编译时类型检查 ✅
-- [x] **Runtime 层 Tagged Union 实现** ✅
+- [x] 函数参数 union 类型支持 
+- [x] 变量声明 union 类型支持 
+- [x] 完整的编译时类型检查 
+- [x] **Runtime 层 Tagged Union 实现** 
   - [x] union.h/union.c（union_t 结构）
   - [x] union_create_int/float/string/bool/none
   - [x] union_is_xxx 类型检查函数
   - [x] union_get_xxx 值提取函数
-  - [x] union_print_value 输出函数 ✅
-  - [x] 完整的单元测试（test_union.c）✅
-  - [x] 设计文档（UNION_DESIGN.md）✅
-- [x] **LLVM 代码生成器集成（装箱/拆箱）** ✅
+  - [x] union_print_value 输出函数 
+  - [x] 完整的单元测试（test_union.c）
+  - [x] 设计文档（UNION_DESIGN.md）
+- [x] **LLVM 代码生成器集成（装箱/拆箱）** 
   - [x] box_to_union 和 unbox_from_union 函数
   - [x] 自动装箱：类型注解为 union 时
   - [x] %union_t 类型定义
   - [x] union runtime 函数声明
   - [x] 链接 union.c 到可执行文件
-- [x] **Match 表达式与 union 集成** ✅ (2025-10)
+- [x] **Match 表达式与 union 集成** 
   - [x] 整数、字符串、布尔值模式匹配
   - [x] 自动拆箱并类型检查（union_is_xxx + union_get_xxx）
   - [x] 通配符模式支持
   - [x] 完整的测试用例（test_union_comprehensive.dm）
-- [x] **Print 支持 union 类型** ✅ (2025-10)
+- [x] **Print 支持 union 类型** 
   - [x] union_print_value 运行时函数
   - [x] 自动根据 tag 输出正确值
-  - [x] 输出格式统一（所有值带换行符）✅
+  - [x] 输出格式统一（所有值带换行符）
 
 **工作原理**：
 ```dream
@@ -268,13 +274,13 @@ match get_value(1):
 - Match 拆箱：类型检查 + 值提取，约 15 cycles
 
 **已完成功能（续）**：
-- [x] **函数参数 union 装箱** ✅ (2025-10)
+- [x] **函数参数 union 装箱** 
   - [x] 函数参数类型表（function_param_types in context）
   - [x] 调用时自动检测并装箱
   - [x] 避免重复装箱（已是 union 直接传递）
   - [x] 多参数 union 支持
   - [x] 混合参数类型支持（union + 普通类型）
-- [x] **函数返回值 union 装箱** ✅ (2025-10)
+- [x] **函数返回值 union 装箱** 
   - [x] ctx.function_type 跟踪当前函数返回类型
   - [x] SReturn 语句自动检测并装箱
   - [x] Match 语句 return 分支优化
@@ -282,7 +288,7 @@ match get_value(1):
   - [x] 完整测试（test_union_comprehensive.dm）
 
 **已完成功能（续2）**：
-- [x] **GC 集成和内存优化** ✅ (2025-10)
+- [x] **GC 集成和内存优化** 
   - [x] OBJ_UNION 类型集成到 Dream GC 系统
   - [x] union_create_xxx 使用 gc_alloc（局部分配，快速路径）
   - [x] 自动引用计数（union_retain/union_release）
@@ -291,7 +297,7 @@ match get_value(1):
   - [x] 批量分配（每批 64 个对象）
   - [x] 完整的单元测试（test_union_gc.c）
   - [x] 零内存泄漏（106 alloc / 106 free）
-  - [x] union_print_value 支持小写 true/false 输出 ✅
+  - [x] union_print_value 支持小写 true/false 输出 
 
 **待完成功能**：
 - 无（Union 类型已生产可用）
@@ -338,13 +344,13 @@ match get_value(1):
 ### 立即开始（P0）
 1. ✅ ~~字典类型~~ (已完成)
 2. ✅ ~~元组解包~~ (已完成)
-3. ✅ ~~枚举类型~~ (基础完成 - 简单变体) ✅ (2025-10)
-4. ✅ ~~模式匹配代码生成~~ (基础完成 - 整数/字符串/通配符/变量/枚举) ✅ (2025-10)
-5. 🔴 **字符串操作** - Runtime 已有，添加语言绑定
-6. 🔴 **文件 I/O** - Runtime 已有，添加语言绑定
+3. ✅ ~~枚举类型~~ (已完成)
+4. ✅ ~~模式匹配代码生成~~ (已完成)
+5. ✅ ~~字符串索引和切片~~ (已完成) - 还需补充字符串方法
+6. 🔴 **字符串方法** - split, join, find, replace 等
+7. 🔴 **文件 I/O** - Runtime 已有，添加语言绑定
 
 ### 短期目标（P1）
-7. ✅ ~~枚举变体带数据的模式匹配~~ (已完成) ✅ (2025-10)
 8. 结构体
 9. 完成泛型系统高级特性
 

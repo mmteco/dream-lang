@@ -18,12 +18,12 @@ let def class interface implements enum
 if else elif match case for while return
 import from as async await
 True False None
-true false none  # 小写形式（2025-10新增）
+true false none  # 小写形式
 self super in
 and or not
 ```
 
-注意：`Some`、`Ok`、`Err` 不再是关键字（2025-10），现在通过标准枚举实现 Option 和 Result 类型。
+注意：`Some`、`Ok`、`Err` 不再是关键字，现在通过标准枚举实现 Option 和 Result 类型。
 
 ### 标识符
 - 以字母或下划线开头
@@ -158,7 +158,7 @@ let inferred = [1, 2, 3]    # 推导为 [int]
 
 **限制**: 当前实现中，数组大小必须在编译时确定
 
-#### 元组 ✅ (2025-10完成)
+#### 元组 ✅
 ```python
 let pair: (int, string) = (1, "one")
 let triple = (1, 2.0, "three")
@@ -178,7 +178,7 @@ for (k, v) in dict_items(d):
     print(v)
 ```
 
-#### 字典 ✅ (2025-10完成泛型化)
+#### 字典 ✅
 ```python
 # 整数键值对
 let ages: dict[string, int] = {"Alice": 30, "Bob": 25}
@@ -246,7 +246,7 @@ def calculate(a: int, b: int) -> int:
 
 ### 高级类型
 
-#### Union 类型 ✅ (2025-10完成)
+#### Union 类型 ✅
 
 Union 类型允许一个值拥有多个可能的类型：
 
@@ -282,7 +282,7 @@ print(result)              # 输出 42
 - 支持 print：union_print_value 自动识别类型并打印
 - 完整的 GC 支持：自动内存管理
 
-#### 泛型 ✅ (2025-10基础完成)
+#### 泛型 ✅
 
 支持函数泛型，允许编写类型参数化的函数：
 
@@ -307,7 +307,7 @@ let str = first(["a", "b"])     # T = string, 返回 "a"
 - 零运行时开销
 - 与 Rust/C++ 类似
 
-#### Option 和 Result 枚举类型 ✅ (2025-10完成)
+#### Option 和 Result 枚举类型 ✅
 
 Option 和 Result 现在通过标准枚举类型实现，不再是内置关键字：
 
@@ -367,7 +367,7 @@ match failure_result:
 - 可以定义自己的类似类型（如 `Maybe`、`Either` 等）
 - 与 Rust 的 Option/Result 类似，但通过通用枚举机制实现
 
-#### Match 表达式 ✅ (2025-10基础完成)
+#### Match 表达式 ✅
 
 模式匹配支持：
 
@@ -593,6 +593,35 @@ def main():
 - 结果数组的实际长度信息在表达式返回后丢失
 - 分配的是最大可能大小的数组
 
+### 字符串操作 ✅
+
+#### 字符串索引
+```python
+let s: string = "Hello"
+let char_code = s[0]  # 72 ('H' 的 ASCII 码)
+let c2 = s[1]         # 101 ('e' 的 ASCII 码)
+```
+
+**说明**:
+- 字符串索引返回整数类型 (ASCII 码)
+- 支持运行时动态索引
+- 越界访问行为未定义
+
+#### 字符串切片
+```python
+let s: string = "World"
+
+let sub1 = s[0:3]   # "Wor" - 索引 0 到 2
+let sub2 = s[1:]    # "orld" - 索引 1 到结尾
+let sub3 = s[:4]    # "Worl" - 开头到索引 3
+let sub4 = s[:]     # "World" - 完整复制
+```
+
+**语义**:
+- `str[start:end]` - 包含 start，不包含 end
+- 负索引暂不支持
+- 底层调用 `string_substring()` 运行时函数
+
 ### 内置函数
 
 #### print(value)
@@ -601,10 +630,10 @@ def main():
 ```python
 print(42)              # 打印整数
 print("hello")         # 打印字符串
-print(true)            # 打印布尔值（输出 "true"）✅ (2025-10)
-print(False)           # 打印布尔值（输出 "false"）✅ (2025-10)
+print(true)            # 打印布尔值（输出 "true"）
+print(False)           # 打印布尔值（输出 "false"）
 
-# Union 类型自动打印 ✅ (2025-10)
+# Union 类型自动打印 ✅
 let x: int | string = 42
 print(x)               # 自动识别类型并打印 "42"
 ```

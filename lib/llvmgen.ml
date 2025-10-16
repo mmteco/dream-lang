@@ -486,6 +486,11 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "  call void @print_int(i32 %s)\n" v;
        | I1 ->
            Printf.bprintf buf "  call void @print_bool(i1 %s)\n" v;
+       | Ptr I32 ->
+           (* String 类型：转换为 i8* 并打印 *)
+           let str_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 v;
+           Printf.bprintf buf "  call void @print_string(i8* %s)\n" str_i8;
        | UnionPtr ->
            (* Union 类型：调用 union_print_value *)
            Printf.bprintf buf "  call void @union_print_value(%%union_t* %s)\n" v;
@@ -695,6 +700,18 @@ let rec gen_expr buf ctx = function
       let (idx_v, _) = gen_expr buf ctx idx in
 
       (match arr_t with
+       | Ptr I32 when (match arr with EVar _ | EString _ -> true | _ -> false) ->
+           (* 字符串索引:调用 string_char_at *)
+           (* 首先将 i32* 转换为 i8* *)
+           let str_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 arr_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8 @string_char_at(i8* %s, i32 %s)\n"
+             result str_i8 idx_v;
+           (* 转换为i32返回 *)
+           let result_i32 = fresh_temp () in
+           Printf.bprintf buf "  %s = zext i8 %s to i32\n" result_i32 result;
+           (result_i32, I32)
        | Array (_, elem_t) ->
            let ptr_temp = fresh_temp () in
            let result = fresh_temp () in
@@ -955,6 +972,40 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "\n%s:\n" end_label;
 
            (new_arr, new_arr_type)
+       | Ptr I32 when (match arr with EVar _ | EString _ -> true | _ -> false) ->
+           (* 字符串切片:调用 string_substring *)
+           (* 首先将 i32* 转换为 i8* *)
+           let str_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 arr_v;
+
+           (* 计算起始和结束索引 *)
+           let start_idx = match start_opt with
+             | Some start_expr ->
+                 let (start_v, _) = gen_expr buf ctx start_expr in
+                 start_v
+             | None -> "0"
+           in
+           let end_idx = match end_opt with
+             | Some end_expr ->
+                 let (end_v, _) = gen_expr buf ctx end_expr in
+                 end_v
+             | None ->
+                 (* 如果没有指定结束位置,获取字符串长度 *)
+                 let len_temp = fresh_temp () in
+                 Printf.bprintf buf "  %s = call i32 @string_length(i8* %s)\n"
+                   len_temp str_i8;
+                 len_temp
+           in
+
+           (* 调用 string_substring *)
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8* @string_substring(i8* %s, i32 %s, i32 %s)\n"
+             result str_i8 start_idx end_idx;
+
+           (* 将结果转换回 i32* *)
+           let result_i32 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" result_i32 result;
+           (result_i32, Ptr I32)
        | _ ->
            Printf.bprintf buf "  ; slice only works with arrays\n";
            ("0", I32))
@@ -2294,6 +2345,7 @@ let gen_program program =
   (* Runtime functions *)
   Buffer.add_string buf "declare void @print_int(i32)\n";
   Buffer.add_string buf "declare void @print_bool(i1)\n";
+  Buffer.add_string buf "declare void @print_string(i8*)\n";
   Buffer.add_string buf "declare i32 @printf(i8*, ...)\n";
 
   (* Memory management functions *)

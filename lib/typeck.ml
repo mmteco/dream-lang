@@ -226,6 +226,16 @@ let rec infer_expr env = function
       let combined_subst = compose_subst idx_subst arr_subst in
       (match apply_subst combined_subst arr_type with
        | TyList elem_type -> (elem_type, combined_subst)
+       | TyString ->
+           (* 字符串索引返回整数 (char code) *)
+           (try
+              let idx_s = unify (apply_subst combined_subst idx_type) TyInt in
+              (TyInt, compose_subst idx_s combined_subst)
+            with Failure msg ->
+              let err = make_error (TypeError msg) pos
+                (Printf.sprintf "String index must be int: %s" msg) in
+              report_error err;
+              (TyUnknown, combined_subst))
        | TyDict (key_type, val_type) ->
            (try
               let key_subst = unify (apply_subst combined_subst idx_type) key_type in
@@ -253,7 +263,7 @@ let rec infer_expr env = function
                 (TyUnknown, combined_subst))
        | _ ->
            let err = make_error (TypeError "Not indexable") pos
-             "Cannot index non-list/dict/tuple type" in
+             "Cannot index non-list/dict/tuple/string type" in
            report_error err;
            (TyUnknown, combined_subst))
 
@@ -284,9 +294,10 @@ let rec infer_expr env = function
        | None -> ());
       (match apply_subst !combined_subst arr_type with
        | TyList elem_type -> (TyList elem_type, !combined_subst)
+       | TyString -> (TyString, !combined_subst)
        | _ ->
            let err = make_error (TypeError "Not sliceable") pos
-             "Cannot slice non-list type" in
+             "Cannot slice non-list/string type" in
            report_error err;
            (TyUnknown, !combined_subst))
 
@@ -416,7 +427,7 @@ let rec infer_expr env = function
           | _ -> "_"
         in
         let err = make_error (TypeError "Unreachable pattern") pos
-          (Printf.sprintf "Pattern '%s' (case %d) is unreachable" pat_str (idx + 1)) in
+          (Printf.sprintf "Pattern '%s' is unreachable (branch #%d in the match expression)" pat_str (idx + 1)) in
         report_error err
       ) unreachable_indices;
 
@@ -679,7 +690,7 @@ let rec check_statement env = function
           | _ -> "_"
         in
         let err = make_error (TypeError "Unreachable pattern") _pos
-          (Printf.sprintf "Pattern '%s' (case %d) is unreachable" pat_str (idx + 1)) in
+          (Printf.sprintf "Pattern '%s' is unreachable (branch #%d in the match expression)" pat_str (idx + 1)) in
         report_error err
       ) unreachable_indices;
 

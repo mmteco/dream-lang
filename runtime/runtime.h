@@ -11,5 +11,6 @@
 
 void print_int(int value);
 void print_bool(bool value);
+void print_string(const char* str);
 
 #endif

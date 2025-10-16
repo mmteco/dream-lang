@@ -99,10 +99,6 @@ clang -o test_gc test_gc.c memory.c -lpthread -std=c11
 | 循环引用检测 | O(容器对象数量) |
 | GC 停顿 | 1-10ms |
 
-## 实施日期
-
-2025-10-15
-
 ## 相关文档
 
 - `SPEC.md` - Dream 语言规范

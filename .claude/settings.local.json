@@ -14,7 +14,8 @@
       "Bash(dream:*)",
       "Bash(cat:*)",
       "Bash(dune exec:*)",
-      "Bash(./examples/test_generic:*)"
+      "Bash(./examples/test_generic:*)",
+      "Bash(sed:*)"
     ],
     "deny": [],
     "ask": []

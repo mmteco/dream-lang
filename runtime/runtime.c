@@ -9,3 +9,7 @@ void print_int(int value) {
 void print_bool(bool value) {
     printf("%s\n", value ? "true" : "false");
 }
+
+void print_string(const char* str) {
+    printf("%s\n", str);
+}

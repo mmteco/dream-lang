@@ -5,16 +5,16 @@
 ### 🚀 高优先级
 
 #### P0 - 核心功能缺失
-- [x] 动态大小数组/列表 ✅ (2025-10)
+- [x] 动态大小数组/列表 
   - [x] 实现堆内存分配 (malloc/free)
   - [x] 运行时内存管理
   - [x] 引用计数垃圾回收机制
   - [x] 内存池优化
   - [x] 标记-清除 GC（补充机制）
   - [x] 完整的测试套件
-  - [x] 集成到编译器 LLVM 生成器 ✅
+  - [x] 集成到编译器 LLVM 生成器 
 
-- [x] 泛型系统 ✅ (2025-10) **基础功能完成**
+- [x] 泛型系统  **基础功能完成**
   - [x] 类型参数语法解析 `func[T](x: T) -> T`
   - [x] 类型参数化 AST 节点
   - [x] 单态化(monomorphization)实现
@@ -23,7 +23,12 @@
 #### P1 - 重要改进
 - [ ] 字符串类型完善
   - [ ] 字符串拼接
-  - [ ] 字符串索引和切片
+  - [x] 字符串索引和切片 
+    - [x] 字符串索引 `str[i]` 返回字符的 ASCII 码
+    - [x] 字符串切片 `str[start:end]` 返回子字符串
+    - [x] LLVM 代码生成支持
+    - [x] 类型检查支持
+    - [x] print(string) 支持
   - [ ] 基本字符串方法 (len, split, join)
 
 - [ ] 错误处理改进
@@ -34,51 +39,51 @@
 ### 🔧 中优先级
 
 #### P2 - 语言特性扩展
-- [x] 字典类型 ✅ (2025-01) **完全泛型化完成**
+- [x] 字典类型  **完全泛型化完成**
   - [x] 字典字面量 `{1: 10, 2: 20}` (整数键值对)
-  - [x] 字典字面量 `{"name": 100, "age": 25}` (字符串键) ✅ (2025-10)
-  - [x] 字典字面量 `{1: "Alice", 2: "Bob"}` (字符串值) ✅ (2025-10)
-  - [x] 字典字面量 `{"name": "Alice", "city": "Beijing"}` (字符串键值对) ✅ (2025-10)
+  - [x] 字典字面量 `{"name": 100, "age": 25}` (字符串键) 
+  - [x] 字典字面量 `{1: "Alice", 2: "Bob"}` (字符串值) 
+  - [x] 字典字面量 `{"name": "Alice", "city": "Beijing"}` (字符串键值对) 
   - [x] 字典索引访问 `dict[key]` (读取操作)
-  - [x] 字典赋值 `dict[key] = value` (写入操作) ✅
+  - [x] 字典赋值 `dict[key] = value` (写入操作) 
   - [x] 哈希表底层实现 (FNV-1a 哈希)
   - [x] LLVM 代码生成支持 (llvmgen.ml)
   - [x] 类型检查支持 (typeck.ml)
   - [x] 字典方法 `dict_keys()`, `dict_values()`, `dict_items()`
-  - [x] 字典迭代 `for (k, v) in dict_items(d)` ✅ (2025-10)
-  - [x] 字符串键支持 dict[string, int] ✅ (2025-10)
-  - [x] 泛型值类型支持 dict[int, string], dict[string, string] ✅ (2025-10)
-  - [x] **统一泛型实现** - 单一 dict_t 结构，无重复特化代码 ✅ (2025-10)
-  - [x] **Runtime 层完全泛型化** - 参考 Golang 设计，使用 void* + 类型元数据 ✅ (2025-10)
-  - [x] **LLVM 代码生成器重构** - 使用统一的类型特化函数 ✅ (2025-10)
+  - [x] 字典迭代 `for (k, v) in dict_items(d)` 
+  - [x] 字符串键支持 dict[string, int] 
+  - [x] 泛型值类型支持 dict[int, string], dict[string, string] 
+  - [x] **统一泛型实现** - 单一 dict_t 结构，无重复特化代码 
+  - [x] **Runtime 层完全泛型化** - 参考 Golang 设计，使用 void* + 类型元数据 
+  - [x] **LLVM 代码生成器重构** - 使用统一的类型特化函数 
 
-- [x] 元组类型 ✅ (2025-10) **完整功能完成**
+- [x] 元组类型  **完整功能完成**
   - [x] 元组结构实现 `tuple2_i32` 和 `tuple_t`
   - [x] 元组解包 `let (a, b) = tuple`
   - [x] 元组解包在 for 循环中 `for (k, v) in dict_items(d)`
-  - [x] 元组字面量 `(1, 2, 3)` ✅ (2025-10)
-  - [x] 元组索引 `tuple[0]` ✅ (2025-10)
-  - [x] 任意长度元组支持 ✅ (2025-10)
+  - [x] 元组字面量 `(1, 2, 3)` 
+  - [x] 元组索引 `tuple[0]` 
+  - [x] 任意长度元组支持 
 
-- [x] Match 表达式 ✅ **核心功能完成** (2025-10)
+- [x] Match 表达式  **核心功能完成**
   - [x] 模式匹配语法解析（case 关键字可选）
   - [x] 通配符模式 `_`
   - [x] 类型检查实现
-  - [x] LLVM 代码生成（整数、字符串、通配符、变量绑定）✅
+  - [x] LLVM 代码生成（整数、字符串、通配符、变量绑定）
   - [x] match语句（SMatch）
   - [x] match表达式（EMatch，带phi节点）
-  - [x] 枚举变体精确匹配（tagged union实现）✅ (2025-10)
-  - [x] **枚举变体带数据的模式匹配** ✅ (2025-10)
+  - [x] 枚举变体精确匹配（tagged union实现）
+  - [x] **枚举变体带数据的模式匹配** 
     - [x] 单参数变体：`Circle(r)` → 提取并绑定 r
     - [x] 多参数变体：`Rectangle(w, h)` → 提取并绑定 w, h
-  - [x] **守卫条件 `if` 子句** ✅ (2025-10)
+  - [x] **守卫条件 `if` 子句** 
     - [x] 解析器支持 `pattern if guard_expr:` 语法
     - [x] AST 扩展支持可选守卫条件（`expr option`）
     - [x] 类型检查器验证守卫表达式为布尔类型
     - [x] LLVM 代码生成（守卫失败跳转到下一个 case）
     - [x] match 语句和表达式均支持守卫条件
     - [x] 完整测试套件（test_match_guard.dm）
-  - [x] **穷尽性检查** ✅ (2025-10)
+  - [x] **穷尽性检查** 
     - [x] 缺失模式分支检测（如缺少 None、Err 等）
     - [x] 不可达模式检测（重复或完全覆盖的分支）
     - [x] 通配符模式正确处理
@@ -86,24 +91,24 @@
     - [x] Enum 类型穷尽性检查（所有变体）
     - [x] 完整测试套件
 
-- [x] Enum 类型 ✅ **完整功能完成** (2025-10)
+- [x] Enum 类型  **完整功能完成**
   - [x] 枚举定义语法解析 `enum Color: Red, Green, Blue`
   - [x] 枚举构造器 `Color.Red`, `Shape.Circle(5)`, `Shape.Rectangle(10, 20)`
-  - [x] **Runtime 层 Tagged Union 实现（enum.c/enum.h）** ✅
+  - [x] **Runtime 层 Tagged Union 实现（enum.c/enum.h）** 
     - [x] enum_create_simple/int/string/bool 函数
     - [x] enum_create_tuple_ptr 函数（多参数变体）
     - [x] enum_get_tag/int/string/bool/data 函数
-  - [x] **LLVM 代码生成器集成** ✅ (2025-10)
+  - [x] **LLVM 代码生成器集成** 
     - [x] 单参数变体代码生成
     - [x] 多参数变体代码生成（使用元组存储）
     - [x] 枚举注册表（enum_registry）
-  - [x] **Match 表达式与 enum 集成** ✅ (2025-10)
+  - [x] **Match 表达式与 enum 集成** 
     - [x] 简单枚举变体匹配（无数据）
     - [x] 枚举 tag 比较和分支跳转
-    - [x] **单参数变体数据提取和绑定** ✅ (2025-10)
-    - [x] **多参数变体数据提取和绑定** ✅ (2025-10)
+    - [x] **单参数变体数据提取和绑定** 
+    - [x] **多参数变体数据提取和绑定** 
     - [x] 变量重命名机制（避免 LLVM IR 中的名称冲突）
-  - [x] **GC 集成** ✅ (2025-10)
+  - [x] **GC 集成** 
     - [x] OBJ_ENUM 类型添加到 GC 系统
     - [x] enum_create_xxx 使用 gc_alloc 分配
     - [x] 自动引用计数管理
@@ -112,35 +117,35 @@
 
   **当前状态**：枚举类型完全可用，包括带数据的变体 ✅
 
-- [x] Union 类型 ✅ **完整功能完成** (2025-10)
+- [x] Union 类型  **完整功能完成**
   - [x] 使用 `|` 语法：`int | string | bool`
   - [x] 多类型union支持（自动扁平化嵌套）
   - [x] 类型统一算法（子类型兼容性）
-  - [x] 函数参数union类型（编译时类型检查）✅
-  - [x] 变量声明union类型（编译时类型检查）✅
-  - [x] **Runtime 层 Tagged Union 实现（union.c/union.h）** ✅
-  - [x] **LLVM 代码生成器集成（装箱/拆箱）** ✅ (2025-10)
-  - [x] 自动装箱：类型注解为 union 时自动装箱 ✅
-  - [x] 完整的单元测试（test_union.c）✅
-  - [x] **Match 表达式与 union 集成** ✅ (2025-10)
+  - [x] 函数参数union类型（编译时类型检查）
+  - [x] 变量声明union类型（编译时类型检查）
+  - [x] **Runtime 层 Tagged Union 实现（union.c/union.h）** 
+  - [x] **LLVM 代码生成器集成（装箱/拆箱）** 
+  - [x] 自动装箱：类型注解为 union 时自动装箱 
+  - [x] 完整的单元测试（test_union.c）
+  - [x] **Match 表达式与 union 集成** 
     - [x] 整数、字符串、布尔值模式匹配
     - [x] 自动拆箱并类型检查（union_is_xxx + union_get_xxx）
     - [x] 通配符模式支持
-  - [x] **Print 支持 union 类型** ✅ (2025-10)
+  - [x] **Print 支持 union 类型** 
     - [x] union_print_value 运行时函数
     - [x] 自动根据 tag 输出正确值
-    - [x] 输出格式统一（所有值带换行符）✅
-  - [x] **函数参数 union 装箱** ✅ (2025-10)
+    - [x] 输出格式统一（所有值带换行符）
+  - [x] **函数参数 union 装箱** 
     - [x] 函数参数类型表（function_param_types）
     - [x] 调用时自动检测并装箱
     - [x] 避免重复装箱（已是 union 直接传递）
     - [x] 多参数 union 支持
-  - [x] **函数返回值 union 装箱** ✅ (2025-10)
+  - [x] **函数返回值 union 装箱** 
     - [x] ctx.function_type 跟踪当前函数返回类型
     - [x] SReturn 语句自动检测并装箱
     - [x] Match 语句 return 分支优化
     - [x] 完整测试（test_union_comprehensive.dm）
-  - [x] **GC 集成和内存优化** ✅ (2025-10)
+  - [x] **GC 集成和内存优化** 
     - [x] OBJ_UNION 类型添加到 GC 系统
     - [x] union_create_xxx 使用 gc_alloc 分配
     - [x] 自动引用计数管理（union_retain/union_release）
@@ -148,7 +153,7 @@
     - [x] 内存池优化（64 字节池，批量分配）
     - [x] 完整的单元测试（test_union_gc.c）
     - [x] 零内存泄漏验证
-    - [x] union_print_value 支持小写 true/false 输出 ✅
+    - [x] union_print_value 支持小写 true/false 输出 
 
   **两种模式**：
   1. **编译时类型特化**（默认）：零运行时开销，性能最优
@@ -239,21 +244,21 @@
 - [x] 数组字面量 `[1, 2, 3]`
 - [x] 数组索引 `arr[i]`
 - [x] 数组索引赋值 `arr[i] = value`
-- [x] 字典类型 (核心功能) ✅ (2025-01)
+- [x] 字典类型 (核心功能) 
   - [x] 字典字面量 `{1: 10, 2: 20}`
   - [x] 字典索引访问 `dict[key]`
-  - [x] 字典索引赋值 `dict[key] = value` ✅
+  - [x] 字典索引赋值 `dict[key] = value` 
   - [x] 哈希表实现 (链地址法)
   - [x] 字典方法 `dict_keys()`, `dict_values()`, `dict_items()`
-  - [x] 字典迭代 `for (k, v) in dict_items(d)` ✅ (2025-10)
+  - [x] 字典迭代 `for (k, v) in dict_items(d)` 
 
-- [x] 元组解包 ✅ (2025-10)
+- [x] 元组解包 
   - [x] let 语句中的元组解包 `let (a, b) = tuple`
   - [x] for 循环中的元组解包 `for (k, v) in items`
   - [x] dict_items() 返回元组数组
   - [x] 64位指针安全 (dynarray_ptr 使用 intptr_t)
 
-### 高级数组操作 (2025-01)
+### 高级数组操作
 - [x] 数组拼接 `arr1 + arr2`
 - [x] 数组切片 `arr[start:end]`, `arr[:]`, `arr[start:]`, `arr[:end]`
 - [x] 列表推导式 `[expr for var in arr if cond]`
@@ -268,18 +273,18 @@
 ### 内置函数
 - [x] `print(int)`
 - [x] `print(string)`
-- [x] `print(bool)` ✅ (2025-10)
+- [x] `print(bool)` 
 - [x] `len(array)`
 
 ### 类型系统改进
 - [x] 多态 Add 操作符 (int + int, list + list)
 - [x] 列表类型推导和统一
-- [x] 泛型系统基础实现 ✅ (2025-10)
+- [x] 泛型系统基础实现 
   - [x] 类型参数语法 `func[T](x: T) -> T`
   - [x] 单态化代码生成
   - [x] 泛型函数实例化
 
-### 内存管理系统 (2025-10)
+### 内存管理系统
 - [x] 对象头设计（类型、大小、引用计数、标记位）
 - [x] 内存池分配器（小对象优化）
 - [x] 引用计数自动管理
