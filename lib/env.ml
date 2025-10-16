@@ -142,7 +142,16 @@ let builtin_env =
   let env = add_binding "dict_keys" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "K"))) env in
   let env = add_binding "dict_values" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "V"))) env in
   let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
-  let env = add_binding "join" (TyFunc ([TyList TyString; TyString], TyString)) env in
+  let env = add_binding "join" (TyFunc ([TyList TyStr; TyStr], TyStr)) env in
+  (* 文件 I/O 函数 - Dream 层函数名，映射到 C runtime 的 __c_ 前缀函数 *)
+  let env = add_binding "file_read" (TyFunc ([TyStr], TyStr)) env in
+  let env = add_binding "file_write" (TyFunc ([TyStr; TyStr], TyInt)) env in
+  let env = add_binding "file_exists" (TyFunc ([TyStr], TyInt)) env in
+  let env = add_binding "file_append" (TyFunc ([TyStr; TyStr], TyInt)) env in
+  let env = add_binding "file_delete" (TyFunc ([TyStr], TyInt)) env in
+  let env = add_binding "file_read_bytes" (TyFunc ([TyStr], TyBytes)) env in
+  let env = add_binding "file_write_bytes" (TyFunc ([TyStr; TyBytes], TyInt)) env in
+  let env = add_binding "file_append_bytes" (TyFunc ([TyStr; TyBytes], TyInt)) env in
   (* 预定义内置枚举类型 *)
   let env = add_binding "Option" (TyEnum ("Option", [])) env in
   let env = add_binding "Result" (TyEnum ("Result", [])) env in

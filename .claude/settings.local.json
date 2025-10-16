@@ -17,7 +17,11 @@
       "Bash(./examples/test_generic:*)",
       "Bash(sed:*)",
       "Bash(./test/test_struct:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(./test/test_file_io:*)",
+      "Bash(find:*)",
+      "Bash(./test/test_type_pattern)",
+      "Bash(./test/test_core)"
     ],
     "deny": [],
     "ask": []

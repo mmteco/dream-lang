@@ -173,13 +173,16 @@ let gen_program program =
   Buffer.add_string buf "declare %dynarray_ptr* @string_split(i8*, i8*)\n";
   Buffer.add_string buf "declare i8* @string_join(%dynarray_ptr*, i8*)\n";
 
-  (* File I/O functions *)
+  (* File I/O functions - C runtime uses __c_ prefix *)
   Buffer.add_string buf "; File I/O functions\n";
-  Buffer.add_string buf "declare i8* @file_read(i8*)\n";
-  Buffer.add_string buf "declare i32 @file_write(i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @file_exists(i8*)\n";
-  Buffer.add_string buf "declare i32 @file_append(i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @file_delete(i8*)\n";
+  Buffer.add_string buf "declare i8* @__c_file_read(i8*)\n";
+  Buffer.add_string buf "declare i32 @__c_file_write(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @__c_file_exists(i8*)\n";
+  Buffer.add_string buf "declare i32 @__c_file_append(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @__c_file_delete(i8*)\n";
+  Buffer.add_string buf "declare { i32, i32, i32* }* @__c_file_read_bytes(i8*)\n";
+  Buffer.add_string buf "declare i32 @__c_file_write_bytes(i8*, { i32, i32, i32* }*)\n";
+  Buffer.add_string buf "declare i32 @__c_file_append_bytes(i8*, { i32, i32, i32* }*)\n";
 
   (* Dictionary functions - Unified Generic API *)
   Buffer.add_string buf "; Unified Generic Dictionary API\n";
@@ -343,7 +346,7 @@ let gen_program program =
             | TVar name -> name
             | TInt -> "int"
             | TFloat -> "float"
-            | TString -> "string"
+            | TStr -> "string"
             | TBool -> "bool"
             | _ -> "unknown"
           in
@@ -427,7 +430,7 @@ let gen_program program =
             | TVar name -> name
             | TInt -> "int"
             | TFloat -> "float"
-            | TString -> "string"
+            | TStr -> "string"
             | TBool -> "bool"
             | _ -> "unknown"
           in

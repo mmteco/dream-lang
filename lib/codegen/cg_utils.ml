@@ -44,7 +44,8 @@ let rec type_expr_to_llvm_type = function
   | TInt -> I32
   | TBool -> I1
   | TFloat -> I32
-  | TString -> Ptr I32
+  | TStr -> Ptr I32
+  | TBytes -> DynArray I32  (* bytes 映射为 dynarray_i32 *)
   | TList ty -> DynArray (type_expr_to_llvm_type ty)
   | TTuple _ -> TuplePtr
   | TDict _ -> DictPtr

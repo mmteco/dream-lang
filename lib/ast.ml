@@ -96,7 +96,8 @@ type unop =
 type type_expr =
   | TInt
   | TFloat
-  | TString
+  | TStr
+  | TBytes
   | TBool
   | TNone
   | TVar of string

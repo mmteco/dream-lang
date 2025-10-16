@@ -22,6 +22,7 @@
 
 #### P1 - 重要改进
 - [x] 字符串类型完善  **核心功能完成**
+  - [x] **string → str 重命名** - 类型名称统一
   - [ ] 字符串拼接 (待添加)
   - [x] 字符串索引和切片
     - [x] 字符串索引 `str[i]` 返回字符的 ASCII 码
@@ -44,6 +45,18 @@
     - [x] `is_digit(index)` - 检查指定位置字符是否为数字
     - [x] `is_alpha(index)` - 检查指定位置字符是否为字母
     - [x] `is_whitespace(index)` - 检查指定位置字符是否为空白
+
+- [x] 文件 I/O **完整功能完成**
+  - [x] `file_read(path)` - 读取文件为字符串
+  - [x] `file_write(path, content)` - 写入字符串到文件
+  - [x] `file_exists(path)` - 检查文件是否存在
+  - [x] `file_append(path, content)` - 追加内容到文件
+  - [x] `file_delete(path)` - 删除文件
+  - [x] `file_read_bytes(path)` - 读取文件为字节数组
+  - [x] `file_write_bytes(path, bytes)` - 写入字节数组
+  - [x] `file_append_bytes(path, bytes)` - 追加字节数组
+  - [x] 标准库 `stdlib/file.dm` - 统一接口
+  - [x] Union 类型集成 - `str | bytes` 参数
 
 - [ ] 错误处理改进
   - [ ] 更好的错误消息
@@ -132,34 +145,44 @@
   **当前状态**：枚举类型完全可用，包括带数据的变体 ✅
 
 - [x] Union 类型  **完整功能完成**
-  - [x] 使用 `|` 语法：`int | string | bool`
+  - [x] 使用 `|` 语法：`int | str | bool`
   - [x] 多类型union支持（自动扁平化嵌套）
   - [x] 类型统一算法（子类型兼容性）
   - [x] 函数参数union类型（编译时类型检查）
   - [x] 变量声明union类型（编译时类型检查）
-  - [x] **Runtime 层 Tagged Union 实现（union.c/union.h）** 
-  - [x] **LLVM 代码生成器集成（装箱/拆箱）** 
-  - [x] 自动装箱：类型注解为 union 时自动装箱 
+  - [x] **Runtime 层 Tagged Union 实现（union.c/union.h）**
+  - [x] **LLVM 代码生成器集成（装箱/拆箱）**
+  - [x] 自动装箱：类型注解为 union 时自动装箱
   - [x] 完整的单元测试（test_union.c）
-  - [x] **Match 表达式与 union 集成** 
+  - [x] **Match 表达式与 union 集成**
     - [x] 整数、字符串、布尔值模式匹配
     - [x] 自动拆箱并类型检查（union_is_xxx + union_get_xxx）
     - [x] 通配符模式支持
-  - [x] **Print 支持 union 类型** 
+  - [x] **类型模式匹配 (Type Pattern Matching)**
+    - [x] 语法支持：`variable: type` 模式
+    - [x] Union 类型拆箱和类型检查
+    - [x] 自动类型窄化（type narrowing）
+    - [x] 支持类型：int, str, bool
+    - [x] Parser 实现（PType 模式节点）
+    - [x] 类型检查器实现（bind_pattern）
+    - [x] LLVM 代码生成（union_is_* 和 union_get_*）
+    - [x] 完整测试套件（test_type_pattern.dm）
+    - [x] 文档：docs/type_pattern_matching.md
+  - [x] **Print 支持 union 类型**
     - [x] union_print_value 运行时函数
     - [x] 自动根据 tag 输出正确值
     - [x] 输出格式统一（所有值带换行符）
-  - [x] **函数参数 union 装箱** 
+  - [x] **函数参数 union 装箱**
     - [x] 函数参数类型表（function_param_types）
     - [x] 调用时自动检测并装箱
     - [x] 避免重复装箱（已是 union 直接传递）
     - [x] 多参数 union 支持
-  - [x] **函数返回值 union 装箱** 
+  - [x] **函数返回值 union 装箱**
     - [x] ctx.function_type 跟踪当前函数返回类型
     - [x] SReturn 语句自动检测并装箱
     - [x] Match 语句 return 分支优化
     - [x] 完整测试（test_union_comprehensive.dm）
-  - [x] **GC 集成和内存优化** 
+  - [x] **GC 集成和内存优化**
     - [x] OBJ_UNION 类型添加到 GC 系统
     - [x] union_create_xxx 使用 gc_alloc 分配
     - [x] 自动引用计数管理（union_retain/union_release）
@@ -167,7 +190,7 @@
     - [x] 内存池优化（64 字节池，批量分配）
     - [x] 完整的单元测试（test_union_gc.c）
     - [x] 零内存泄漏验证
-    - [x] union_print_value 支持小写 true/false 输出 
+    - [x] union_print_value 支持小写 true/false 输出
 
   **两种模式**：
   1. **编译时类型特化**（默认）：零运行时开销，性能最优
@@ -305,24 +328,31 @@
 - [x] return 语句
 
 ### 数据类型
-- [x] 基本类型 (int, bool, string)
+- [x] 基本类型 (int, bool, str)
 - [x] 固定大小数组
 - [x] 数组字面量 `[1, 2, 3]`
 - [x] 数组索引 `arr[i]`
 - [x] 数组索引赋值 `arr[i] = value`
-- [x] 字典类型 (核心功能) 
+- [x] 字典类型 (核心功能)
   - [x] 字典字面量 `{1: 10, 2: 20}`
   - [x] 字典索引访问 `dict[key]`
-  - [x] 字典索引赋值 `dict[key] = value` 
+  - [x] 字典索引赋值 `dict[key] = value`
   - [x] 哈希表实现 (链地址法)
   - [x] 字典方法 `dict_keys()`, `dict_values()`, `dict_items()`
-  - [x] 字典迭代 `for (k, v) in dict_items(d)` 
+  - [x] 字典迭代 `for (k, v) in dict_items(d)`
 
-- [x] 元组解包 
+- [x] 元组解包
   - [x] let 语句中的元组解包 `let (a, b) = tuple`
   - [x] for 循环中的元组解包 `for (k, v) in items`
   - [x] dict_items() 返回元组数组
   - [x] 64位指针安全 (dynarray_ptr 使用 intptr_t)
+
+- [x] 测试文件整理
+  - [x] 从16个测试文件整合为4个
+  - [x] test/test_core.dm - 字符串和泛型
+  - [x] test/test_types.dm - Union、结构体、接口
+  - [x] test/test_file_io.dm - 文件 I/O
+  - [x] test/test_match.dm - 模式匹配
 
 ### 高级数组操作
 - [x] 数组拼接 `arr1 + arr2`
@@ -338,8 +368,9 @@
 
 ### 内置函数
 - [x] `print(int)`
-- [x] `print(string)`
-- [x] `print(bool)` 
+- [x] `print(str)`
+- [x] `print(bool)`
+- [x] `print()` 泛型优化 - 接受任意类型，无类型错误
 - [x] `len(array)`
 
 ### 类型系统改进

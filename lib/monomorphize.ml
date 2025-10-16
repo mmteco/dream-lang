@@ -24,7 +24,8 @@ let create_mono_context () = {
 let rec ty_to_mangle_string = function
   | TyInt -> "i32"
   | TyFloat -> "f32"
-  | TyString -> "str"
+  | TyStr -> "str"
+  | TyBytes -> "bytes"
   | TyBool -> "bool"
   | TyNone -> "none"
   | TyVar name -> name
@@ -124,7 +125,8 @@ let rec substitute_type_expr type_params type_args = function
             (match ty with
              | TyInt -> TInt
              | TyFloat -> TFloat
-             | TyString -> TString
+             | TyStr -> TStr
+             | TyBytes -> TBytes
              | TyBool -> TBool
              | TyNone -> TNone
              | TyVar n -> TVar n
@@ -150,7 +152,8 @@ let rec substitute_type_expr type_params type_args = function
 and type_expr_of_ty = function
   | TyInt -> TInt
   | TyFloat -> TFloat
-  | TyString -> TString
+  | TyStr -> TStr
+  | TyBytes -> TBytes
   | TyBool -> TBool
   | TyNone -> TNone
   | TyVar name -> TVar name

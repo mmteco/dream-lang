@@ -8,12 +8,18 @@
 - Python 风格的简洁语法（缩进敏感）
 - TypeScript 风格的类型系统（类型推导 + 联合类型 + 泛型）
 - 类型不可变（赋值后类型锁定）
-- 编译成高性能二进制（通过 LLVM 或转译到 C）
+- 编译成高性能二进制（通过 LLVM）
 - 专注 AI 应用层：RAG、推理、数据处理
 
 **实现语言：** OCaml + OCamllex + Menhir
 
-**目标时间：** 6-8 周达到可用版本（MVP）
+**当前状态：** MVP 基本完成，核心功能可用
+
+**重要更新**：
+- ✅ `string` 类型已重命名为 `str`
+- ✅ 文件 I/O 完整实现（字符串和字节）
+- ✅ 类型模式匹配支持 Union 类型拆箱
+- ✅ 测试套件整合优化（4个全面测试文件）
 
 ---
 
@@ -34,7 +40,7 @@ let mixed = [1, "two", 3.0]    # 编译错误！类型不一致
 let scores: list[int] = []     # 空列表需要类型注解
 
 # 字典
-let user = {"name": "Bob", "age": 25}  # dict[string, int | string]
+let user = {"name": "Bob", "age": 25}  # dict[str, int | str]
 ```
 
 ### 2. 类型推导与不可变性
@@ -111,9 +117,9 @@ p.x = 30
 
 # 带有更多字段的结构体
 struct Person:
-    name: string
+    name: str
     age: int
-    email: string
+    email: str
 
 let alice = Person{name: "Alice", age: 25, email: "alice@example.com"}
 ```
@@ -164,6 +170,8 @@ class Puppy(Dog):
 
 ### 7. 模式匹配
 
+Dream 支持强大的模式匹配功能，包括值匹配、类型匹配和解构匹配。
+
 ```python
 # 值匹配
 match x:
@@ -176,13 +184,13 @@ match x:
     case _:
         print("other")
 
-# 类型匹配
+# 类型模式匹配（✅ 已实现）
 match value:
-    case x: int:
+    x: int:
         print(f"Integer: {x}")
-    case s: str:
+    s: str:
         print(f"String: {s}")
-    case _:
+    _:
         print("Unknown")
 
 # 解构匹配
@@ -196,6 +204,43 @@ match point:
     case (x, y):
         print(f"point: ({x}, {y})")
 ```
+
+#### 类型模式匹配（Type Pattern Matching）
+
+类型模式匹配允许在 match 表达式中根据 Union 类型的实际类型进行分支：
+
+**语法格式：** `变量名: 类型名`
+
+**特性：**
+- 自动进行运行时类型检查（使用 union_is_* 函数）
+- 自动拆箱到具体类型（使用 union_get_* 函数）
+- 类型安全：拆箱后的变量具有正确的类型
+- 支持 int, string, bool 类型
+
+**示例应用：统一的文件 I/O 接口**
+
+```python
+def file_write_unified(path: str, content: str | bytes) -> int:
+    """根据 content 的实际类型自动选择底层函数"""
+    match content:
+        data: str:
+            return file_write(path, data)
+        data: bytes:
+            return file_write_bytes(path, data)
+        _:
+            return 0
+
+# 使用示例
+file_write_unified("test.txt", "Hello")  # 调用 file_write
+file_write_unified("test.bin", byte_data)  # 调用 file_write_bytes
+```
+
+**实现细节：**
+- Parser: 支持 `name: type` 语法，生成 `PType(name, type_expr)` AST 节点
+- 类型检查: 验证类型与 Union 兼容性，绑定正确的具体类型
+- 代码生成: 生成 LLVM IR 类型检查和拆箱代码
+
+详见：[docs/type_pattern_matching.md](./type_pattern_matching.md)
 
 ### 8. AI 专用特性（Phase 2）
 

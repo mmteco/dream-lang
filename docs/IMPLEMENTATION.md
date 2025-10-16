@@ -94,13 +94,13 @@ GCC/Clang
 ```ocaml
 type ty =
   | TyInt | TyFloat | TyString | TyBool | TyNone
-  | TyVar of string              (* 类型变量 *)
+  | TyVar of str              (* 类型变量 *)
   | TyList of ty                 (* 列表类型 *)
   | TyDict of ty * ty            (* 字典类型 *)
   | TyTuple of ty list           (* 元组类型 *)
   | TyFunc of ty list * ty       (* 函数类型 *)
   | TyUnion of ty list           (* 联合类型 *)
-  | TyGeneric of string * ty     (* 泛型类型 *)
+  | TyGeneric of str * ty     (* 泛型类型 *)
 ```
 
 核心算法:
@@ -117,7 +117,7 @@ type ty =
 type env = {
   bindings: ty StringMap.t;     (* 变量到类型的映射 *)
   parent: env option;            (* 父作用域 *)
-  locked: string list;           (* 类型锁定的变量 *)
+  locked: str list;           (* 类型锁定的变量 *)
 }
 ```
 
@@ -224,7 +224,7 @@ type error_kind =
 ✅ **变量声明**
 ```python
 let x = 42
-let name: string = "Alice"
+let name: str = "Alice"
 ```
 
 ✅ **类型推导**

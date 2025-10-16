@@ -283,6 +283,7 @@ match_pattern:
       { PEnumVariant ("Result", "Err", patterns) }
   | variant_name = IDENT LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
       { PEnumVariant ("", variant_name, patterns) }
+  | name = IDENT COLON ty = type_expr { PType (name, ty) }
   | name = IDENT
       { PVar name }
 
@@ -300,7 +301,8 @@ type_expr:
   | IDENT { match $1 with
       | "int" -> TInt
       | "float" -> TFloat
-      | "string" -> TString
+      | "str" -> TStr
+      | "bytes" -> TBytes
       | "bool" -> TBool
       | name -> TVar name
     }

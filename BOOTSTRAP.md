@@ -19,7 +19,9 @@
 - [x] 小写布尔和None关键字（true/false/none 支持）
 - [x] print(bool) 函数支持（输出小写 true/false）
 - [x] 字符串索引和切片（`str[i]`, `str[start:end]`）
-- [x] print(string) 函数支持 
+- [x] print(string) 函数支持
+- [x] string 类型重命名为 str
+- [x] print() 泛型类型检查优化（接受任意类型） 
 
 ---
 
@@ -46,11 +48,18 @@
 - [x] `split(delimiter)` - 分割字符串返回字符串数组
 - [x] `join(array, separator)` - 连接字符串数组
 
-### 2. 文件 I/O 🔴 **高优先级**
-**Runtime 已实现** (`runtime/file_ops.c`)，需添加语言层绑定：
-- [ ] `file_read(path)`, `file_write(path, content)`
-- [ ] `file_exists(path)`, `file_append(path, content)`
-- [ ] `file_delete(path)`
+### 2. 文件 I/O ✅ **完成**
+**已实现功能**：
+- [x] `file_read(path)` - 读取文件为字符串
+- [x] `file_write(path, content)` - 写入字符串到文件
+- [x] `file_exists(path)` - 检查文件是否存在
+- [x] `file_append(path, content)` - 追加内容到文件
+- [x] `file_delete(path)` - 删除文件
+- [x] `file_read_bytes(path)` - 读取文件为字节数组
+- [x] `file_write_bytes(path, bytes)` - 写入字节数组到文件
+- [x] `file_append_bytes(path, bytes)` - 追加字节数组到文件
+- [x] 标准库 `stdlib/file.dm` - 统一的文件 I/O 接口
+- [x] Union 类型集成 - `str | bytes` 参数支持
 
 ### 3. 错误处理 ✅ **枚举实现完成**
 - [x] Option 类型 `Option[T] = Some(T) | Nothing` (使用标准枚举)
@@ -182,6 +191,15 @@
 **设计方案**：支持两种模式
 1. **编译时类型特化**（默认）：零运行时开销
 2. **运行时多态**（显式类型注解）：真正的类型多态
+
+**新增功能**：
+- [x] **类型模式匹配 (Type Pattern Matching)**
+  - [x] 语法支持：`variable: type` 模式
+  - [x] Union 类型拆箱和类型检查
+  - [x] 自动类型窄化（type narrowing）
+  - [x] 支持类型：int, str, bool
+  - [x] 完整测试套件（test_type_pattern.dm, test_file_io.dm）
+  - [x] 文档：docs/type_pattern_matching.md
 
 **已实现功能**：
 - [x] Union 类型语法 `int | string | bool`
@@ -359,8 +377,11 @@ match get_value(1):
 6. ✅ ~~字符串方法~~ (已完成) - length, find, replace, strip, upper, lower, starts_with, ends_with
 7. ✅ ~~字符串比较操作符~~ (已完成) - ==, !=, <, >, <=, >=
 8. ✅ ~~字符级别方法~~ (已完成) - is_digit, is_alpha, is_whitespace
-9. 🔴 **文件 I/O** - Runtime 已有，添加语言绑定
-10. 🔴 **split/join** - Runtime 已实现，需完善类型系统支持
+9. ✅ ~~文件 I/O~~ (已完成) - 完整的字符串和字节读写功能
+10. ✅ ~~split/join~~ (已完成) - Runtime 已实现，类型系统支持完善
+11. ✅ ~~类型模式匹配~~ (已完成) - Union 类型拆箱和类型检查
+12. ✅ ~~string → str 重命名~~ (已完成) - 全面统一类型名称
+13. ✅ ~~测试文件整理~~ (已完成) - 从16个整合为4个全面测试
 
 ### 短期目标（P1）
 8. 结构体

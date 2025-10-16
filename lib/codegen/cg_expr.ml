@@ -4,6 +4,41 @@ open Ast
 open Cg_types
 open Cg_utils
 
+(* 将 AST 的 type_expr 转换为代码生成器的 cg_type *)
+let ast_type_to_cg_type = function
+  | TInt -> I32
+  | TFloat -> I64  (* 浮点数暂时用 i64 表示（double 的位模式）*)
+  | TStr -> Ptr I32  (* 字符串指针 *)
+  | TBytes -> DynArrayPtr  (* 字节数组 *)
+  | TBool -> I1
+  | TVar _name -> I32  (* 类型变量默认为 i32，实际应该从环境中查找 *)
+  | TList _elem_ty -> DynArrayPtr
+  | TTuple _elem_tys -> TuplePtr  (* 元组用 tuple pointer *)
+  | TDict (_key_ty, _val_ty) -> DictPtr  (* 字典用 dict pointer *)
+  | TFunc (_params, _ret) -> Ptr I32  (* 函数指针 *)
+  | TUnion _tys -> UnionPtr  (* Union 类型 *)
+  | TEnum (_name, _) -> EnumPtr  (* 枚举类型 *)
+  | TStruct (_name, _) -> Ptr I32  (* 结构体指针 *)
+  | _ -> I32  (* 其他类型默认 i32 *)
+
+(* LLVM IR 字符串转义：不使用 String.escaped，因为它会双重转义 *)
+(* 返回 (转义后的字符串, 实际字节数) *)
+let llvm_escape_string s =
+  let buf = Buffer.create (String.length s) in
+  let byte_count = ref 0 in
+  String.iter (fun c ->
+    incr byte_count;  (* 每个字符在 LLVM IR 中都占 1 字节 *)
+    match c with
+    | '\n' -> Buffer.add_string buf "\\0A"
+    | '\t' -> Buffer.add_string buf "\\09"
+    | '\r' -> Buffer.add_string buf "\\0D"
+    | '\\' -> Buffer.add_string buf "\\\\"
+    | '"' -> Buffer.add_string buf "\\\""
+    | c when Char.code c < 32 || Char.code c > 126 ->
+        Printf.bprintf buf "\\%02X" (Char.code c)
+    | c -> Buffer.add_char buf c
+  ) s;
+  (Buffer.contents buf, !byte_count + 1)  (* +1 for \00 *)
 
 let rec gen_expr buf ctx = function
   | EInt (n, _) ->
@@ -15,8 +50,7 @@ let rec gen_expr buf ctx = function
   | EString (s, _) ->
       incr string_counter;
       let str_name = Printf.sprintf "@.str%d" !string_counter in
-      let escaped_str = String.escaped s in
-      let str_len = String.length s + 1 in
+      let (escaped_str, str_len) = llvm_escape_string s in
       ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
       let ptr_temp = fresh_temp () in
       Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
@@ -464,8 +498,7 @@ let rec gen_expr buf ctx = function
   | ECall (EVar ("print", _), [EString (s, _)], _) ->
       incr string_counter;
       let str_name = Printf.sprintf "@.str%d" !string_counter in
-      let escaped_str = String.escaped s in
-      let str_len = String.length s + 1 in
+      let (escaped_str, str_len) = llvm_escape_string s in
       ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
       let ptr_temp = fresh_temp () in
       Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
@@ -585,6 +618,103 @@ let rec gen_expr buf ctx = function
        | _ ->
            Printf.bprintf buf "  ; dict_items() only works with dictionaries\n";
            ("0", I32))
+
+  (* File I/O functions - Dream 层函数名映射到 C runtime __c_ 前缀 *)
+  | ECall (EVar ("file_read", _), [path_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      (* 调用 __c_file_read 函数，返回 i8* *)
+      let result_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = call i8* @__c_file_read(i8* %s)\n" result_i8 path_i8;
+      (* 将 i8* 转换回 i32* 作为字符串类型 *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" result result_i8;
+      (result, Ptr I32)
+
+  | ECall (EVar ("file_write", _), [path_expr; content_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      let (content_v, _) = gen_expr buf ctx content_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      let content_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
+      (* 调用 __c_file_write 函数，返回 i32 (1=成功, 0=失败) *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = call i32 @__c_file_write(i8* %s, i8* %s)\n"
+        result path_i8 content_i8;
+      (result, I32)
+
+  | ECall (EVar ("file_exists", _), [path_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      (* 调用 __c_file_exists 函数，返回 i32 (1=存在, 0=不存在) *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = call i32 @__c_file_exists(i8* %s)\n" result path_i8;
+      (result, I32)
+
+  | ECall (EVar ("file_append", _), [path_expr; content_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      let (content_v, _) = gen_expr buf ctx content_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      let content_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
+      (* 调用 __c_file_append 函数，返回 i32 (1=成功, 0=失败) *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = call i32 @__c_file_append(i8* %s, i8* %s)\n"
+        result path_i8 content_i8;
+      (result, I32)
+
+  | ECall (EVar ("file_delete", _), [path_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      (* 调用 __c_file_delete 函数，返回 i32 (1=成功, 0=失败) *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = call i32 @__c_file_delete(i8* %s)\n" result path_i8;
+      (result, I32)
+
+  (* Byte mode File I/O functions *)
+  | ECall (EVar ("file_read_bytes", _), [path_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      (* 调用 __c_file_read_bytes 函数，返回 dynarray_i32* *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = call { i32, i32, i32* }* @__c_file_read_bytes(i8* %s)\n" result path_i8;
+      (result, DynArray I32)
+
+  | ECall (EVar ("file_write_bytes", _), [path_expr; data_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      let (data_v, _) = gen_expr buf ctx data_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      (* 调用 __c_file_write_bytes 函数，返回 i32 (1=成功, 0=失败) *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = call i32 @__c_file_write_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
+        result path_i8 data_v;
+      (result, I32)
+
+  | ECall (EVar ("file_append_bytes", _), [path_expr; data_expr], _) ->
+      let (path_v, _) = gen_expr buf ctx path_expr in
+      let (data_v, _) = gen_expr buf ctx data_expr in
+      (* 将 i32* 字符串转换为 i8* *)
+      let path_i8 = fresh_temp () in
+      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
+      (* 调用 __c_file_append_bytes 函数，返回 i32 (1=成功, 0=失败) *)
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = call i32 @__c_file_append_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
+        result path_i8 data_v;
+      (result, I32)
 
   | ECall (EVar (fname, _), args, _) ->
       let arg_vals = List.map (gen_expr buf ctx) args in
@@ -1845,8 +1975,7 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
 
            incr string_counter;
            let str_name = Printf.sprintf "@.str%d" !string_counter in
-           let escaped_str = String.escaped s in
-           let str_len = String.length s + 1 in
+           let (escaped_str, str_len) = llvm_escape_string s in
            ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
            let ptr_temp = fresh_temp () in
            Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
@@ -1863,8 +1992,7 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
            (* 字符串比较需要调用string_compare *)
            incr string_counter;
            let str_name = Printf.sprintf "@.str%d" !string_counter in
-           let escaped_str = String.escaped s in
-           let str_len = String.length s + 1 in
+           let (escaped_str, str_len) = llvm_escape_string s in
            ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
            let ptr_temp = fresh_temp () in
            Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
@@ -1875,6 +2003,45 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
            let cond = fresh_temp () in
            Printf.bprintf buf "  %s = icmp eq i32 %s, 0\n" cond cmp_result;
            cond)
+  | PType (_var_name, type_expr) ->
+      (* 类型模式：检查 Union 中的具体类型 *)
+      (match scrut_t with
+       | UnionPtr ->
+           (* Union 类型：根据 type_expr 生成对应的类型检查 *)
+           let target_ty = ast_type_to_cg_type type_expr in
+           (match target_ty with
+            | I32 ->
+                let is_int = fresh_temp () in
+                Printf.bprintf buf "  %s = call i1 @union_is_int(%%union_t* %s)\n" is_int scrut_v;
+                is_int
+            | I64 ->
+                (* 浮点数检查 *)
+                let is_float = fresh_temp () in
+                Printf.bprintf buf "  %s = call i1 @union_is_float(%%union_t* %s)\n" is_float scrut_v;
+                is_float
+            | Ptr I32 ->
+                (* 字符串检查 *)
+                let is_string = fresh_temp () in
+                Printf.bprintf buf "  %s = call i1 @union_is_string(%%union_t* %s)\n" is_string scrut_v;
+                is_string
+            | DynArrayPtr ->
+                (* bytes 类型暂时没有 union_is_bytes，可以用其他方式检查或添加新的运行时函数 *)
+                Buffer.add_string buf "  ; TODO: union_is_bytes not implemented yet\n";
+                "0"
+            | I1 ->
+                let is_bool = fresh_temp () in
+                Printf.bprintf buf "  %s = call i1 @union_is_bool(%%union_t* %s)\n" is_bool scrut_v;
+                is_bool
+            | _ ->
+                Buffer.add_string buf "  ; ERROR: Unsupported type in type pattern\n";
+                "0")
+       | _ ->
+           (* 非 Union 类型：检查类型是否直接匹配 *)
+           let target_ty = ast_type_to_cg_type type_expr in
+           if scrut_t = target_ty then
+             "1"  (* 类型匹配 *)
+           else
+             "0"  (* 类型不匹配 *))
   | PWildcard ->
       "1"  (* 通配符总是匹配 *)
   | PVar _ ->
@@ -2001,5 +2168,55 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t =
                      end))
        | _ ->
            Buffer.add_string buf "  ; ERROR: Expected enum type for enum pattern binding\n")
+  | PType (var_name, type_expr) ->
+      (* 类型模式：从 Union 中拆箱并绑定变量 *)
+      (match scrut_t with
+       | UnionPtr ->
+           (* Union 类型：根据 type_expr 拆箱对应的值 *)
+           let target_ty = ast_type_to_cg_type type_expr in
+           (match target_ty with
+            | I32 ->
+                let unboxed_val = fresh_temp () in
+                Printf.bprintf buf "  %s = call i32 @union_get_int(%%union_t* %s)\n" unboxed_val scrut_v;
+                let local = "%" ^ var_name in
+                Printf.bprintf buf "  %s = alloca i32\n" local;
+                Printf.bprintf buf "  store i32 %s, i32* %s\n" unboxed_val local;
+                add_variable ctx var_name I32
+            | I64 ->
+                (* 浮点数拆箱 *)
+                let unboxed_val = fresh_temp () in
+                Printf.bprintf buf "  %s = call double @union_get_float(%%union_t* %s)\n" unboxed_val scrut_v;
+                let local = "%" ^ var_name in
+                Printf.bprintf buf "  %s = alloca double\n" local;
+                Printf.bprintf buf "  store double %s, double* %s\n" unboxed_val local;
+                add_variable ctx var_name I64
+            | Ptr I32 ->
+                (* 字符串拆箱 *)
+                let unboxed_val = fresh_temp () in
+                Printf.bprintf buf "  %s = call i8* @union_get_string(%%union_t* %s)\n" unboxed_val scrut_v;
+                let local = "%" ^ var_name in
+                Printf.bprintf buf "  %s = alloca i8*\n" local;
+                Printf.bprintf buf "  store i8* %s, i8** %s\n" unboxed_val local;
+                add_variable ctx var_name (Ptr I32)
+            | DynArrayPtr ->
+                (* bytes 类型需要从 union 中获取 *)
+                Buffer.add_string buf "  ; TODO: union_get_bytes not implemented yet\n";
+                add_variable ctx var_name DynArrayPtr
+            | I1 ->
+                let unboxed_val = fresh_temp () in
+                Printf.bprintf buf "  %s = call i1 @union_get_bool(%%union_t* %s)\n" unboxed_val scrut_v;
+                let local = "%" ^ var_name in
+                Printf.bprintf buf "  %s = alloca i1\n" local;
+                Printf.bprintf buf "  store i1 %s, i1* %s\n" unboxed_val local;
+                add_variable ctx var_name I1
+            | _ ->
+                Buffer.add_string buf "  ; ERROR: Unsupported type in type pattern binding\n")
+       | _ ->
+           (* 非 Union 类型：直接绑定 *)
+           let local = "%" ^ var_name in
+           Printf.bprintf buf "  %s = alloca %s\n" local (llvm_type_to_string scrut_t);
+           Printf.bprintf buf "  store %s %s, %s* %s\n"
+             (llvm_type_to_string scrut_t) scrut_v (llvm_type_to_string scrut_t) local;
+           add_variable ctx var_name scrut_t)
   | _ -> ()  (* 其他模式不需要绑定变量 *)
 

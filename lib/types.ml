@@ -3,7 +3,8 @@ open Ast
 type ty =
   | TyInt
   | TyFloat
-  | TyString
+  | TyStr
+  | TyBytes
   | TyBool
   | TyNone
   | TyVar of string
@@ -23,7 +24,8 @@ type ty =
 let rec type_expr_to_ty = function
   | TInt -> TyInt
   | TFloat -> TyFloat
-  | TString -> TyString
+  | TStr -> TyStr
+  | TBytes -> TyBytes
   | TBool -> TyBool
   | TNone -> TyNone
   | TVar name -> TyVar name
@@ -41,7 +43,8 @@ let rec type_expr_to_ty = function
 let rec ty_to_string = function
   | TyInt -> "int"
   | TyFloat -> "float"
-  | TyString -> "string"
+  | TyStr -> "str"
+  | TyBytes -> "bytes"
   | TyBool -> "bool"
   | TyNone -> "None"
   | TyVar name -> name
@@ -103,7 +106,7 @@ let compose_subst s1 s2 =
 
 let rec unify t1 t2 =
   match (t1, t2) with
-  | (TyInt, TyInt) | (TyFloat, TyFloat) | (TyString, TyString)
+  | (TyInt, TyInt) | (TyFloat, TyFloat) | (TyStr, TyStr) | (TyBytes, TyBytes)
   | (TyBool, TyBool) | (TyNone, TyNone) -> empty_subst
   | (TyVar name, t) | (t, TyVar name) ->
       if occurs name t then

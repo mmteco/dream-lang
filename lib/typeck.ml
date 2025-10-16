@@ -28,7 +28,7 @@ let clear_generic_instances () = generic_instances := []
 let rec infer_expr env = function
   | EInt (_, _) -> (TyInt, empty_subst)
   | EFloat (_, _) -> (TyFloat, empty_subst)
-  | EString (_, _) -> (TyString, empty_subst)
+  | EString (_, _) -> (TyStr, empty_subst)
   | EBool (_, _) -> (TyBool, empty_subst)
 
   | EVar (name, pos) ->
@@ -204,7 +204,7 @@ let rec infer_expr env = function
                     report_error err;
                     (TyUnknown, combined_subst)
                 end
-            | TyInt | TyString ->
+            | TyInt | TyStr ->
                 (* 属性访问（非函数），例如 s.length，不需要参数 *)
                 if List.length args = 0 then
                   (attr_type, combined_subst)
@@ -221,34 +221,41 @@ let rec infer_expr env = function
                 (TyUnknown, combined_subst))
        | EVar (func_name, _) ->
            (* 普通函数调用 *)
-           let (func_type, func_subst) = infer_expr env func in
-           let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
-           let combined_subst = List.fold_left compose_subst func_subst arg_substs in
-           let concrete_arg_types = List.map (apply_subst combined_subst) arg_types in
-           let ret_type = fresh_type_var () in
-           let expected_func_type = TyFunc (arg_types, ret_type) in
-           (try
-              let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
-              (* 成功统一，可能是泛型函数 - 记录实例 *)
-              add_generic_instance func_name concrete_arg_types pos;
-              (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
-            with Failure msg ->
-              (* 对于泛型函数调用，occurs check 失败是预期的，不报告为错误 *)
-              let has_prefix s prefix =
-                let len_s = String.length s in
-                let len_p = String.length prefix in
-                len_s >= len_p && String.sub s 0 len_p = prefix
-              in
-              if has_prefix msg "Occurs check failed" then begin
-                (* 泛型函数，记录实例并返回 *)
+           (* 特殊处理 print 函数，它接受任何类型的参数 *)
+           if func_name = "print" && List.length args = 1 then begin
+             let (arg_type, arg_subst) = infer_expr env (List.hd args) in
+             add_generic_instance func_name [apply_subst arg_subst arg_type] pos;
+             (TyNone, arg_subst)
+           end else begin
+             let (func_type, func_subst) = infer_expr env func in
+             let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
+             let combined_subst = List.fold_left compose_subst func_subst arg_substs in
+             let concrete_arg_types = List.map (apply_subst combined_subst) arg_types in
+             let ret_type = fresh_type_var () in
+             let expected_func_type = TyFunc (arg_types, ret_type) in
+             (try
+                let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
+                (* 成功统一，可能是泛型函数 - 记录实例 *)
                 add_generic_instance func_name concrete_arg_types pos;
-                (ret_type, combined_subst)
-              end else begin
-                let err = make_error (TypeError msg) pos
-                  (Printf.sprintf "Function call type error: %s" msg) in
-                report_error err;
-                (TyUnknown, combined_subst)
-              end)
+                (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
+              with Failure msg ->
+                (* 对于泛型函数调用，occurs check 失败是预期的，不报告为错误 *)
+                let has_prefix s prefix =
+                  let len_s = String.length s in
+                  let len_p = String.length prefix in
+                  len_s >= len_p && String.sub s 0 len_p = prefix
+                in
+                if has_prefix msg "Occurs check failed" then begin
+                  (* 泛型函数，记录实例并返回 *)
+                  add_generic_instance func_name concrete_arg_types pos;
+                  (ret_type, combined_subst)
+                end else begin
+                  let err = make_error (TypeError msg) pos
+                    (Printf.sprintf "Function call type error: %s" msg) in
+                  report_error err;
+                  (TyUnknown, combined_subst)
+                end)
+           end
        | _ ->
            (* 其他函数调用 *)
            let (func_type, func_subst) = infer_expr env func in
@@ -268,7 +275,7 @@ let rec infer_expr env = function
       let combined_subst = compose_subst idx_subst arr_subst in
       (match apply_subst combined_subst arr_type with
        | TyList elem_type -> (elem_type, combined_subst)
-       | TyString ->
+       | TyStr ->
            (* 字符串索引返回整数 (char code) *)
            (try
               let idx_s = unify (apply_subst combined_subst idx_type) TyInt in
@@ -276,6 +283,16 @@ let rec infer_expr env = function
             with Failure msg ->
               let err = make_error (TypeError msg) pos
                 (Printf.sprintf "String index must be int: %s" msg) in
+              report_error err;
+              (TyUnknown, combined_subst))
+       | TyBytes ->
+           (* 字节数组索引返回整数 (byte value 0-255) *)
+           (try
+              let idx_s = unify (apply_subst combined_subst idx_type) TyInt in
+              (TyInt, compose_subst idx_s combined_subst)
+            with Failure msg ->
+              let err = make_error (TypeError msg) pos
+                (Printf.sprintf "Bytes index must be int: %s" msg) in
               report_error err;
               (TyUnknown, combined_subst))
        | TyDict (key_type, val_type) ->
@@ -305,7 +322,7 @@ let rec infer_expr env = function
                 (TyUnknown, combined_subst))
        | _ ->
            let err = make_error (TypeError "Not indexable") pos
-             "Cannot index non-list/dict/tuple/string type" in
+             "Cannot index non-list/dict/tuple/string/bytes type" in
            report_error err;
            (TyUnknown, combined_subst))
 
@@ -336,7 +353,7 @@ let rec infer_expr env = function
        | None -> ());
       (match apply_subst !combined_subst arr_type with
        | TyList elem_type -> (TyList elem_type, !combined_subst)
-       | TyString -> (TyString, !combined_subst)
+       | TyStr -> (TyStr, !combined_subst)
        | _ ->
            let err = make_error (TypeError "Not sliceable") pos
              "Cannot slice non-list/string type" in
@@ -346,15 +363,15 @@ let rec infer_expr env = function
   | EAttr (obj, attr, pos) ->
       let (obj_type, obj_subst) = infer_expr env obj in
       (match apply_subst obj_subst obj_type with
-       | TyString ->
+       | TyStr ->
            (* 字符串方法 *)
            (match attr with
             | "length" -> (TyFunc ([], TyInt), obj_subst)
-            | "upper" | "lower" | "strip" -> (TyFunc ([], TyString), obj_subst)
-            | "find" -> (TyFunc ([TyString], TyInt), obj_subst)
-            | "starts_with" | "ends_with" -> (TyFunc ([TyString], TyBool), obj_subst)
-            | "replace" -> (TyFunc ([TyString; TyString], TyString), obj_subst)
-            | "split" -> (TyFunc ([TyString], TyList TyString), obj_subst)
+            | "upper" | "lower" | "strip" -> (TyFunc ([], TyStr), obj_subst)
+            | "find" -> (TyFunc ([TyStr], TyInt), obj_subst)
+            | "starts_with" | "ends_with" -> (TyFunc ([TyStr], TyBool), obj_subst)
+            | "replace" -> (TyFunc ([TyStr; TyStr], TyStr), obj_subst)
+            | "split" -> (TyFunc ([TyStr], TyList TyStr), obj_subst)
             | "is_digit" | "is_alpha" | "is_whitespace" -> (TyFunc ([TyInt], TyBool), obj_subst)
             | _ ->
                 let err = make_error (TypeError "Unknown string method") pos
@@ -457,7 +474,22 @@ let rec infer_expr env = function
                        List.fold_left2 bind_pattern env pats elem_types
                    | _ -> env)
               | PList _ -> env  (* TODO: 实现列表模式 *)
-              | PType (_, _) -> env  (* TODO: 实现类型模式 *)
+              | PType (var_name, type_pattern) ->
+                  (* 类型模式：检查 expected_type 是否兼容 type_pattern，然后绑定变量 *)
+                  let target_type = type_expr_to_ty type_pattern in
+                  (match expected_type with
+                   | TyUnion type_list ->
+                       (* 如果 expected_type 是 Union，检查 target_type 是否是其成员之一 *)
+                       if List.mem target_type type_list then
+                         add_binding var_name target_type env
+                       else
+                         env
+                   | _ ->
+                       (* 如果不是 Union，检查类型是否直接匹配 *)
+                       (try
+                          let _ = unify expected_type target_type in
+                          add_binding var_name target_type env
+                        with Failure _ -> env))
               | PEnumVariant (_, _, pats) ->
                   (* 枚举模式暂时不检查内部参数类型 *)
                   List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
@@ -812,7 +844,22 @@ let rec check_statement env = function
                        List.fold_left2 bind_pattern env pats elem_types
                    | _ -> env)
               | PList _ -> env  (* TODO: 实现列表模式 *)
-              | PType (_, _) -> env  (* TODO: 实现类型模式 *)
+              | PType (var_name, type_pattern) ->
+                  (* 类型模式：检查 expected_type 是否兼容 type_pattern，然后绑定变量 *)
+                  let target_type = type_expr_to_ty type_pattern in
+                  (match expected_type with
+                   | TyUnion type_list ->
+                       (* 如果 expected_type 是 Union，检查 target_type 是否是其成员之一 *)
+                       if List.mem target_type type_list then
+                         add_binding var_name target_type env
+                       else
+                         env
+                   | _ ->
+                       (* 如果不是 Union，检查类型是否直接匹配 *)
+                       (try
+                          let _ = unify expected_type target_type in
+                          add_binding var_name target_type env
+                        with Failure _ -> env))
               | PEnumVariant (_, _, pats) ->
                   (* 枚举模式暂时不检查内部参数类型 *)
                   List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
