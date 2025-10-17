@@ -2168,6 +2168,81 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "  ; ERROR: Field access on non-struct type\n";
            ("0", I32))
 
+  | ETernary (cond, true_expr, false_expr, _) ->
+      (* 三元运算符: condition ? true_expr : false_expr *)
+      let (cond_v, _) = gen_expr buf ctx cond in
+      let then_label = fresh_label "ternary.then" in
+      let else_label = fresh_label "ternary.else" in
+      let end_label = fresh_label "ternary.end" in
+
+      Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n" cond_v then_label else_label;
+
+      Printf.bprintf buf "\n%s:\n" then_label;
+      let (then_v, then_t) = gen_expr buf ctx true_expr in
+      Printf.bprintf buf "  br label %%%s\n" end_label;
+
+      Printf.bprintf buf "\n%s:\n" else_label;
+      let (else_v, _) = gen_expr buf ctx false_expr in
+      Printf.bprintf buf "  br label %%%s\n" end_label;
+
+      Printf.bprintf buf "\n%s:\n" end_label;
+      let result = fresh_temp () in
+      Printf.bprintf buf "  %s = phi %s [%s, %%%s], [%s, %%%s]\n"
+        result (llvm_type_to_string then_t) then_v then_label else_v else_label;
+      (result, then_t)
+
+  | ETry (expr, _) ->
+      (* 错误传播: expr? *)
+      (* 计算表达式，表达式必须返回 Result 类型（EnumPtr） *)
+      let (result_val, result_ty) = gen_expr buf ctx expr in
+      (match result_ty with
+       | EnumPtr ->
+           (* Result 是枚举类型，需要检查是 Ok 还是 Err *)
+           (* 获取枚举的 tag *)
+           let tag = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @enum_get_tag(%%enum_t* %s)\n" tag result_val;
+
+           (* 检查是否是 Ok (tag = 0) *)
+           let is_ok = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp eq i32 %s, 0\n" is_ok tag;
+
+           let ok_label = fresh_label "try.ok" in
+           let err_label = fresh_label "try.err" in
+           let end_label = fresh_label "try.end" in
+
+           Printf.bprintf buf "  br i1 %s, label %%%s, label %%%s\n" is_ok ok_label err_label;
+
+           (* Ok 分支：提取值 *)
+           Printf.bprintf buf "\n%s:\n" ok_label;
+           let ok_val = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @enum_get_int(%%enum_t* %s)\n" ok_val result_val;
+           Printf.bprintf buf "  br label %%%s\n" end_label;
+
+           (* Err 分支：提前返回错误 - 类似 Rust 的 ? 运算符 *)
+           Printf.bprintf buf "\n%s:\n" err_label;
+           (* 检查当前函数的返回类型 *)
+           (match ctx.function_type with
+            | Some EnumPtr ->
+                (* 如果函数返回 Result 类型，直接返回错误 *)
+                Printf.bprintf buf "  ret %%enum_t* %s\n" result_val
+            | Some I32 ->
+                (* 如果函数返回 int，提取错误码或返回 0 *)
+                let err_val = fresh_temp () in
+                Printf.bprintf buf "  %s = call i32 @enum_get_int(%%enum_t* %s)\n" err_val result_val;
+                Printf.bprintf buf "  ret i32 %s\n" err_val
+            | _ ->
+                (* 其他情况，简化处理：返回 0 *)
+                Printf.bprintf buf "  ; ERROR: Cannot propagate error - function return type mismatch\n";
+                Printf.bprintf buf "  br label %%%s\n" end_label);
+
+           (* 正常结束块 *)
+           Printf.bprintf buf "\n%s:\n" end_label;
+           (ok_val, I32)
+
+       | _ ->
+           Printf.bprintf buf "  ; ERROR: Try operator requires Result type\n";
+           ("0", I32))
+
   | _ ->
       Buffer.add_string buf "  ; unsupported expression\n";
       ("0", I32)

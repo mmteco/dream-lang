@@ -284,6 +284,12 @@ rule token = parse
       let end_pos = make_lexing_pos () in
       (DOT, start_pos, end_pos)
     }
+  | '?' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (QUESTION, start_pos, end_pos)
+    }
   | eof {
       let pos = make_lexing_pos () in
       (EOF, pos, pos)

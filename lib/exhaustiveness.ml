@@ -130,6 +130,12 @@ let check_exhaustiveness env scrutinee_type patterns pos =
         | TyBool -> POr [PConst (PBool true); PConst (PBool false)]
         | TyEnum (enum_name, _) ->
             POr (generate_enum_space env enum_name)
+        | TyResult (_, _) ->
+            (* Result 类型有两个变体：Ok 和 Err，各带一个参数 *)
+            POr [PVariant ("Result", "Ok", [PAny]); PVariant ("Result", "Err", [PAny])]
+        | TyOption _ ->
+            (* Option 类型有两个变体：Some 和 None *)
+            POr [PVariant ("Option", "Some", [PAny]); PVariant ("Option", "None", [])]
         | TyTuple tys ->
             PTup (List.map (fun _ -> PAny) tys)
         | _ -> PAny

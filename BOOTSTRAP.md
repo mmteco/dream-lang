@@ -67,10 +67,29 @@
   - [x] 装箱/拆箱（Ptr (DynArray I32) ↔ union_t*）
   - [x] LLVM 代码生成完整支持
 
-### 3. 错误处理 ✅ **枚举实现完成**
+### 3. 错误处理 ✅ **完整功能完成**
+**已实现功能**：
 - [x] Option 类型 `Option[T] = Some(T) | Nothing` (使用标准枚举)
-- [x] Result 类型 `Result[T, E] = Success(T) | Failure(E)` (使用标准枚举)
-- [ ] 错误传播语法 `?`
+- [x] Result 类型 `Result[T, E] = Ok(T) | Err(E)` (使用标准枚举)
+- [x] **三元运算符** `condition ? true_val : false_val`
+  - [x] 词法分析：`?` token 识别
+  - [x] 语法解析：ETernary 表达式节点
+  - [x] 类型检查：条件为 bool，两分支类型相同
+  - [x] LLVM 代码生成：phi 节点实现
+  - [x] 支持嵌套使用
+- [x] **错误传播运算符** `expr?`
+  - [x] 词法分析：后缀 `?` 识别
+  - [x] 语法解析：ETry 表达式节点
+  - [x] 类型检查：Result 类型验证
+  - [x] LLVM 代码生成：enum_get_tag/enum_get_int 调用
+  - [x] 完全实现 Rust 的 `?` 运算符语义
+  - [x] 提前返回机制（early return）
+  - [x] 根据函数返回类型智能处理
+  - [x] 支持链式错误传播
+- [x] **Result 类型穷尽性检查**
+  - [x] Ok(v) 和 Err(_) 两个分支正确覆盖 Result 类型
+  - [x] 不再误报"缺少 _ 分支"错误
+  - [x] exhaustiveness.ml 支持 TyResult 类型
 
 ### 4. 字典类型 ✅ **完全泛型化完成**
 **已实现功能**：

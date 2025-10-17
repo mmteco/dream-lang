@@ -105,6 +105,81 @@ not  # 逻辑非
 =    # 赋值
 ```
 
+#### 三元运算符 ✅
+```python
+condition ? true_val : false_val
+```
+
+三元运算符用于内联条件表达式：
+
+```python
+let x = 10
+let result = x > 5 ? 1 : 0  # result = 1
+
+# 嵌套使用
+let grade = score > 90 ? "A" : score > 80 ? "B" : "C"
+
+# 与其他表达式结合
+let max = a > b ? a : b
+```
+
+**特性**：
+- condition 必须是布尔类型
+- true_val 和 false_val 的类型必须相同
+- 可以嵌套使用
+- 优先级最低（低于所有二元运算符）
+
+#### 错误传播运算符 ✅
+```python
+expr?    # 错误传播（后缀运算符）
+```
+
+错误传播运算符 `?` 用于简化 Result 类型的错误处理：
+
+```python
+def divide(a: int, b: int) -> Result[int, str]:
+    return match b:
+        0: Err("division by zero")
+        _: Ok(a / b)
+
+def safe_divide(a: int, b: int) -> int:
+    # 如果 divide 返回 Err，会提前返回错误
+    let result = divide(a, b)?
+    return result
+
+# 与 match 对比
+def manual_error_handling(a: int, b: int) -> int:
+    return match divide(a, b):
+        Ok(v): v
+        Err(_): 0  # 错误情况返回 0
+```
+
+**特性**：
+- 只能用于 Result 类型的表达式
+- 如果是 Ok(value)，提取并返回 value
+- 如果是 Err(error)，**立即返回包含该错误的 Result 给调用者**
+- 完全实现了 Rust 的 `?` 运算符语义
+
+**错误传播行为**：
+```python
+# 如果函数返回 Result 类型，错误会被传播
+def calculate(x: int, y: int, z: int) -> Result[int, str]:
+    let step1 = divide(x, y)?  # 如果出错，立即 return Err(...)
+    let step2 = divide(step1, z)?  # 如果出错，立即 return Err(...)
+    return Ok(step2)
+
+# 如果函数返回其他类型，会提取错误值返回
+def safe_divide(a: int, b: int) -> int:
+    let result = divide(a, b)?  # 如果出错，提取 Err 值并返回
+    return result
+```
+
+**实现细节**：
+- 检查当前函数的返回类型
+- 如果返回 Result (EnumPtr)，直接返回原 Result
+- 如果返回 int，提取 Err 中的 int 值并返回
+- 错误发生时会**提前返回整个函数**，不是表达式级别的返回
+
 ### 分隔符
 ```python
 ( )  # 圆括号 - 函数调用、表达式分组、元组

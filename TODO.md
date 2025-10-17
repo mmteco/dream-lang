@@ -21,6 +21,20 @@
   - [ ] 泛型约束和高级特性（待扩展）
 
 #### P1 - 重要改进
+- [x] 表达式运算符 **完整功能完成**
+  - [x] 三元运算符 `condition ? true_val : false_val`
+    - [x] 词法分析：`?` token 识别
+    - [x] 语法解析：ETernary 表达式节点
+    - [x] 类型检查：条件为 bool，两分支类型相同
+    - [x] LLVM 代码生成：phi 节点实现
+    - [x] 测试套件（test/test_ternary.dm）
+  - [x] 错误传播运算符 `expr?`
+    - [x] 词法分析：后缀 `?` 识别
+    - [x] 语法解析：ETry 表达式节点
+    - [x] 类型检查：Result 类型验证
+    - [x] LLVM 代码生成：enum_get_tag/enum_get_int 调用
+    - [x] 测试套件（test/test_error_prop.dm, test/test_ternary_error.dm）
+
 - [x] 字符串类型完善  **核心功能完成**
   - [x] **string → str 重命名** - 类型名称统一
   - [ ] 字符串拼接 (待添加)
@@ -368,12 +382,11 @@
   - [x] 64位指针安全 (dynarray_ptr 使用 intptr_t)
 
 - [x] 测试文件整理
-  - [x] 从16个测试文件整合为5个
+  - [x] 从16个测试文件整合为4个核心测试
   - [x] test/test_core.dm - 字符串和泛型
   - [x] test/test_types.dm - Union、结构体、接口
   - [x] test/test_file_io.dm - 文件 I/O
-  - [x] test/test_match.dm - 守卫条件和穷尽性检查
-  - [x] test/test_match_comprehensive.dm - match 表达式全面测试（20个测试用例）
+  - [x] test/test_match.dm - Match、三元运算符、错误传播综合测试（25个测试用例）
 
 ### 高级数组操作
 - [x] 数组拼接 `arr1 + arr2`

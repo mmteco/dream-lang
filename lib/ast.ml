@@ -69,6 +69,7 @@ type token =
   | COLON
   | SEMICOLON
   | DOT
+  | QUESTION  (* ? for error propagation and ternary operator *)
   | INDENT
   | DEDENT
   | NEWLINE
@@ -139,6 +140,8 @@ and expr =
   | EEnumVariant of string * string * expr list * position
   | EStructLiteral of string * (string * expr) list * position  (* 结构体字面量 *)
   | EStructAccess of expr * string * position  (* 字段访问，与 EAttr 类似但专门用于结构体 *)
+  | ETernary of expr * expr * expr * position  (* 三元运算符: condition ? true_expr : false_expr *)
+  | ETry of expr * position  (* 错误传播: expr? *)
 
 and pattern =
   | PInt of int

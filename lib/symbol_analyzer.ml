@@ -254,6 +254,14 @@ let rec analyze_expr ctx expr =
   | EStructAccess (obj, _field, _) ->
       analyze_expr ctx obj
 
+  | ETernary (cond, true_expr, false_expr, _) ->
+      analyze_expr ctx cond;
+      analyze_expr ctx true_expr;
+      analyze_expr ctx false_expr
+
+  | ETry (expr, _) ->
+      analyze_expr ctx expr
+
   | EInt _ | EFloat _ | EString _ | EBool _ -> ()
 
 (* 分析语句，返回子定义列表 *)

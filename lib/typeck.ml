@@ -826,6 +826,43 @@ let rec infer_expr env = function
            report_error err;
            (TyUnknown, obj_subst))
 
+  | ETernary (cond, true_expr, false_expr, pos) ->
+      (* 三元运算符: cond ? true_expr : false_expr *)
+      let (cond_type, cond_subst) = infer_expr env cond in
+      (try
+         let bool_subst = unify (apply_subst cond_subst cond_type) TyBool in
+         let env' = apply_subst_to_env bool_subst env in
+         let (true_type, true_subst) = infer_expr env' true_expr in
+         let (false_type, false_subst) = infer_expr env' false_expr in
+         let combined = compose_subst false_subst (compose_subst true_subst (compose_subst bool_subst cond_subst)) in
+         (try
+            let unify_subst = unify (apply_subst combined true_type) (apply_subst combined false_type) in
+            (apply_subst unify_subst true_type, compose_subst unify_subst combined)
+          with Failure msg ->
+            let err = make_error (TypeError msg) pos
+              (Printf.sprintf "Ternary operator branches have different types: %s" msg) in
+            report_error err;
+            (true_type, combined))
+       with Failure msg ->
+         let err = make_error (TypeError msg) pos
+           (Printf.sprintf "Ternary condition must be bool: %s" msg) in
+         report_error err;
+         (TyUnknown, cond_subst))
+
+  | ETry (expr, pos) ->
+      (* 错误传播: expr? *)
+      (* 表达式必须是 Result[T, E] 类型 *)
+      let (expr_type, expr_subst) = infer_expr env expr in
+      (match apply_subst expr_subst expr_type with
+       | TyResult (ok_type, _err_type) ->
+           (* 返回 Ok 类型，错误会自动传播 *)
+           (ok_type, expr_subst)
+       | _ ->
+           let err = make_error (TypeError "Invalid try operator") pos
+             "The '?' operator can only be used on Result types" in
+           report_error err;
+           (TyUnknown, expr_subst))
+
 and apply_subst_to_env subst env =
   (* 只对非多态类型应用替换,保持多态函数类型不变 *)
   {env with bindings = Env.StringMap.map (fun ty ->
@@ -1628,6 +1665,11 @@ and fill_default_params env expr =
                       pos)
   | EStructAccess (obj, field, pos) ->
       EStructAccess (fill_default_params env obj, field, pos)
+  | ETernary (cond, true_expr, false_expr, pos) ->
+      ETernary (fill_default_params env cond, fill_default_params env true_expr,
+                fill_default_params env false_expr, pos)
+  | ETry (expr, pos) ->
+      ETry (fill_default_params env expr, pos)
   | _ -> expr
 
 let typecheck program =

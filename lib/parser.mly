@@ -7,7 +7,8 @@
     | ECall (_, _, p) | EList (_, p) | EDict (_, p) | ETuple (_, p)
     | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
     | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p)
-    | EEnumVariant (_, _, _, p) | EStructLiteral (_, _, p) | EStructAccess (_, _, p) -> p
+    | EEnumVariant (_, _, _, p) | EStructLiteral (_, _, p) | EStructAccess (_, _, p)
+    | ETernary (_, _, _, p) | ETry (_, p) -> p
 
   (* 从 Lexing.position 创建 AST position *)
   (* VSCode 使用 0-based 行号，所以减 1 *)
@@ -29,10 +30,11 @@
 %token AND OR NOT
 %token ASSIGN ARROW PIPE UNDERSCORE
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
-%token COMMA COLON SEMICOLON DOT
+%token COMMA COLON SEMICOLON DOT QUESTION
 %token INDENT DEDENT NEWLINE
 %token EOF
 
+%right QUESTION COLON  (* 三元运算符优先级最低 *)
 %left PIPE
 %left OR
 %left AND
@@ -496,6 +498,10 @@ expr:
       { EMatch (e, cases, get_expr_pos e) }
   | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list_as_expr DEDENT
       { EMatch (e, cases, get_expr_pos e) }
+  | cond = expr QUESTION true_expr = expr COLON false_expr = expr
+      { ETernary (cond, true_expr, false_expr, get_expr_pos cond) }
+  | e = expr QUESTION
+      { ETry (e, get_expr_pos e) }
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }
