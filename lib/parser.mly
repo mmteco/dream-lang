@@ -344,6 +344,10 @@ pattern:
   | LBRACKET RBRACKET { PList [] }  (* 空列表 *)
   | LBRACKET patterns = separated_list(COMMA, pattern) RBRACKET { PList patterns }  (* 列表模式: [x, y, z] *)
   | p1 = pattern CONS p2 = pattern { PCons (p1, p2) }  (* Cons模式: head :: tail *)
+  | LBRACE fields = separated_list(COMMA, struct_pattern_field) RBRACE
+      { PStruct ("", fields) }  (* 匿名结构体模式: {x, y} 或 {x: a, y: b}，结构体名从类型推断 *)
+  | struct_name = IDENT LBRACE fields = separated_list(COMMA, struct_pattern_field) RBRACE
+      { PStruct (struct_name, fields) }  (* 命名结构体模式: StructName{field1: pattern1, field2: pattern2} *)
   | enum_name = IDENT DOT variant_name = IDENT LPAREN patterns = separated_list(COMMA, pattern) RPAREN
       { PEnumVariant (enum_name, variant_name, patterns) }
   | enum_name = IDENT DOT variant_name = IDENT
@@ -370,6 +374,8 @@ match_pattern:
   | LBRACKET RBRACKET { PList [] }  (* 空列表 *)
   | LBRACKET patterns = separated_list(COMMA, match_pattern) RBRACKET { PList patterns }  (* 列表模式: [x, y, z] *)
   | p1 = match_pattern CONS p2 = match_pattern { PCons (p1, p2) }  (* Cons模式: head :: tail *)
+  | struct_name = IDENT LBRACE fields = separated_list(COMMA, struct_pattern_field_match) RBRACE
+      { PStruct (struct_name, fields) }  (* 结构体模式: StructName{field1: pattern1, field2: pattern2} *)
   | OPTION DOT SOME LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
       { PEnumVariant ("Option", "Some", patterns) }
   | OPTION DOT NONE
@@ -513,6 +519,14 @@ dict_pair:
 
 struct_field_init:
   | name = IDENT COLON value = expr { (name, value) }
+
+struct_pattern_field:
+  | name = IDENT COLON p = pattern { (name, p) }
+  | name = IDENT { (name, PVar name) }  (* 简写形式: {x, y} 等价于 {x: x, y: y} *)
+
+struct_pattern_field_match:
+  | name = IDENT COLON p = match_pattern { (name, p) }
+  | name = IDENT { (name, PVar name) }  (* 简写形式: {x, y} 等价于 {x: x, y: y} *)
 
 slice_start:
   | { None }

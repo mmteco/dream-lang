@@ -25,6 +25,7 @@ let rec pattern_to_space = function
   | PType (_, _) -> PAny  (* 类型模式暂时当作通配符处理 *)
   | PEnumVariant (enum_name, variant_name, pats) ->
       PVariant (enum_name, variant_name, List.map pattern_to_space pats)
+  | PStruct (_, _) -> PAny  (* 结构体模式暂时当作通配符处理 *)
 
 (* 检查 match 是否全是类型模式 *)
 let all_type_patterns patterns =

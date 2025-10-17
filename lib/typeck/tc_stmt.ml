@@ -83,6 +83,8 @@ let rec check_statement env = function
   | SLetPat (pat, value, pos) ->
       let (value_type, value_subst) = !infer_expr env value in
       let env' = apply_subst_to_env value_subst env in
+      (* 确保value_type被完全应用替换 *)
+      let resolved_value_type = apply_subst value_subst value_type in
       let rec check_pattern env pat expected_type =
         match pat with
         | PVar name ->
@@ -120,13 +122,48 @@ let rec check_statement env = function
                      (Types.ty_to_string expected_type)) in
                  report_error err;
                  env)
+        | PStruct (struct_name, field_pats) ->
+            (* 结构体解构：如果struct_name为空字符串，从expected_type推断 *)
+            let actual_struct_name =
+              if struct_name = "" then
+                (* 从expected_type推断结构体名称 *)
+                match expected_type with
+                | TyStruct (name, _) -> name
+                | _ -> ""  (* 无法推断，后续会报错 *)
+              else
+                struct_name
+            in
+            (match expected_type with
+             | TyStruct (type_struct_name, _) when type_struct_name = actual_struct_name ->
+                 (match Env.find_struct actual_struct_name env with
+                  | Some struct_def ->
+                      List.fold_left (fun env_acc (field_name, field_pat) ->
+                        match List.assoc_opt field_name struct_def.struct_fields with
+                        | Some field_type -> check_pattern env_acc field_pat field_type
+                        | None ->
+                            let err = make_error (TypeError "Unknown field") pos
+                              (Printf.sprintf "Struct '%s' has no field '%s'" actual_struct_name field_name) in
+                            report_error err;
+                            env_acc
+                      ) env field_pats
+                  | None ->
+                      let err = make_error (NameError actual_struct_name) pos
+                        (Printf.sprintf "Struct '%s' is not defined" actual_struct_name) in
+                      report_error err;
+                      env)
+             | _ ->
+                 let err = make_error (TypeError "Pattern mismatch") pos
+                   (Printf.sprintf "Cannot unpack value into struct pattern, expected struct but got %s"
+                     (Types.ty_to_string expected_type)) in
+                 report_error err;
+                 env)
         | _ ->
             let err = make_error (TypeError "Unsupported pattern") pos
-              "Only variable, tuple, list, and cons patterns are supported in let bindings" in
+              "Only variable, tuple, list, cons, and struct patterns are supported in let bindings" in
             report_error err;
             env
       in
-      let final_env = check_pattern env' pat (apply_subst value_subst value_type) in
+      let final_env = check_pattern env' pat resolved_value_type in
       (final_env, value_subst)
 
   | SAssign (name, value, pos) ->

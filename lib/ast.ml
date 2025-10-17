@@ -156,6 +156,7 @@ and pattern =
   | PType of string * type_expr
   | PWildcard
   | PEnumVariant of string * string * pattern list
+  | PStruct of string * (string * pattern) list  (* StructName{field1: pattern1, field2: pattern2} *)
 
 (* 接口成员 *)
 and interface_member =

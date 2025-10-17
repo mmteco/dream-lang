@@ -535,6 +535,28 @@ let rec infer_expr env = function
                         with Failure _ -> env))
               | PEnumVariant (_, _, pats) ->
                   List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
+              | PStruct (struct_name, field_pats) ->
+                  (* 结构体解构：如果struct_name为空字符串，从expected_type推断 *)
+                  let actual_struct_name =
+                    if struct_name = "" then
+                      (* 从expected_type推断结构体名称 *)
+                      match expected_type with
+                      | TyStruct (name, _) -> name
+                      | _ -> ""  (* 无法推断 *)
+                    else
+                      struct_name
+                  in
+                  (match expected_type with
+                   | TyStruct (type_struct_name, _) when type_struct_name = actual_struct_name ->
+                       (match Env.find_struct actual_struct_name env with
+                        | Some struct_def ->
+                            List.fold_left (fun env_acc (field_name, field_pat) ->
+                              match List.assoc_opt field_name struct_def.struct_fields with
+                              | Some field_type -> bind_pattern env_acc field_pat field_type
+                              | None -> env_acc  (* 字段不存在，跳过 *)
+                            ) env field_pats
+                        | None -> env)
+                   | _ -> env)
             in
             let case_env = bind_pattern env' pat (apply_subst combined_subst scrut_type) in
             let (guard_env, guard_subst) = match guard_opt with

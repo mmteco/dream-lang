@@ -115,6 +115,66 @@ let rec gen_statement buf ctx = function
                  ) pats
              | _ ->
                  Printf.bprintf buf "  ; pattern type mismatch - expected list\n")
+        | PStruct (struct_name, field_pats) ->
+            (* 结构体解构：如果struct_name为空，从字段名或value_type查找匹配的结构体 *)
+            let actual_struct_name =
+              if struct_name = "" then
+                (* 首先尝试从value_type获取结构体名称 *)
+                match value_type with
+                | StructPtr name -> name
+                | Ptr I32 ->
+                    (* 从字段名推断结构体：遍历所有结构体定义查找包含这些字段的结构体 *)
+                    let field_names = List.map fst field_pats in
+                    Hashtbl.fold (fun sname sdef acc ->
+                      match acc with
+                      | Some _ -> acc  (* 已经找到了，跳过 *)
+                      | None ->
+                          (* 检查是否所有字段都存在于这个结构体中 *)
+                          let all_fields_exist = List.for_all (fun fname ->
+                            List.exists (fun f -> f.field_name = fname) sdef.fields
+                          ) field_names in
+                          if all_fields_exist then Some sname else None
+                    ) struct_registry None
+                    |> (function
+                        | Some name -> name
+                        | None ->
+                            Printf.bprintf buf "  ; ERROR: Cannot infer struct type from fields\n";
+                            "")
+                | _ ->
+                    Printf.bprintf buf "  ; ERROR: Cannot infer struct type from value_type\n";
+                    ""
+              else
+                struct_name
+            in
+            (match value_type with
+             | Ptr I32 | StructPtr _ ->
+                 (* 查找结构体定义 *)
+                 (match Hashtbl.find_opt struct_registry actual_struct_name with
+                  | None ->
+                      Printf.bprintf buf "  ; ERROR: Struct '%s' not found in registry\n" actual_struct_name
+                  | Some struct_def ->
+                      (* 为每个字段模式提取值并绑定 *)
+                      List.iter (fun (field_name, field_pat) ->
+                        (* 查找字段索引 *)
+                        match List.find_opt (fun f -> f.field_name = field_name) struct_def.fields with
+                        | None ->
+                            Printf.bprintf buf "  ; WARNING: Field '%s' not found in struct '%s'\n" field_name actual_struct_name
+                        | Some field_info ->
+                            (* 计算字段指针 *)
+                            let field_ptr = fresh_temp () in
+                            Printf.bprintf buf "  %s = getelementptr i32, i32* %s, i32 %d\n"
+                              field_ptr value_temp field_info.field_index;
+                            (* 加载字段值 *)
+                            let field_val = fresh_temp () in
+                            Printf.bprintf buf "  %s = load %s, %s* %s\n"
+                              field_val (llvm_type_to_string field_info.field_llvm_type)
+                              (llvm_type_to_string field_info.field_llvm_type) field_ptr;
+                            (* 递归处理字段模式 *)
+                            gen_pattern_bindings field_pat field_val field_info.field_llvm_type
+                      ) field_pats)
+             | _ ->
+                 Printf.bprintf buf "  ; ERROR: Expected struct pointer type for struct pattern, got %s\n"
+                   (llvm_type_to_string value_type))
         | PCons (head_pat, tail_pat) ->
             (* Cons模式: head :: tail *)
             (match value_type with
