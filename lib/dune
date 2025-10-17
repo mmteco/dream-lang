@@ -2,9 +2,10 @@
 
 (library
  (name dream_lib)
- (modules ast error types env lexer parser exhaustiveness typeck monomorphize
+ (modules ast error types env lexer parser exhaustiveness monomorphize
           cg_types cg_utils cg_shared cg_expr cg_stmt cg_toplevel llvmgen
-          symbol_analyzer module_loader))
+          symbol_analyzer module_loader
+          tc_utils tc_generics tc_expr tc_stmt tc_defaults typeck))
 
 (menhir
  (modules parser))
