@@ -2,7 +2,8 @@
 #define DREAM_RUNTIME_H
 
 #include <stdbool.h>
-#include "string_ops.h"
+#include <stdint.h>
+#include "str.h"
 #include "file.h"
 #include "dict.h"
 #include "tuple.h"
@@ -12,5 +13,6 @@
 void print_int(int value);
 void print_bool(bool value);
 void print_string(const char* str);
+void print_rune(uint32_t rune);
 
 #endif

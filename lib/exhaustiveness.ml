@@ -18,6 +18,8 @@ let rec pattern_to_space = function
   | PInt n -> PConst (PInt n)
   | PFloat f -> PConst (PFloat f)
   | PString s -> PConst (PString s)
+  | PRune c -> PConst (PRune c)
+  | PByte b -> PConst (PByte b)
   | PBool b -> PConst (PBool b)
   | PTuple pats -> PTup (List.map pattern_to_space pats)
   | PList _ -> PAny  (* 暂时简化处理列表 *)

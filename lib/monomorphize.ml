@@ -25,6 +25,8 @@ let rec ty_to_mangle_string = function
   | TyInt -> "i32"
   | TyFloat -> "f32"
   | TyStr -> "str"
+  | TyRune -> "rune"
+  | TyByte -> "byte"
   | TyBytes -> "bytes"
   | TyBool -> "bool"
   | TyNone -> "none"
@@ -43,6 +45,7 @@ let rec ty_to_mangle_string = function
   | TyInterface (name, params) -> "iface_" ^ name ^ "_" ^ String.concat "_" (List.map ty_to_mangle_string params)
   | TyStruct (name, []) -> "struct_" ^ name
   | TyStruct (name, params) -> "struct_" ^ name ^ "_" ^ String.concat "_" (List.map ty_to_mangle_string params)
+  | TyTypeInfo t -> "typeinfo_" ^ ty_to_mangle_string t
   | TyUnknown -> "unknown"
 
 (* 生成重整后的函数名 *)
@@ -126,6 +129,8 @@ let rec substitute_type_expr type_params type_args = function
              | TyInt -> TInt
              | TyFloat -> TFloat
              | TyStr -> TStr
+             | TyRune -> TRune
+             | TyByte -> TByte
              | TyBytes -> TBytes
              | TyBool -> TBool
              | TyNone -> TNone
@@ -153,6 +158,8 @@ and type_expr_of_ty = function
   | TyInt -> TInt
   | TyFloat -> TFloat
   | TyStr -> TStr
+  | TyRune -> TRune
+  | TyByte -> TByte
   | TyBytes -> TBytes
   | TyBool -> TBool
   | TyNone -> TNone

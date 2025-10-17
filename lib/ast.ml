@@ -7,6 +7,8 @@ type token =
   | INT of int
   | FLOAT of float
   | STRING of string
+  | RUNE of char  (* 32-bit Unicode codepoint *)
+  | BYTE of int   (* 8-bit byte *)
   | BOOL of bool
   | IDENT of string
   | LET
@@ -99,7 +101,9 @@ type type_expr =
   | TInt
   | TFloat
   | TStr
-  | TBytes
+  | TRune   (* 32-bit Unicode codepoint, like Go's rune *)
+  | TByte   (* 8-bit byte *)
+  | TBytes  (* byte array *)
   | TBool
   | TNone
   | TVar of string
@@ -123,6 +127,8 @@ and expr =
   | EInt of int * position
   | EFloat of float * position
   | EString of string * position
+  | ERune of char * position  (* 32-bit Unicode codepoint *)
+  | EByte of int * position   (* 8-bit byte *)
   | EBool of bool * position
   | EVar of string * position
   | EBinOp of expr * binop * expr * position
@@ -143,11 +149,14 @@ and expr =
   | EStructAccess of expr * string * position  (* 字段访问，与 EAttr 类似但专门用于结构体 *)
   | ETernary of expr * expr * expr * position  (* 三元运算符: condition ? true_expr : false_expr *)
   | ETry of expr * position  (* 错误传播: expr? *)
+  | ETypeOf of expr * position  (* type of 表达式: 获取表达式的类型 *)
 
 and pattern =
   | PInt of int
   | PFloat of float
   | PString of string
+  | PRune of char  (* 32-bit Unicode codepoint *)
+  | PByte of int   (* 8-bit byte *)
   | PBool of bool
   | PVar of string
   | PTuple of pattern list

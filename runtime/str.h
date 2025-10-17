@@ -1,12 +1,15 @@
 #ifndef DREAM_STRING_OPS_H
 #define DREAM_STRING_OPS_H
 
+#include <stdint.h>
 #include "dynarray.h"
 
-int string_length(const char* str);
-char string_char_at(const char* str, int index);
+// UTF-8 aware string operations
+// str 是 UTF-8 编码，length 和索引基于 rune (Unicode codepoint)
+int string_length(const char* str);           // 返回 rune 数量（不是字节数）
+uint32_t string_char_at(const char* str, int index);  // 返回第 n 个 rune (U32)
 char* string_concat(const char* s1, const char* s2);
-char* string_substring(const char* str, int start, int end);
+char* string_substring(const char* str, int start, int end);  // 基于 rune 索引
 int string_find(const char* str, const char* sub);
 int string_compare(const char* s1, const char* s2);
 char* string_upper(const char* str);

@@ -2,13 +2,19 @@
 
 type llvm_type =
   | I32
+  | U32  (* unsigned 32-bit *)
   | I64
+  | I8
+  | U8   (* unsigned 8-bit *)
   | I1
   | Void
   | Ptr of llvm_type
-  | Array of int * llvm_type
-  | DynArray of llvm_type  (* 动态数组: {capacity, length, data*} *)
+  | Array of int * llvm_type  (* 固定长度数组: [n x elem_t] *)
+  | ImmutableArray of llvm_type  (* 不可变数组: {length, data*} *)
+  | DynArray of llvm_type  (* 动态数组(可变): {capacity, length, data*} *)
   | DynArrayPtr  (* 指针数组: {capacity, length, intptr_t*} - 用于存储指针 *)
+  | StrType    (* str: UTF-8 编码的不可变字符串，底层是 ImmutableArray U8 *)
+  | BytesType  (* bytes: 不可变字节序列，底层是 ImmutableArray U8 *)
   | TuplePtr  (* 元组指针 *)
   | DictPtr   (* 字典指针 dict[int,int] *)
   | DictStrPtr (* 字符串键字典指针 dict[string,int] *)

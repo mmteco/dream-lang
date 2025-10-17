@@ -262,7 +262,10 @@ let rec analyze_expr ctx expr =
   | ETry (expr, _) ->
       analyze_expr ctx expr
 
-  | EInt _ | EFloat _ | EString _ | EBool _ -> ()
+  | ETypeOf (expr, _) ->
+      analyze_expr ctx expr
+
+  | EInt _ | EFloat _ | EString _ | ERune _ | EByte _ | EBool _ -> ()
 
 (* 分析语句，返回子定义列表 *)
 let rec analyze_stmt ctx stmt : symbol_def list =

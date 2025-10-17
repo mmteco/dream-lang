@@ -23,6 +23,26 @@ print(slice3[0])   # 108 (l)
 print(s.length())  # 5
 
 # ========================================
+# Array 函数
+# ========================================
+
+# 测试 array(list) - 从 list 创建数组
+let my_list = [1, 2, 3, 4, 5]
+let my_array = array(my_list)
+
+print(len(my_array))  # 5
+print(my_array[0])    # 1
+print(my_array[2])    # 3
+
+# 测试数组赋值
+my_array[2] = 99
+print(my_array[2])    # 99
+
+# 测试 array_new(n) - 创建指定长度数组
+let new_array = array_new(3)
+print(len(new_array))  # 3
+
+# ========================================
 # 泛型功能
 # ========================================
 

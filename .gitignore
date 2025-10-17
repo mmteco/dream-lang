@@ -1,6 +1,7 @@
 _opam/
 _build/
 *.opam
+claude_docs/
 
 # 编译生成的文件
 *.ll
@@ -18,7 +19,7 @@ test/test_core
 runtime/test_hash
 runtime/test_gc
 runtime/test_memory
-runtime/test_string_ops
+runtime/test_str
 runtime/test_file_io
 
 # 临时文件

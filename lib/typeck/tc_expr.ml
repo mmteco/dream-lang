@@ -10,6 +10,8 @@ let rec infer_expr env = function
   | EInt (_, _) -> (TyInt, empty_subst)
   | EFloat (_, _) -> (TyFloat, empty_subst)
   | EString (_, _) -> (TyStr, empty_subst)
+  | ERune (_, _) -> (TyRune, empty_subst)
+  | EByte (_, _) -> (TyByte, empty_subst)
   | EBool (_, _) -> (TyBool, empty_subst)
 
   | EVar (name, pos) ->
@@ -502,7 +504,7 @@ let rec infer_expr env = function
             let rec bind_pattern env pat expected_type =
               match pat with
               | PVar name -> add_binding name expected_type env
-              | PInt _ | PFloat _ | PString _ | PBool _ | PWildcard -> env
+              | PInt _ | PFloat _ | PString _ | PRune _ | PByte _ | PBool _ | PWildcard -> env
               | PTuple pats ->
                   (match expected_type with
                    | TyTuple elem_types when List.length pats = List.length elem_types ->
@@ -767,3 +769,8 @@ let rec infer_expr env = function
              "The '?' operator can only be used on Result types" in
            report_error err;
            (TyUnknown, expr_subst))
+
+  | ETypeOf (expr, _pos) ->
+      let (expr_type, expr_subst) = infer_expr env expr in
+      let actual_type = apply_subst expr_subst expr_type in
+      (TyTypeInfo actual_type, expr_subst)

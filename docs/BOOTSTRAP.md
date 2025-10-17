@@ -15,7 +15,7 @@
 - [x] LLVM IR 代码生成
 - [x] 字典类型（int->int，FNV-1a 哈希）
 - [x] 元组解包（let、for 循环）
-- [x] Runtime 模块化（string_ops, file_ops, dict, tuple, dynarray, memory）
+- [x] Runtime 模块化（str, file, dict, tuple, dynarray, memory）
 - [x] 小写布尔和None关键字（true/false/none 支持）
 - [x] print(bool) 函数支持（输出小写 true/false）
 - [x] 字符串索引和切片（`str[i]`, `str[start:end]`）
@@ -194,13 +194,12 @@
   - [x] 禁止在 match 表达式分支中使用 return 语句
   - [x] 类型检查器检测并报错
   - [x] 正确形式：`return match ...` 或 `let x = match ...`
-
-**待完成功能**：
-- [ ] 列表解构
+- [x] 列表解构
 
 ### 8. 结构体
-- [ ] `struct Position { line: int, column: int }`
-- [ ] 结构体字面量、字段访问
+
+- [x] `struct Position { line: int, column: int }`
+- [x] 结构体字面量、字段访问
 
 ### 9. 泛型系统 ✅ **基础功能完成**
 **已实现功能**：
@@ -424,43 +423,6 @@ match get_value(1):
 ### 长期目标（P3）
 15. 自举编译
 16. 性能优化
-
----
-
-## 技术挑战与解决方案
-
-1. **循环依赖**: 字典→泛型→编译器→字典
-   - 解决：先用固定类型字典 ✅，后期泛型化
-
-2. **内存管理**: 编译器产生大量临时对象
-   - 解决：依赖现有 GC ✅，考虑 Arena 分配器
-
-3. **FFI**: 调用 C 库（文件 I/O）
-   - 解决：LLVM IR 直接调用 libc，Runtime 已实现 ✅
-
----
-
-## 时间估算
-
-**最小化路径**（跳过高级特性）：
-- 阶段一：3-4 周
-- 阶段二：4-5 周
-- 阶段三：6-8 周
-- 阶段四：1-2 周
-
-**总计：14-19 周（约 3.5-5 个月）**
-
----
-
-## 下一步行动
-
-**立即开始**：
-```
-字符串操作 → 文件 I/O → 枚举类型 →
-模式匹配 → 结构体 → Lexer 重写
-```
-
-**进度追踪**: 见 TODO.md
 
 ---
 

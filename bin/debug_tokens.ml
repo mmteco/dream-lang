@@ -4,6 +4,8 @@ let tok_to_string = function
   | Parser.INT n -> Printf.sprintf "INT(%d)" n
   | Parser.FLOAT f -> Printf.sprintf "FLOAT(%f)" f
   | Parser.STRING s -> Printf.sprintf "STRING(\"%s\")" s
+  | Parser.RUNE c -> Printf.sprintf "RUNE('%c')" c
+  | Parser.BYTE b -> Printf.sprintf "BYTE(%d)" b
   | Parser.BOOL b -> Printf.sprintf "BOOL(%b)" b
   | Parser.IDENT s -> Printf.sprintf "IDENT(%s)" s
   | Parser.LET -> "LET"

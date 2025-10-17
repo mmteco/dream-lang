@@ -1,16 +1,33 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include "string_ops.h"
+#include "str.h"
 #include "dynarray.h"
 #include "memory.h"
+#include "utf8.h"
 
+/**
+ * string_length: 返回 rune 数量（不是字节数）
+ *
+ * 示例:
+ *   "Hello" -> 5
+ *   "Hello世界" -> 7 (5个ASCII + 2个中文)
+ */
 int string_length(const char* str) {
-    return strlen(str);
+    if (str == NULL) return 0;
+    return utf8_rune_count(str);
 }
 
-char string_char_at(const char* str, int index) {
-    return str[index];
+/**
+ * string_char_at: 返回第 n 个 rune (Unicode codepoint)
+ *
+ * 示例:
+ *   "Hello世界"[0] -> 'H' (U+0048)
+ *   "Hello世界"[5] -> '世' (U+4E16)
+ */
+uint32_t string_char_at(const char* str, int index) {
+    if (str == NULL || index < 0) return 0;
+    return utf8_rune_at(str, index);
 }
 
 char* string_concat(const char* s1, const char* s2) {
@@ -23,13 +40,40 @@ char* string_concat(const char* s1, const char* s2) {
     return result;
 }
 
+/**
+ * string_substring: 基于 rune 索引的切片
+ *
+ * 参数:
+ *   str - UTF-8 字符串
+ *   start - 起始 rune 索引（包含）
+ *   end - 结束 rune 索引（不包含）
+ *
+ * 示例:
+ *   "Hello世界".substring(0, 5) -> "Hello"
+ *   "Hello世界".substring(5, 7) -> "世界"
+ */
 char* string_substring(const char* str, int start, int end) {
-    int len = end - start;
-    if (len < 0) len = 0;
-    char* result = (char*)malloc(len + 1);
+    if (str == NULL || start < 0 || end < start) {
+        char* empty = (char*)malloc(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+
+    // 获取起始和结束的字节偏移
+    int byte_start = utf8_byte_offset(str, start);
+    int byte_end = utf8_byte_offset(str, end);
+
+    if (byte_start < 0) byte_start = 0;
+    if (byte_end < 0) byte_end = strlen(str);
+
+    int byte_len = byte_end - byte_start;
+    if (byte_len < 0) byte_len = 0;
+
+    char* result = (char*)malloc(byte_len + 1);
     if (result == NULL) return NULL;
-    strncpy(result, str + start, len);
-    result[len] = '\0';
+
+    strncpy(result, str + byte_start, byte_len);
+    result[byte_len] = '\0';
     return result;
 }
 

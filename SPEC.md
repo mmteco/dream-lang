@@ -1108,6 +1108,36 @@ let length = len(arr)    # 5
 
 **限制**: 只能用于局部数组变量，不能用于函数参数或表达式结果
 
+#### array(list)
+从现有列表创建固定大小数组
+
+```python
+let my_list = [1, 2, 3, 4, 5]
+let my_array = array(my_list)  # 创建固定大小数组
+print(len(my_array))           # 5
+print(my_array[0])             # 1
+my_array[2] = 99               # 可以修改元素
+```
+
+**特性**:
+- 创建的数组长度固定（capacity = length）
+- 数组内容可变（支持索引赋值）
+- 不支持动态增长（与 list 不同）
+
+#### array_new(n)
+创建指定长度的数组，元素初始化为 None/null
+
+```python
+let new_array = array_new(3)   # 创建长度为 3 的数组
+print(len(new_array))          # 3
+new_array[0] = 10              # 赋值
+```
+
+**特性**:
+- 创建固定长度数组
+- 元素初始值为 None (null/0)
+- 类型自动推导（默认为 Option 类型）
+
 ## 类型检查规则
 
 ### 类型统一

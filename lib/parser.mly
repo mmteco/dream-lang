@@ -2,13 +2,13 @@
   open Ast
 
   let get_expr_pos = function
-    | EInt (_, p) | EFloat (_, p) | EString (_, p) | EBool (_, p)
+    | EInt (_, p) | EFloat (_, p) | EString (_, p) | ERune (_, p) | EByte (_, p) | EBool (_, p)
     | EVar (_, p) | EBinOp (_, _, _, p) | EUnOp (_, _, p)
     | ECall (_, _, p) | EList (_, p) | EDict (_, p) | ETuple (_, p)
     | EIndex (_, _, p) | ESlice (_, _, _, p) | EAttr (_, _, p) | ELambda (_, _, p)
     | EIf (_, _, _, p) | EMatch (_, _, p) | EListComp (_, _, _, _, p)
     | EEnumVariant (_, _, _, p) | EStructLiteral (_, _, p) | EStructAccess (_, _, p)
-    | ETernary (_, _, _, p) | ETry (_, p) -> p
+    | ETernary (_, _, _, p) | ETry (_, p) | ETypeOf (_, p) -> p
 
   (* 从 Lexing.position 创建 AST position *)
   (* VSCode 使用 0-based 行号，所以减 1 *)
@@ -19,6 +19,8 @@
 %token <int> INT
 %token <float> FLOAT
 %token <string> STRING
+%token <char> RUNE
+%token <int> BYTE
 %token <bool> BOOL
 %token <string> IDENT
 %token LET DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
@@ -139,8 +141,8 @@ statement:
       { SFor (pat, iter, body, get_expr_pos iter) }
   | MATCH e = expr COLON newline_sep INDENT cases = expr_case_list DEDENT
       { SExpr (EMatch (e, cases, get_expr_pos e), get_expr_pos e) }
-  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list_as_expr DEDENT
-      { SExpr (EMatch (e, cases, get_expr_pos e), get_expr_pos e) }
+  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list DEDENT
+      { SExpr (EMatch (ETypeOf (e, get_expr_pos e), cases, get_expr_pos e), get_expr_pos e) }
   | INTERFACE name = IDENT COLON newline_sep INDENT members = interface_member_list DEDENT
       { SInterface {
           interface_name = name;
@@ -224,15 +226,39 @@ else_opt:
   | ELSE COLON newline_sep INDENT body = statement_list DEDENT
       { Some body }
 
-type_case_list_as_expr:
+type_case_list:
   | { [] }
-  | ty = type_expr COLON newline_sep body = expr newline_sep rest = type_case_list_as_expr
-      { (PType ("_matched_value", ty), None, MExpr body) :: rest }
-  | ty = type_expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list_as_expr
-      { (PType ("_matched_value", ty), None, MStmts body) :: rest }
-  | UNDERSCORE COLON newline_sep body = expr newline_sep rest = type_case_list_as_expr
+  | ty = type_expr COLON newline_sep body = expr newline_sep rest = type_case_list
+      { let type_str = match ty with
+          | TInt -> "int"
+          | TFloat -> "float"
+          | TStr -> "str"
+          | TRune -> "rune"
+          | TByte -> "byte"
+          | TBytes -> "bytes"
+          | TBool -> "bool"
+          | TNone -> "None"
+          | TVar name -> name
+          | _ -> "_unknown_"
+        in
+        (PString type_str, None, MExpr body) :: rest }
+  | ty = type_expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list
+      { let type_str = match ty with
+          | TInt -> "int"
+          | TFloat -> "float"
+          | TStr -> "str"
+          | TRune -> "rune"
+          | TByte -> "byte"
+          | TBytes -> "bytes"
+          | TBool -> "bool"
+          | TNone -> "None"
+          | TVar name -> name
+          | _ -> "_unknown_"
+        in
+        (PString type_str, None, MStmts body) :: rest }
+  | UNDERSCORE COLON newline_sep body = expr newline_sep rest = type_case_list
       { (PWildcard, None, MExpr body) :: rest }
-  | UNDERSCORE COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list_as_expr
+  | UNDERSCORE COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = type_case_list
       { (PWildcard, None, MStmts body) :: rest }
 
 expr_case_list:
@@ -334,6 +360,8 @@ pattern:
   | n = INT { PInt n }
   | f = FLOAT { PFloat f }
   | s = STRING { PString s }
+  | r = RUNE { PRune r }
+  | by = BYTE { PByte by }
   | b = BOOL { PBool b }
   | UNDERSCORE { PWildcard }
   | LPAREN patterns = separated_list(COMMA, pattern) RPAREN
@@ -364,6 +392,8 @@ match_pattern:
   | n = INT { PInt n }
   | f = FLOAT { PFloat f }
   | s = STRING { PString s }
+  | r = RUNE { PRune r }
+  | by = BYTE { PByte by }
   | b = BOOL { PBool b }
   | UNDERSCORE { PWildcard }
   | LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
@@ -421,6 +451,8 @@ type_expr:
       | "int" -> TInt
       | "float" -> TFloat
       | "str" -> TStr
+      | "rune" -> TRune
+      | "byte" -> TByte
       | "bytes" -> TBytes
       | "bool" -> TBool
       | name -> TVar name
@@ -441,6 +473,8 @@ expr:
   | n = INT { EInt (n, make_position $startpos) }
   | f = FLOAT { EFloat (f, make_position $startpos) }
   | s = STRING { EString (s, make_position $startpos) }
+  | r = RUNE { ERune (r, make_position $startpos) }
+  | by = BYTE { EByte (by, make_position $startpos) }
   | b = BOOL { EBool (b, make_position $startpos) }
   | name = IDENT { EVar (name, make_position $startpos) }
   | SELF { EVar ("self", make_position $startpos) }
@@ -507,12 +541,14 @@ expr:
       { EStructLiteral (struct_name, fields, { line = 0; column = 0 }) }
   | MATCH e = expr COLON newline_sep INDENT cases = expr_case_list DEDENT
       { EMatch (e, cases, get_expr_pos e) }
-  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list_as_expr DEDENT
-      { EMatch (e, cases, get_expr_pos e) }
+  | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list DEDENT
+      { EMatch (ETypeOf (e, get_expr_pos e), cases, get_expr_pos e) }
   | cond = expr QUESTION true_expr = expr COLON false_expr = expr
       { ETernary (cond, true_expr, false_expr, get_expr_pos cond) }
   | e = expr QUESTION
       { ETry (e, get_expr_pos e) }
+  | TYPE OF e = expr
+      { ETypeOf (e, make_position $startpos) }
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }

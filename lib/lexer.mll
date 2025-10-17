@@ -31,7 +31,7 @@
     byte_offset := !byte_offset + 1;  (* 换行符占 1 字节 *)
     line_start_offset := !byte_offset
 
-  let keyword_table = Hashtbl.create 40
+  let keyword_table = Hashtbl.create 42
   let () =
     List.iter (fun (kwd, tok) -> Hashtbl.add keyword_table kwd tok)
       [ ("let", LET);
@@ -118,6 +118,13 @@ rule token = parse
       let str_tok = read_string (Buffer.create 16) lexbuf in
       let end_pos = make_lexing_pos () in
       (str_tok, start_pos, end_pos)
+    }
+  | "b'" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let byte_tok = read_byte_literal lexbuf in
+      let end_pos = make_lexing_pos () in
+      (byte_tok, start_pos, end_pos)
     }
   | "'" {
       let start_pos = make_lexing_pos () in
@@ -334,14 +341,21 @@ and read_string buf = parse
 and read_single_string buf = parse
   | "'" {
       update_pos lexbuf;
-      STRING (Buffer.contents buf)
+      let content = Buffer.contents buf in
+      (* 如果只有一个字符，返回RUNE token，否则返回STRING *)
+      if String.length content = 1 then
+        RUNE (String.get content 0)
+      else
+        STRING content
     }
   | '\\' 'n' { Buffer.add_char buf '\n'; read_single_string buf lexbuf }
   | '\\' 't' { Buffer.add_char buf '\t'; read_single_string buf lexbuf }
   | '\\' '\\' { Buffer.add_char buf '\\'; read_single_string buf lexbuf }
   | '\\' "'" { Buffer.add_char buf '\''; read_single_string buf lexbuf }
+  | '\\' 'r' { Buffer.add_char buf '\r'; read_single_string buf lexbuf }
+  | '\\' '0' { Buffer.add_char buf '\000'; read_single_string buf lexbuf }
   | newline { newline lexbuf; Buffer.add_char buf '\n'; read_single_string buf lexbuf }
-  | eof { raise (LexError "Unterminated string") }
+  | eof { raise (LexError "Unterminated string or char literal") }
   | _ as c { Buffer.add_char buf c; read_single_string buf lexbuf }
 
 and read_triple_single_string buf = parse
@@ -356,6 +370,42 @@ and read_triple_single_string buf = parse
       Buffer.add_char buf c;
       read_triple_single_string buf lexbuf
     }
+
+and read_byte_literal = parse
+  | "'" {
+      update_pos lexbuf;
+      raise (LexError "Empty byte literal")
+    }
+  | (['a'-'z' 'A'-'Z' '0'-'9' ' ' '!' '"' '#' '$' '%' '&' '(' ')' '*' '+' ',' '-' '.' '/' ':' ';' '<' '=' '>' '?' '@' '[' '\\' ']' '^' '_' '`' '{' '|' '}' '~'] as c) "'" {
+      update_pos lexbuf;
+      BYTE (Char.code c)
+    }
+  | '\\' 'n' "'" {
+      update_pos lexbuf;
+      BYTE (Char.code '\n')
+    }
+  | '\\' 't' "'" {
+      update_pos lexbuf;
+      BYTE (Char.code '\t')
+    }
+  | '\\' 'r' "'" {
+      update_pos lexbuf;
+      BYTE (Char.code '\r')
+    }
+  | '\\' '0' "'" {
+      update_pos lexbuf;
+      BYTE 0
+    }
+  | '\\' '\\' "'" {
+      update_pos lexbuf;
+      BYTE (Char.code '\\')
+    }
+  | '\\' "'" "'" {
+      update_pos lexbuf;
+      BYTE (Char.code '\'')
+    }
+  | eof { raise (LexError "Unterminated byte literal") }
+  | _ { raise (LexError "Invalid byte literal") }
 
 {
   let peek_char lexbuf =

@@ -4,7 +4,9 @@ type ty =
   | TyInt
   | TyFloat
   | TyStr
-  | TyBytes
+  | TyRune   (* 32-bit Unicode codepoint, like Go's rune *)
+  | TyByte   (* 8-bit byte *)
+  | TyBytes  (* byte array *)
   | TyBool
   | TyNone
   | TyVar of string
@@ -19,12 +21,15 @@ type ty =
   | TyEnum of string * ty list
   | TyStruct of string * ty list  (* 结构体类型 *)
   | TyInterface of string * ty list  (* 接口类型 *)
+  | TyTypeInfo of ty  (* 类型信息：包含实际的类型值 *)
   | TyUnknown
 
 let rec type_expr_to_ty = function
   | TInt -> TyInt
   | TFloat -> TyFloat
   | TStr -> TyStr
+  | TRune -> TyRune
+  | TByte -> TyByte
   | TBytes -> TyBytes
   | TBool -> TyBool
   | TNone -> TyNone
@@ -44,6 +49,8 @@ let rec ty_to_string = function
   | TyInt -> "int"
   | TyFloat -> "float"
   | TyStr -> "str"
+  | TyRune -> "rune"
+  | TyByte -> "byte"
   | TyBytes -> "bytes"
   | TyBool -> "bool"
   | TyNone -> "None"
@@ -65,6 +72,7 @@ let rec ty_to_string = function
   | TyStruct (name, params) -> Printf.sprintf "%s[%s]" name (String.concat ", " (List.map ty_to_string params))
   | TyInterface (name, []) -> Printf.sprintf "interface %s" name
   | TyInterface (name, params) -> Printf.sprintf "interface %s[%s]" name (String.concat ", " (List.map ty_to_string params))
+  | TyTypeInfo t -> Printf.sprintf "TypeInfo[%s]" (ty_to_string t)
   | TyUnknown -> "?"
 
 let rec occurs name = function
@@ -78,6 +86,7 @@ let rec occurs name = function
   | TyOption t -> occurs name t
   | TyResult (ok, err) -> occurs name ok || occurs name err
   | TyInterface (_, params) -> List.exists (occurs name) params
+  | TyTypeInfo t -> occurs name t
   | _ -> false
 
 module Subst = Map.Make(String)
@@ -99,6 +108,7 @@ let rec apply_subst subst = function
   | TyOption t -> TyOption (apply_subst subst t)
   | TyResult (ok, err) -> TyResult (apply_subst subst ok, apply_subst subst err)
   | TyInterface (name, params) -> TyInterface (name, List.map (apply_subst subst) params)
+  | TyTypeInfo t -> TyTypeInfo (apply_subst subst t)
   | t -> t
 
 let compose_subst s1 s2 =
@@ -106,8 +116,8 @@ let compose_subst s1 s2 =
 
 let rec unify t1 t2 =
   match (t1, t2) with
-  | (TyInt, TyInt) | (TyFloat, TyFloat) | (TyStr, TyStr) | (TyBytes, TyBytes)
-  | (TyBool, TyBool) | (TyNone, TyNone) -> empty_subst
+  | (TyInt, TyInt) | (TyFloat, TyFloat) | (TyStr, TyStr) | (TyRune, TyRune)
+  | (TyByte, TyByte) | (TyBytes, TyBytes) | (TyBool, TyBool) | (TyNone, TyNone) -> empty_subst
   | (TyVar name, t) | (t, TyVar name) ->
       if occurs name t then
         failwith (Printf.sprintf "Occurs check failed: %s in %s" name (ty_to_string t))

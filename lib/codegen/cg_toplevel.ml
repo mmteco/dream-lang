@@ -138,12 +138,14 @@ let gen_program program =
   Buffer.add_string buf "declare void @print_int(i32)\n";
   Buffer.add_string buf "declare void @print_bool(i1)\n";
   Buffer.add_string buf "declare void @print_string(i8*)\n";
+  Buffer.add_string buf "declare void @print_rune(i32)\n";
   Buffer.add_string buf "declare i32 @printf(i8*, ...)\n";
 
   (* Memory management functions *)
   Buffer.add_string buf "declare i8* @malloc(i32)\n";
   Buffer.add_string buf "declare void @free(i8*)\n";
   Buffer.add_string buf "declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i1)\n";
+  Buffer.add_string buf "declare void @llvm.memset.p0i8.i32(i8*, i8, i32, i1)\n";
 
   (* GC functions (from runtime/memory.c) *)
   Buffer.add_string buf "; GC functions\n";
@@ -159,10 +161,10 @@ let gen_program program =
   Buffer.add_string buf "declare { i32, i32, i32* }* @slice_dynarray_i32({ i32, i32, i32* }*, i32, i32)\n";
   Buffer.add_string buf "declare { i32, i32, i32* }* @concat_dynarray_i32({ i32, i32, i32* }*, { i32, i32, i32* }*)\n";
 
-  (* String functions *)
-  Buffer.add_string buf "; String functions\n";
-  Buffer.add_string buf "declare i32 @string_length(i8*)\n";
-  Buffer.add_string buf "declare i8 @string_char_at(i8*, i32)\n";
+  (* String functions - UTF-8 aware *)
+  Buffer.add_string buf "; String functions (UTF-8 aware)\n";
+  Buffer.add_string buf "declare i32 @string_length(i8*)\n";  (* 返回 rune 数量 *)
+  Buffer.add_string buf "declare i32 @string_char_at(i8*, i32)\n";  (* 返回 rune (U32) *)
   Buffer.add_string buf "declare i8* @string_concat(i8*, i8*)\n";
   Buffer.add_string buf "declare i8* @string_substring(i8*, i32, i32)\n";
   Buffer.add_string buf "declare i32 @string_find(i8*, i8*)\n";
@@ -188,7 +190,24 @@ let gen_program program =
   Buffer.add_string buf "declare i32 @__c_file_delete(i8*)\n";
   Buffer.add_string buf "declare { i32, i32, i32* }* @__c_file_read_bytes(i8*)\n";
   Buffer.add_string buf "declare i32 @__c_file_write_bytes(i8*, { i32, i32, i32* }*)\n";
-  Buffer.add_string buf "declare i32 @__c_file_append_bytes(i8*, { i32, i32, i32* }*)\n";
+  Buffer.add_string buf "declare i32 @__c_file_append_bytes(i8*, { i32, i32, i32* }*)\n\n";
+
+  (* UTF-8 encoding/decoding functions *)
+  Buffer.add_string buf "; UTF-8 encoding/decoding functions\n";
+  Buffer.add_string buf "declare { i32, i32 } @__c_utf8_decode_rune({ i32, i32, i8* }*, i32)\n";
+  Buffer.add_string buf "declare { i32, i32, i8* }* @__c_utf8_encode_rune(i32)\n";
+  Buffer.add_string buf "declare i32 @__c_utf8_rune_count(i8*)\n";
+  Buffer.add_string buf "declare i32 @__c_utf8_rune_at(i8*, i32)\n";
+  Buffer.add_string buf "declare i32 @__c_utf8_byte_offset(i8*, i32)\n\n";
+
+  (* bytes operations *)
+  Buffer.add_string buf "; Bytes operations\n";
+  Buffer.add_string buf "declare i32 @__c_bytes_length({ i32, i32, i8* }*)\n";
+  Buffer.add_string buf "declare i32 @__c_bytes_get({ i32, i32, i8* }*, i32)\n";
+  Buffer.add_string buf "declare { i32, i32, i8* }* @__c_bytes_slice({ i32, i32, i8* }*, i32, i32)\n";
+  Buffer.add_string buf "declare { i32, i32, i8* }* @__c_bytes_from_array({ i32, i32, i8* }*)\n";
+  Buffer.add_string buf "declare { i32, i32, i8* }* @__c_str_to_bytes(i8*)\n";
+  Buffer.add_string buf "declare i8* @__c_bytes_to_str({ i32, i32, i8* }*)\n";
 
   (* Dictionary functions - Unified Generic API *)
   Buffer.add_string buf "; Unified Generic Dictionary API\n";

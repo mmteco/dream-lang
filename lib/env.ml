@@ -201,6 +201,7 @@ let find_implicit_interfaces_for_struct struct_name env =
 
 (* C Runtime 函数列表 - 统一管理所有 __c_ 函数 *)
 let c_runtime_functions = [
+  (* 文件 I/O *)
   ("__c_file_read", TyFunc ([TyStr], TyStr));
   ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
   ("__c_file_exists", TyFunc ([TyStr], TyInt));
@@ -209,6 +210,21 @@ let c_runtime_functions = [
   ("__c_file_read_bytes", TyFunc ([TyStr], TyBytes));
   ("__c_file_write_bytes", TyFunc ([TyStr; TyBytes], TyInt));
   ("__c_file_append_bytes", TyFunc ([TyStr; TyBytes], TyInt));
+
+  (* UTF-8 编解码 *)
+  ("__c_utf8_decode_rune", TyFunc ([TyBytes; TyInt], TyTuple [TyRune; TyInt]));  (* (bytes, offset) -> (rune, bytes_read) *)
+  ("__c_utf8_encode_rune", TyFunc ([TyRune], TyBytes));  (* rune -> bytes (1-4 字节) *)
+  ("__c_utf8_rune_count", TyFunc ([TyStr], TyInt));  (* str -> rune 数量 *)
+  ("__c_utf8_rune_at", TyFunc ([TyStr; TyInt], TyRune));  (* (str, index) -> rune *)
+  ("__c_utf8_byte_offset", TyFunc ([TyStr; TyInt], TyInt));  (* (str, rune_index) -> byte_offset *)
+
+  (* bytes 操作 *)
+  ("__c_bytes_length", TyFunc ([TyBytes], TyInt));
+  ("__c_bytes_get", TyFunc ([TyBytes; TyInt], TyByte));  (* (bytes, index) -> byte *)
+  ("__c_bytes_slice", TyFunc ([TyBytes; TyInt; TyInt], TyBytes));  (* (bytes, start, end) -> bytes *)
+  ("__c_bytes_from_array", TyFunc ([TyList TyByte], TyBytes));  (* list[byte] -> bytes *)
+  ("__c_str_to_bytes", TyFunc ([TyStr], TyBytes));  (* str -> bytes *)
+  ("__c_bytes_to_str", TyFunc ([TyBytes], TyStr));  (* bytes -> str *)
 ]
 
 (* 检查函数是否是 C Runtime 函数 *)
@@ -225,6 +241,10 @@ let builtin_env =
   let env = add_binding "dict_values" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "V"))) env in
   let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
   let env = add_binding "join" (TyFunc ([TyList TyStr; TyStr], TyStr)) env in
+  let env = add_binding "chr" (TyFunc ([TyInt], TyRune)) env in
+  let env = add_binding "ord" (TyFunc ([TyRune], TyInt)) env in
+  let env = add_binding "array" (TyFunc ([TyList (TyVar "T")], TyList (TyVar "T"))) env in
+  let env = add_binding "array_new" (TyFunc ([TyInt], TyList (TyVar "T"))) env in
   (* 将所有 C Runtime 函数添加到环境中 *)
   let env = List.fold_left (fun e (name, ty) -> add_binding name ty e) env c_runtime_functions in
   (* 预定义内置枚举类型 *)

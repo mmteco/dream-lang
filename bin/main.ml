@@ -110,7 +110,11 @@ let compile_to_exe output_ll =
     "runtime/runtime.c";
     "runtime/memory.c";
     "runtime/dynarray.c";
-    "runtime/string_ops.c";
+    "runtime/utf8.c";
+    "runtime/bytes.c";
+    "runtime/utf8_wrapper.c";
+    "runtime/bytes_wrapper.c";
+    "runtime/str.c";
     "runtime/file.c";
     "runtime/dict.c";
     "runtime/tuple.c";
