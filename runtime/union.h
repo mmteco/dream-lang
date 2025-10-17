@@ -12,6 +12,7 @@ typedef enum {
     UNION_BOOL,
     UNION_BYTES,
     UNION_NONE,
+    UNION_STRUCT,  // 自定义结构体类型
 } UnionTag;
 
 // Tagged Union 结构
@@ -19,12 +20,14 @@ typedef enum {
 // 使用 union 存储实际值（节省内存）
 typedef struct {
     UnionTag tag;
+    char* type_name;  // 仅当 tag == UNION_STRUCT 时有效，存储结构体类型名
     union {
         int32_t as_int;
         double as_float;
         char* as_string;
         bool as_bool;
         void* as_bytes;  // 指向 dynarray 结构
+        void* as_ptr;    // 指向结构体的指针
     } value;
 } union_t;
 
@@ -50,6 +53,9 @@ union_t* union_create_bytes(void* bytes_array);
 // 创建 None union
 union_t* union_create_none();
 
+// 创建 struct union (存储结构体指针和类型名)
+union_t* union_create_struct(void* ptr, const char* type_name);
+
 // ============================================================================
 // Union 类型检查
 // ============================================================================
@@ -62,6 +68,9 @@ bool union_is_bool(union_t* u);
 bool union_is_bytes(union_t* u);
 bool union_is_none(union_t* u);
 
+// 检查 union 是否为指定类型名的结构体
+bool union_is_struct(union_t* u, const char* type_name);
+
 // ============================================================================
 // Union 值提取
 // ============================================================================
@@ -72,6 +81,12 @@ double union_get_float(union_t* u);
 char* union_get_string(union_t* u);
 bool union_get_bool(union_t* u);
 void* union_get_bytes(union_t* u);
+
+// 提取 struct 指针
+void* union_get_struct(union_t* u);
+
+// 获取 struct 的类型名
+const char* union_get_struct_type(union_t* u);
 
 // ============================================================================
 // Union 值提取（安全版本，类型不匹配时返回 false）

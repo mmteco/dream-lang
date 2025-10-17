@@ -122,10 +122,94 @@ let rec gen_expr buf ctx = function
 
   | EBinOp (e1, op, e2, _) ->
       let (v1, t1) = gen_expr buf ctx e1 in
-      let (v2, t2) = gen_expr buf ctx e2 in
+      let (v2, t2_raw) = gen_expr buf ctx e2 in
+      (* 修正字符串字面量的类型：如果是 EString 则类型应该是 i8* 而不是 i32* *)
+      let t2 = match (e2, t2_raw) with
+        | (EString _, Ptr I32) -> Ptr I8  (* 字符串字面量实际是 i8* *)
+        | _ -> t2_raw
+      in
       let result = fresh_temp () in
-      let op_str = gen_binop op in
-      (match op with
+
+      (* 首先检查是否有运算符重载 (仅对结构体类型) *)
+      let overload_result =
+        match t1 with
+        | StructPtr type_name ->
+            (* 获取运算符对应的接口名和方法名 *)
+            let interface_name = match op with
+              | Add -> Some "Add" | Sub -> Some "Sub" | Mul -> Some "Mul"
+              | Div -> Some "Div" | Mod -> Some "Mod" | Eq | Neq -> Some "Eq"
+              | Lt | Gt | Lte | Gte -> Some "Ord"
+              | _ -> None
+            in
+            let method_name = match op with
+              | Add -> Some "add" | Sub -> Some "sub" | Mul -> Some "mul"
+              | Div -> Some "div" | Mod -> Some "mod" | Eq -> Some "eq"
+              | Neq -> Some "neq" | Lt -> Some "lt" | Gt -> Some "gt"
+              | Lte -> Some "lte" | Gte -> Some "gte"
+              | _ -> None
+            in
+            Cg_types.debug_print "DEBUG: Looking for operator overload: type=%s, iface=%s, method=%s\n"
+              type_name
+              (match interface_name with Some s -> s | None -> "None")
+              (match method_name with Some s -> s | None -> "None");
+            (match interface_name, method_name with
+             | Some iface, Some meth ->
+                 let result = Hashtbl.find_opt impl_method_registry (type_name, iface, meth) in
+                 Cg_types.debug_print "DEBUG: Registry lookup result: %s\n"
+                   (match result with Some name -> name | None -> "Not found");
+                 result
+             | _ -> None)
+        | _ -> None
+      in
+
+      (* 如果找到运算符重载实现，使用它；否则使用内置运算符 *)
+      (match overload_result with
+       | Some mangled_name ->
+           (* 使用运算符重载 *)
+           (* 查找方法的参数类型 *)
+           let param_types = Hashtbl.find_opt impl_method_param_types mangled_name in
+           Cg_types.debug_print "DEBUG: Looking up param types for %s: %s\n"
+             mangled_name
+             (match param_types with
+              | Some types -> String.concat ", " (List.map llvm_type_to_string types)
+              | None -> "Not found");
+           let (param2_value, param2_type) =
+             match param_types with
+             | Some types when List.length types >= 2 ->
+                 (* 第二个参数的期望类型 *)
+                 let expected_type = List.nth types 1 in
+                 Cg_types.debug_print "DEBUG: Expected type for param2: %s, actual: %s\n"
+                   (llvm_type_to_string expected_type)
+                   (llvm_type_to_string t2);
+                 (* 如果期望 Union 类型但实际不是，则装箱 *)
+                 if expected_type = UnionPtr && t2 <> UnionPtr then begin
+                   Printf.bprintf buf "  ; Boxing parameter 2 to union\n";
+                   (* 提取 t2 的结构体名称（如果是结构体） *)
+                   let type_name_opt = match t2 with
+                     | StructPtr name -> Some name
+                     | _ -> None
+                   in
+                   box_to_union buf ctx v2 t2 type_name_opt
+                 end else
+                   (v2, t2)
+             | _ ->
+                 (* 找不到参数类型信息，保持原样 *)
+                 (v2, t2)
+           in
+           let param2_type_str = llvm_type_to_string param2_type in
+           (* 从注册表查找返回类型，如果找不到则默认使用 i32* *)
+           let ret_llvm_type =
+             try Hashtbl.find impl_method_return_types mangled_name
+             with Not_found -> StructPtr ""  (* 默认为结构体指针 *)
+           in
+           let ret_type_str = llvm_type_to_string ret_llvm_type in
+           Printf.bprintf buf "  %s = call %s %s(i32* %s, %s %s)\n"
+             result ret_type_str (mangle_name mangled_name) v1 param2_type_str param2_value;
+           (result, ret_llvm_type)
+       | None ->
+           (* 使用内置运算符或默认处理 *)
+           let op_str = gen_binop op in
+           (match op with
        | Add when (match t1, t2 with
                       | Array _, Array _ -> true
                       | DynArray _, DynArray _ -> true
@@ -368,7 +452,7 @@ let rec gen_expr buf ctx = function
        | _ ->
            Printf.bprintf buf "  %s = %s %s %s, %s\n"
              result op_str (llvm_type_to_string t1) v1 v2;
-           (result, t1))
+           (result, t1)))
 
   | EUnOp (Not, e, _) ->
       let (v, t) = gen_expr buf ctx e in
@@ -380,9 +464,26 @@ let rec gen_expr buf ctx = function
   | EUnOp (Neg, e, _) ->
       let (v, t) = gen_expr buf ctx e in
       let result = fresh_temp () in
-      Printf.bprintf buf "  %s = sub %s 0, %s\n"
-        result (llvm_type_to_string t) v;
-      (result, t)
+
+      (* 检查是否有运算符重载 *)
+      let overload_result =
+        match t with
+        | StructPtr type_name ->
+            Hashtbl.find_opt impl_method_registry (type_name, "Neg", "neg")
+        | _ -> None
+      in
+
+      (match overload_result with
+       | Some mangled_name ->
+           (* 使用运算符重载 *)
+           Printf.bprintf buf "  %s = call i32* %s(i32* %s)\n"
+             result (mangle_name mangled_name) v;
+           (result, t)
+       | None ->
+           (* 使用内置取负 *)
+           Printf.bprintf buf "  %s = sub %s 0, %s\n"
+             result (llvm_type_to_string t) v;
+           (result, t))
 
   (* 字符串方法调用 *)
   | ECall (EAttr (obj, method_name, _), args, _) ->
@@ -914,7 +1015,11 @@ let rec gen_expr buf ctx = function
           (* 如果期望的是 union 类型,但实际不是,则装箱 *)
           if expected_type = UnionPtr && t <> UnionPtr then begin
             Printf.bprintf buf "  ; Boxing argument %d to union\n" i;
-            box_to_union buf ctx v t
+            let type_name_opt = match t with
+              | StructPtr name -> Some name
+              | _ -> None
+            in
+            box_to_union buf ctx v t type_name_opt
           end else
             (v, t)
         else
@@ -1955,13 +2060,27 @@ let rec gen_expr buf ctx = function
                 end))
 
   | EMatch (scrut, cases, _) ->
-      (* 生成被匹配的值 *)
-      let (scrut_v, scrut_t) = gen_expr buf ctx scrut in
-
-      (* 提取被匹配的变量名（如果 scrut 是变量） *)
-      let scrut_var_name = match scrut with
-        | EVar (name, _) -> Some name
-        | _ -> None
+      (* 特殊处理 match type of 的情况 *)
+      let (scrut_v, scrut_t, scrut_var_name) = match scrut with
+        | ETypeOf (inner_expr, _) ->
+            (* match type of expr 的情况 *)
+            (* 生成内部表达式以获取其真实值和类型 *)
+            let (inner_v, inner_t) = gen_expr buf ctx inner_expr in
+            (* 提取变量名 *)
+            let var_name = match inner_expr with
+              | EVar (name, _) -> Some name
+              | _ -> None
+            in
+            (* 返回内部表达式的值和类型，用于模式匹配和绑定 *)
+            (inner_v, inner_t, var_name)
+        | EVar (name, _) ->
+            (* match 普通变量 *)
+            let (scrut_v, scrut_t) = gen_expr buf ctx scrut in
+            (scrut_v, scrut_t, Some name)
+        | _ ->
+            (* 其他情况 *)
+            let (scrut_v, scrut_t) = gen_expr buf ctx scrut in
+            (scrut_v, scrut_t, None)
       in
 
       (* 创建基本块标签 *)
@@ -2422,23 +2541,34 @@ let rec gen_expr buf ctx = function
 
   | ETypeOf (expr, _) ->
       (* type of 表达式：返回表达式的类型信息 *)
-      (* 为了避免副作用和临时变量冲突，创建新的临时计数器环境 *)
-      let saved_temp_counter = !temp_counter in
-      let dummy_buf = Buffer.create 0 in
-      let (_, expr_ty) = gen_expr dummy_buf ctx expr in
-      (* 恢复临时计数器 *)
-      temp_counter := saved_temp_counter;
-      (* 将类型转换为字符串表示 *)
-      let type_string = Cg_utils.llvm_type_to_type_name expr_ty in
-      (* 创建字符串常量，与 EString 相同的方式 *)
-      incr string_counter;
-      let str_name = Printf.sprintf "@.str%d" !string_counter in
-      let (escaped_str, str_len) = llvm_escape_string type_string in
-      ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
-      let ptr_temp = fresh_temp () in
-      Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
-        ptr_temp str_len str_len str_name;
-      (ptr_temp, Ptr I32)
+      (* 生成表达式以获取其值和类型 *)
+      let (expr_val, expr_ty) = gen_expr buf ctx expr in
+      (match expr_ty with
+       | UnionPtr ->
+           (* 对于 Union 类型，调用运行时函数获取实际类型名 *)
+           let type_name_ptr = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8* @union_get_struct_type(%%union_t* %s)\n" type_name_ptr expr_val;
+           (* 检查是否为 NULL（非结构体类型） *)
+           let is_null = fresh_temp () in
+           Printf.bprintf buf "  %s = icmp eq i8* %s, null\n" is_null type_name_ptr;
+           (* 如果是 NULL，调用 union_type_name 获取基本类型名 *)
+           let basic_type_name = fresh_temp () in
+           Printf.bprintf buf "  %s = call i8* @union_type_name(%%union_t* %s)\n" basic_type_name expr_val;
+           (* 选择返回哪个类型名 *)
+           let result_ptr = fresh_temp () in
+           Printf.bprintf buf "  %s = select i1 %s, i8* %s, i8* %s\n" result_ptr is_null basic_type_name type_name_ptr;
+           (result_ptr, Ptr I32)
+       | _ ->
+           (* 对于其他类型，返回静态类型名称 *)
+           let type_string = Cg_utils.llvm_type_to_type_name expr_ty in
+           incr string_counter;
+           let str_name = Printf.sprintf "@.str%d" !string_counter in
+           let (escaped_str, str_len) = llvm_escape_string type_string in
+           ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
+           let ptr_temp = fresh_temp () in
+           Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+             ptr_temp str_len str_len str_name;
+           (ptr_temp, Ptr I32))
 
   | _ ->
       Buffer.add_string buf "  ; unsupported expression\n";
@@ -2486,27 +2616,45 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
   | PString s ->
       (match scrut_t with
        | UnionPtr ->
-           (* Union 类型：检查是否为 string 且值匹配 *)
-           let is_string = fresh_temp () in
-           Printf.bprintf buf "  %s = call i1 @union_is_string(%%union_t* %s)\n" is_string scrut_v;
-           let str_val = fresh_temp () in
-           Printf.bprintf buf "  %s = call i8* @union_get_string(%%union_t* %s)\n" str_val scrut_v;
-
-           incr string_counter;
-           let str_name = Printf.sprintf "@.str%d" !string_counter in
-           let (escaped_str, str_len) = llvm_escape_string s in
-           ctx.string_literals <- (str_name, escaped_str, str_len) :: ctx.string_literals;
-           let ptr_temp = fresh_temp () in
-           Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
-             ptr_temp str_len str_len str_name;
-           let cmp_result = fresh_temp () in
-           Printf.bprintf buf "  %s = call i32 @string_compare(i8* %s, i8* %s)\n"
-             cmp_result str_val ptr_temp;
-           let val_match = fresh_temp () in
-           Printf.bprintf buf "  %s = icmp eq i32 %s, 0\n" val_match cmp_result;
-           let cond = fresh_temp () in
-           Printf.bprintf buf "  %s = and i1 %s, %s\n" cond is_string val_match;
-           cond
+           (* Union 类型：检查类型名是否匹配（用于 match type of） *)
+           (* 根据字符串 s 判断是基本类型还是结构体类型 *)
+           let is_struct_type = Hashtbl.mem struct_registry s in
+           if is_struct_type then begin
+             (* 结构体类型：调用 union_is_struct *)
+             incr string_counter;
+             let type_str_name = Printf.sprintf "@.str%d" !string_counter in
+             let (escaped_type_name, type_name_len) = llvm_escape_string s in
+             ctx.string_literals <- (type_str_name, escaped_type_name, type_name_len) :: ctx.string_literals;
+             let type_name_ptr = fresh_temp () in
+             Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+               type_name_ptr type_name_len type_name_len type_str_name;
+             let is_struct = fresh_temp () in
+             Printf.bprintf buf "  %s = call i1 @union_is_struct(%%union_t* %s, i8* %s)\n" is_struct scrut_v type_name_ptr;
+             is_struct
+           end else begin
+             (* 基本类型或字符串类型：检查类型名 *)
+             match s with
+             | "int" ->
+                 let is_int = fresh_temp () in
+                 Printf.bprintf buf "  %s = call i1 @union_is_int(%%union_t* %s)\n" is_int scrut_v;
+                 is_int
+             | "bool" ->
+                 let is_bool = fresh_temp () in
+                 Printf.bprintf buf "  %s = call i1 @union_is_bool(%%union_t* %s)\n" is_bool scrut_v;
+                 is_bool
+             | "str" ->
+                 let is_string = fresh_temp () in
+                 Printf.bprintf buf "  %s = call i1 @union_is_string(%%union_t* %s)\n" is_string scrut_v;
+                 is_string
+             | "bytes" ->
+                 let is_bytes = fresh_temp () in
+                 Printf.bprintf buf "  %s = call i1 @union_is_bytes(%%union_t* %s)\n" is_bytes scrut_v;
+                 is_bytes
+             | _ ->
+                 (* 未知类型，返回 false *)
+                 Printf.bprintf buf "  ; Unknown type name: %s\n" s;
+                 "0"
+           end
        | _ ->
            (* 字符串比较需要调用string_compare *)
            incr string_counter;
@@ -2538,12 +2686,12 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
                 let is_float = fresh_temp () in
                 Printf.bprintf buf "  %s = call i1 @union_is_float(%%union_t* %s)\n" is_float scrut_v;
                 is_float
-            | Ptr I32 ->
+            | Ptr I32 | StrType ->
                 (* 字符串检查 *)
                 let is_string = fresh_temp () in
                 Printf.bprintf buf "  %s = call i1 @union_is_string(%%union_t* %s)\n" is_string scrut_v;
                 is_string
-            | Ptr U8 ->
+            | Ptr U8 | BytesType ->
                 (* bytes 类型检查 *)
                 let is_bytes = fresh_temp () in
                 Printf.bprintf buf "  %s = call i1 @union_is_bytes(%%union_t* %s)\n" is_bytes scrut_v;
@@ -2552,6 +2700,19 @@ and gen_pattern_test buf ctx pat scrut_v scrut_t =
                 let is_bool = fresh_temp () in
                 Printf.bprintf buf "  %s = call i1 @union_is_bool(%%union_t* %s)\n" is_bool scrut_v;
                 is_bool
+            | StructPtr struct_name ->
+                (* 结构体类型检查 *)
+                (* 创建类型名字符串 *)
+                incr string_counter;
+                let type_str_name = Printf.sprintf "@.str%d" !string_counter in
+                let (escaped_type_name, type_name_len) = llvm_escape_string struct_name in
+                ctx.string_literals <- (type_str_name, escaped_type_name, type_name_len) :: ctx.string_literals;
+                let type_name_ptr = fresh_temp () in
+                Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+                  type_name_ptr type_name_len type_name_len type_str_name;
+                let is_struct = fresh_temp () in
+                Printf.bprintf buf "  %s = call i1 @union_is_struct(%%union_t* %s, i8* %s)\n" is_struct scrut_v type_name_ptr;
+                is_struct
             | _ ->
                 Buffer.add_string buf "  ; ERROR: Unsupported type in type pattern\n";
                 "0")
@@ -2729,61 +2890,56 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name_opt =
        | UnionPtr ->
            (* Union 类型：根据 type_expr 拆箱对应的值 *)
            let target_ty = ast_type_to_cg_type type_expr in
+           (* 检查变量是否已存在，如果是则直接更新值到现有的栈位置 *)
+           let existing_var_opt = find_llvm_name ctx bind_name in
            (match target_ty with
             | I32 ->
                 let unboxed_val = fresh_temp () in
                 Printf.bprintf buf "  %s = call i32 @union_get_int(%%union_t* %s)\n" unboxed_val scrut_v;
-                (* 使用新的临时变量名避免冲突 *)
-                let local_temp = fresh_temp () in
-                Printf.bprintf buf "  %s = alloca i32\n" local_temp;
-                Printf.bprintf buf "  store i32 %s, i32* %s\n" unboxed_val local_temp;
-                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
-                                 then String.sub local_temp 1 (String.length local_temp - 1)
-                                 else local_temp in
-                add_variable_with_rename ctx bind_name local_name I32
-            | I64 ->
-                (* 浮点数拆箱 *)
-                let unboxed_val = fresh_temp () in
-                Printf.bprintf buf "  %s = call double @union_get_float(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local_temp = fresh_temp () in
-                Printf.bprintf buf "  %s = alloca double\n" local_temp;
-                Printf.bprintf buf "  store double %s, double* %s\n" unboxed_val local_temp;
-                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
-                                 then String.sub local_temp 1 (String.length local_temp - 1)
-                                 else local_temp in
-                add_variable_with_rename ctx bind_name local_name I64
-            | Ptr I32 ->
+                (match existing_var_opt with
+                 | Some llvm_name ->
+                     (* 变量已存在，直接存储到现有位置 *)
+                     Printf.bprintf buf "  store i32 %s, i32* %%%s\n" unboxed_val llvm_name;
+                     (* 更新变量类型 *)
+                     ctx.variables <- List.map (fun (n, t) -> if n = bind_name then (n, I32) else (n, t)) ctx.variables
+                 | None ->
+                     (* 变量不存在，创建新的 *)
+                     let local = "%" ^ bind_name in
+                     Printf.bprintf buf "  %s = alloca i32\n" local;
+                     Printf.bprintf buf "  store i32 %s, i32* %s\n" unboxed_val local;
+                     add_variable ctx bind_name I32)
+            | StructPtr struct_name ->
+                (* 结构体拆箱 *)
+                let unboxed_ptr = fresh_temp () in
+                Printf.bprintf buf "  %s = call i8* @union_get_struct(%%union_t* %s)\n" unboxed_ptr scrut_v;
+                (* 将 i8* 转换回 i32* *)
+                let struct_ptr = fresh_temp () in
+                Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" struct_ptr unboxed_ptr;
+                (match existing_var_opt with
+                 | Some llvm_name ->
+                     (* 变量已存在，直接存储到现有位置 *)
+                     Printf.bprintf buf "  store i32* %s, i32** %%%s\n" struct_ptr llvm_name;
+                     (* 更新变量类型为结构体指针 *)
+                     ctx.variables <- List.map (fun (n, t) -> if n = bind_name then (n, StructPtr struct_name) else (n, t)) ctx.variables
+                 | None ->
+                     (* 变量不存在，创建新的 *)
+                     let local = "%" ^ bind_name in
+                     Printf.bprintf buf "  %s = alloca i32*\n" local;
+                     Printf.bprintf buf "  store i32* %s, i32** %s\n" struct_ptr local;
+                     add_variable ctx bind_name (StructPtr struct_name))
+            | Ptr I32 | StrType ->
                 (* 字符串拆箱 *)
                 let unboxed_val = fresh_temp () in
                 Printf.bprintf buf "  %s = call i8* @union_get_string(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local_temp = fresh_temp () in
-                Printf.bprintf buf "  %s = alloca i8*\n" local_temp;
-                Printf.bprintf buf "  store i8* %s, i8** %s\n" unboxed_val local_temp;
-                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
-                                 then String.sub local_temp 1 (String.length local_temp - 1)
-                                 else local_temp in
-                add_variable_with_rename ctx bind_name local_name (Ptr I32)
-            | Ptr U8 ->
-                (* bytes 类型拆箱 *)
-                let unboxed_val = fresh_temp () in
-                Printf.bprintf buf "  %s = call i8* @union_get_bytes(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local_temp = fresh_temp () in
-                Printf.bprintf buf "  %s = alloca i8*\n" local_temp;
-                Printf.bprintf buf "  store i8* %s, i8** %s\n" unboxed_val local_temp;
-                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
-                                 then String.sub local_temp 1 (String.length local_temp - 1)
-                                 else local_temp in
-                add_variable_with_rename ctx bind_name local_name (Ptr U8)
-            | I1 ->
-                let unboxed_val = fresh_temp () in
-                Printf.bprintf buf "  %s = call i1 @union_get_bool(%%union_t* %s)\n" unboxed_val scrut_v;
-                let local_temp = fresh_temp () in
-                Printf.bprintf buf "  %s = alloca i1\n" local_temp;
-                Printf.bprintf buf "  store i1 %s, i1* %s\n" unboxed_val local_temp;
-                let local_name = if String.length local_temp > 0 && local_temp.[0] = '%'
-                                 then String.sub local_temp 1 (String.length local_temp - 1)
-                                 else local_temp in
-                add_variable_with_rename ctx bind_name local_name I1
+                (match existing_var_opt with
+                 | Some llvm_name ->
+                     Printf.bprintf buf "  store i8* %s, i8** %%%s\n" unboxed_val llvm_name;
+                     ctx.variables <- List.map (fun (n, t) -> if n = bind_name then (n, Ptr I32) else (n, t)) ctx.variables
+                 | None ->
+                     let local = "%" ^ bind_name in
+                     Printf.bprintf buf "  %s = alloca i8*\n" local;
+                     Printf.bprintf buf "  store i8* %s, i8** %s\n" unboxed_val local;
+                     add_variable ctx bind_name (Ptr I32))
             | _ ->
                 Buffer.add_string buf "  ; ERROR: Unsupported type in type pattern binding\n")
        | _ ->
@@ -2910,5 +3066,95 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name_opt =
                 gen_pattern_bindings buf ctx tail_pat tail_list scrut_t None)
        | _ ->
            Buffer.add_string buf "  ; ERROR: Expected list type for cons pattern binding\n")
+  | PString type_name ->
+      (* 字符串模式：在 match type of 的情况下，需要从 Union 拆箱 *)
+      (match (scrut_t, scrut_var_name_opt) with
+       | (UnionPtr, Some bind_name) ->
+           (* 这是 match type of 变量 的情况，需要拆箱并重新绑定变量 *)
+           (* 根据 type_name 确定目标类型 *)
+           let target_ty = match type_name with
+             | "int" -> I32
+             | "float" -> I64
+             | "bool" -> I1
+             | "str" -> StrType
+             | "bytes" -> BytesType
+             | struct_name ->
+                 (* 尝试查找是否是已注册的结构体 *)
+                 if Hashtbl.mem struct_registry struct_name then
+                   StructPtr struct_name
+                 else
+                   I32  (* 默认 *)
+           in
+
+           (* 检查变量是否已存在，以及其类型是否匹配 *)
+           let var_exists = List.exists (fun (n, _) -> n = bind_name) ctx.variables in
+           let old_type_opt = try Some (List.assoc bind_name ctx.variables) with Not_found -> None in
+
+           (* 判断是否需要创建影子变量（类型不匹配时） *)
+           let needs_shadow = match old_type_opt with
+             | Some old_ty -> old_ty <> target_ty
+             | None -> false
+           in
+
+           if var_exists && needs_shadow then begin
+             (* 需要创建影子变量：类型不同，创建新的 LLVM 变量并重命名 *)
+             (match target_ty with
+              | I32 ->
+                  let unboxed_val = fresh_temp () in
+                  Printf.bprintf buf "  %s = call i32 @union_get_int(%%union_t* %s)\n" unboxed_val scrut_v;
+                  let shadow_var = fresh_temp () in
+                  Printf.bprintf buf "  %s = alloca i32\n" shadow_var;
+                  Printf.bprintf buf "  store i32 %s, i32* %s\n" unboxed_val shadow_var;
+                  (* 添加重命名：后续访问 bind_name 实际访问 shadow_var *)
+                  let shadow_name = String.sub shadow_var 1 (String.length shadow_var - 1) in  (* 去掉 % 前缀 *)
+                  ctx.var_renames <- (bind_name, shadow_name) :: ctx.var_renames;
+                  (* 更新变量类型 *)
+                  ctx.variables <- List.map (fun (n, t) -> if n = bind_name then (n, I32) else (n, t)) ctx.variables
+              | StructPtr struct_name ->
+                  let unboxed_ptr = fresh_temp () in
+                  Printf.bprintf buf "  %s = call i8* @union_get_struct(%%union_t* %s)\n" unboxed_ptr scrut_v;
+                  let struct_ptr = fresh_temp () in
+                  Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" struct_ptr unboxed_ptr;
+                  let shadow_var = fresh_temp () in
+                  Printf.bprintf buf "  %s = alloca i32*\n" shadow_var;
+                  Printf.bprintf buf "  store i32* %s, i32** %s\n" struct_ptr shadow_var;
+                  (* 添加重命名 *)
+                  let shadow_name = String.sub shadow_var 1 (String.length shadow_var - 1) in
+                  ctx.var_renames <- (bind_name, shadow_name) :: ctx.var_renames;
+                  (* 更新变量类型 *)
+                  ctx.variables <- List.map (fun (n, t) -> if n = bind_name then (n, StructPtr struct_name) else (n, t)) ctx.variables
+              | _ ->
+                  Printf.bprintf buf "  ; TODO: shadow variable for type %s\n" (llvm_type_to_string target_ty);
+                  ())
+           end else if var_exists then begin
+             (* 变量存在且类型匹配，直接存储（理论上不应该到这里，因为 Union 类型和其他类型不同） *)
+             Printf.bprintf buf "  ; TODO: same-type variable rebinding\n";
+             ()
+           end else begin
+             (* 变量不存在，创建新的 *)
+             (match target_ty with
+              | I32 ->
+                  let unboxed_val = fresh_temp () in
+                  Printf.bprintf buf "  %s = call i32 @union_get_int(%%union_t* %s)\n" unboxed_val scrut_v;
+                  let local = "%" ^ bind_name in
+                  Printf.bprintf buf "  %s = alloca i32\n" local;
+                  Printf.bprintf buf "  store i32 %s, i32* %s\n" unboxed_val local;
+                  add_variable ctx bind_name I32
+              | StructPtr struct_name ->
+                  let unboxed_ptr = fresh_temp () in
+                  Printf.bprintf buf "  %s = call i8* @union_get_struct(%%union_t* %s)\n" unboxed_ptr scrut_v;
+                  let struct_ptr = fresh_temp () in
+                  Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" struct_ptr unboxed_ptr;
+                  let local = "%" ^ bind_name in
+                  Printf.bprintf buf "  %s = alloca i32*\n" local;
+                  Printf.bprintf buf "  store i32* %s, i32** %s\n" struct_ptr local;
+                  add_variable ctx bind_name (StructPtr struct_name)
+              | _ ->
+                  Printf.bprintf buf "  ; TODO: create variable for type %s\n" (llvm_type_to_string target_ty);
+                  ())
+           end
+       | _ ->
+           (* 非 match type of 的情况，不需要绑定 *)
+           ())
   | _ -> ()  (* 其他模式不需要绑定变量 *)
 

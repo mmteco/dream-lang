@@ -659,35 +659,94 @@ def render[T: Drawable](obj: T):
 render(Shape.Circle(5))  # 编译时验证
 ```
 
-#### 运算符重载
+#### 运算符重载 ✅
 
-通过接口实现运算符重载：
+通过接口实现运算符重载。标准运算符接口定义在 `stdlib/operators.dm`：
 
 ```python
-# 算术运算符
-interface Add[T]:
-    def add(other: T) -> T
+# 从标准库导入运算符接口
+from operators import Add, Sub, Mul, Eq, Neg
 
-interface Mul[T]:
-    def mul(other: T) -> T
+# 自定义类型
+struct Vec2:
+    x: int
+    y: int
 
-# 为自定义类型实现
-enum Point:
-    P(int, int)
+# 实现加法运算符（两个类型参数：T为参数类型，R为返回类型）
+impl Add[Vec2, Vec2] for Vec2:
+    def add(self, other: Vec2) -> Vec2:
+        return Vec2{x: self.x + other.x, y: self.y + other.y}
 
-impl Add[Point] for Point:
-    def add(other: Point) -> Point:
-        match self:
-            Point.P(x1, y1):
-                match other:
-                    Point.P(x2, y2):
-                        return Point.P(x1 + x2, y1 + y2)
+# 实现标量乘法（参数类型和返回类型不同）
+impl Mul[int, Vec2] for Vec2:
+    def mul(self, scalar: int) -> Vec2:
+        return Vec2{x: self.x * scalar, y: self.y * scalar}
+
+# 实现取负运算符
+impl Neg[Vec2] for Vec2:
+    def neg(self) -> Vec2:
+        return Vec2{x: -self.x, y: -self.y}
+
+# 使用（语法糖）
+let v1 = Vec2{x: 10, y: 20}
+let v2 = Vec2{x: 5, y: 15}
+let v3 = v1 + v2        # 自动脱糖为 v1.add(v2)
+let v4 = v1 * 3         # 自动脱糖为 v1.mul(3)
+let v5 = -v1            # 自动脱糖为 v1.neg()
+```
+
+**标准运算符接口** (`stdlib/operators.dm`)：
+- 算术：`Add[T, R]`, `Sub[T, R]`, `Mul[T, R]`, `Div[T, R]`, `Mod[T, R]`
+- 比较：`Eq[T]`, `Ord[T]`
+- 一元：`Neg[T]`, `Not`
+- 位运算：`BitAnd[T, R]`, `BitOr[T, R]`, `BitXor[T, R]`, `BitNot[T]`, `Shl[T, R]`, `Shr[T, R]`
+- 索引：`Index[T, R]`
+- 转换：`Display`
+
+**接口设计**：
+- 算术运算符使用两个类型参数：`T`（参数类型）和 `R`（返回类型）
+- 允许不同参数和返回类型（如 `Vec2 * int -> Vec2`）
+- 一元运算符使用一个类型参数：返回类型 `T`
+- 返回类型完整支持（bool, 自定义类型等）
+
+**Union 类型参数支持** ✅
+
+运算符重载方法可以接受 Union 类型参数，并通过 `match type of` 在方法内部区分类型：
+
+```python
+struct Vec3:
+    x: int
+    y: int
+    z: int
+
+# 方法参数支持 Union 类型
+impl Add for Vec3:
+    def add(self, other: Vec3 | str) -> Vec3:
+        return match type of other:
+            Vec3: Vec3{x: self.x + other.x, y: self.y + other.y, z: self.z + other.z}
+            str: Vec3{x: 1, y: 2, z: 3}
 
 # 使用
-let p1 = Point.P(10, 20)
-let p2 = Point.P(5, 15)
-let p3 = p1.add(p2)  # Point.P(15, 35)
+let v1 = Vec3{x: 1, y: 2, z: 3}
+let v2 = Vec3{x: 4, y: 5, z: 6}
+let v3 = v1 + v2        # 调用 Vec3 分支
+let v4 = v1 + "hello"   # 调用 str 分支
 ```
+
+**特性**：
+- 自动装箱：调用时自动将参数装箱为 Union 类型
+- 自动拆箱：`match type of` 分支中自动拆箱并重新绑定变量
+- 类型检查：使用影子变量实现类型安全的变量重新绑定
+- 字段访问：拆箱后可直接访问结构体字段（如 `other.x`）
+
+**实现状态**：
+- ✅ 运算符到接口的映射（env.ml）
+- ✅ 类型检查器支持（tc_expr.ml）
+- ✅ 代码生成器（cg_expr.ml, cg_toplevel.ml）
+- ✅ Union 运行时支持结构体类型（union.c）
+- ✅ 自动装箱/拆箱（box_to_union, gen_pattern_bindings）
+
+**详细文档**: [docs/OPERATOR_OVERLOADING.md](docs/OPERATOR_OVERLOADING.md)
 
 #### 接口约束
 

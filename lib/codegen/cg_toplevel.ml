@@ -253,17 +253,22 @@ let gen_program program =
   Buffer.add_string buf "declare %union_t* @union_create_bool(i1)\n";
   Buffer.add_string buf "declare %union_t* @union_create_bytes(i8*)\n";
   Buffer.add_string buf "declare %union_t* @union_create_none()\n";
+  Buffer.add_string buf "declare %union_t* @union_create_struct(i8*, i8*)\n";
   Buffer.add_string buf "declare i1 @union_is_int(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_float(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_string(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_bool(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_bytes(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_is_none(%union_t*)\n";
+  Buffer.add_string buf "declare i1 @union_is_struct(%union_t*, i8*)\n";
   Buffer.add_string buf "declare i32 @union_get_int(%union_t*)\n";
   Buffer.add_string buf "declare double @union_get_float(%union_t*)\n";
   Buffer.add_string buf "declare i8* @union_get_string(%union_t*)\n";
   Buffer.add_string buf "declare i1 @union_get_bool(%union_t*)\n";
   Buffer.add_string buf "declare i8* @union_get_bytes(%union_t*)\n";
+  Buffer.add_string buf "declare i8* @union_get_struct(%union_t*)\n";
+  Buffer.add_string buf "declare i8* @union_get_struct_type(%union_t*)\n";
+  Buffer.add_string buf "declare i8* @union_type_name(%union_t*)\n";
   Buffer.add_string buf "declare void @union_free(%union_t*)\n";
   Buffer.add_string buf "declare %union_t* @union_clone(%union_t*)\n";
   Buffer.add_string buf "declare void @union_print_value(%union_t*)\n\n";
@@ -376,6 +381,57 @@ let gen_program program =
       | _ -> ()
     ) program;
 
+    (* 提前注册所有 impl 方法到注册表 *)
+    List.iter (function
+      | SImpl (impl_block, _) ->
+          let target_type_str = match impl_block.impl_target with
+            | TVar name -> name
+            | TInt -> "int"
+            | TFloat -> "float"
+            | TStr -> "string"
+            | TBool -> "bool"
+            | _ -> "unknown"
+          in
+          (match impl_block.impl_interface with
+           | Some interface_name ->
+               List.iter (function
+                 | ImplMethod (method_name, _, params, ret_ty_opt, _body, _) ->
+                     let type_params_str =
+                       if impl_block.impl_type_params = [] then ""
+                       else "_" ^ String.concat "_" impl_block.impl_type_params
+                     in
+                     let mangled_name = Printf.sprintf "%s%s_%s_for_%s"
+                       interface_name type_params_str method_name target_type_str in
+                     Hashtbl.replace impl_method_registry
+                       (target_type_str, interface_name, method_name)
+                       mangled_name;
+                     (* 同时提前注册参数类型 *)
+                     let params_with_types = match params with
+                       | (pname, None, def) :: rest when pname = "self" ->
+                           (pname, Some (TStruct (target_type_str, [])), def) :: rest
+                       | _ -> params
+                     in
+                     let param_types = List.map (fun (_, pty, _) ->
+                       match pty with
+                       | Some t -> type_expr_to_llvm_type t
+                       | None -> I32
+                     ) params_with_types in
+                     Cg_types.debug_print "DEBUG: Early registering param types for %s: %s\n"
+                       mangled_name
+                       (String.concat ", " (List.map llvm_type_to_string param_types));
+                     Hashtbl.replace impl_method_param_types mangled_name param_types;
+                     (* 注册返回类型 *)
+                     let ret_type = match ret_ty_opt with
+                       | Some t -> type_expr_to_llvm_type t
+                       | None -> I32
+                     in
+                     Hashtbl.replace impl_method_return_types mangled_name ret_type
+                 | _ -> ()
+               ) impl_block.impl_members
+           | None -> ())
+      | _ -> ()
+    ) program;
+
     (* 生成所有函数定义（包括导入的） *)
     List.iter (fun prog ->
       List.iter (function
@@ -430,9 +486,46 @@ let gen_program program =
            | Some interface_name ->
                List.iter (function
                  | ImplMethod (method_name, _, params, ret_ty_opt, body, _) ->
-                     let mangled_name = Printf.sprintf "%s_%s_for_%s"
-                       interface_name method_name target_type_str in
-                     gen_function code_buf ctx mangled_name params ret_ty_opt body
+                     (* 生成方法名：Add_Vec2_add_for_Vec2 或 Add_add_for_Vec2 *)
+                     let type_params_str =
+                       if impl_block.impl_type_params = [] then ""
+                       else "_" ^ String.concat "_" impl_block.impl_type_params
+                     in
+                     let mangled_name = Printf.sprintf "%s%s_%s_for_%s"
+                       interface_name type_params_str method_name target_type_str in
+                     (* 注册 impl 方法：key = (target_type, interface, method) *)
+                     (* 对于 impl Add[Vec2] for Vec2，注册键仍然是 ("Vec2", "Add", "add") *)
+                     Hashtbl.replace impl_method_registry
+                       (target_type_str, interface_name, method_name)
+                       mangled_name;
+                     (* 为 self 参数添加类型标注，类似结构体方法的处理 *)
+                     let params_with_types = match params with
+                       | (pname, None, def) :: rest when pname = "self" ->
+                           ctx.var_struct_types <- ("self", target_type_str) :: ctx.var_struct_types;
+                           (pname, Some (TStruct (target_type_str, [])), def) :: rest
+                       | (pname, Some _, _) :: _ when pname = "self" ->
+                           ctx.var_struct_types <- ("self", target_type_str) :: ctx.var_struct_types;
+                           params
+                       | _ -> params
+                     in
+                     (* 注册方法的参数类型 *)
+                     let param_types = List.map (fun (_, pty, _) ->
+                       match pty with
+                       | Some t -> type_expr_to_llvm_type t
+                       | None -> I32
+                     ) params_with_types in
+                     Cg_types.debug_print "DEBUG: Registering param types for %s: %s\n"
+                       mangled_name
+                       (String.concat ", " (List.map llvm_type_to_string param_types));
+                     Hashtbl.replace impl_method_param_types mangled_name param_types;
+                     (* 注册返回类型 *)
+                     let ret_type = match ret_ty_opt with
+                       | Some t -> type_expr_to_llvm_type t
+                       | None -> I32
+                     in
+                     Hashtbl.replace impl_method_return_types mangled_name ret_type;
+                     gen_function code_buf ctx mangled_name params_with_types ret_ty_opt body;
+                     ctx.var_struct_types <- []
                  | _ -> ()
                ) impl_block.impl_members
            | None ->
@@ -528,9 +621,46 @@ let gen_program program =
            | Some interface_name ->
                List.iter (function
                  | ImplMethod (method_name, _, params, ret_ty_opt, body, _) ->
-                     let mangled_name = Printf.sprintf "%s_%s_for_%s"
-                       interface_name method_name target_type_str in
-                     gen_function code_buf ctx mangled_name params ret_ty_opt body
+                     (* 生成方法名：Add_Vec2_add_for_Vec2 或 Add_add_for_Vec2 *)
+                     let type_params_str =
+                       if impl_block.impl_type_params = [] then ""
+                       else "_" ^ String.concat "_" impl_block.impl_type_params
+                     in
+                     let mangled_name = Printf.sprintf "%s%s_%s_for_%s"
+                       interface_name type_params_str method_name target_type_str in
+                     (* 注册 impl 方法：key = (target_type, interface, method) *)
+                     (* 对于 impl Add[Vec2] for Vec2，注册键仍然是 ("Vec2", "Add", "add") *)
+                     Hashtbl.replace impl_method_registry
+                       (target_type_str, interface_name, method_name)
+                       mangled_name;
+                     (* 为 self 参数添加类型标注，类似结构体方法的处理 *)
+                     let params_with_types = match params with
+                       | (pname, None, def) :: rest when pname = "self" ->
+                           ctx.var_struct_types <- ("self", target_type_str) :: ctx.var_struct_types;
+                           (pname, Some (TStruct (target_type_str, [])), def) :: rest
+                       | (pname, Some _, _) :: _ when pname = "self" ->
+                           ctx.var_struct_types <- ("self", target_type_str) :: ctx.var_struct_types;
+                           params
+                       | _ -> params
+                     in
+                     (* 注册方法的参数类型 *)
+                     let param_types = List.map (fun (_, pty, _) ->
+                       match pty with
+                       | Some t -> type_expr_to_llvm_type t
+                       | None -> I32
+                     ) params_with_types in
+                     Cg_types.debug_print "DEBUG: Registering param types for %s: %s\n"
+                       mangled_name
+                       (String.concat ", " (List.map llvm_type_to_string param_types));
+                     Hashtbl.replace impl_method_param_types mangled_name param_types;
+                     (* 注册返回类型 *)
+                     let ret_type = match ret_ty_opt with
+                       | Some t -> type_expr_to_llvm_type t
+                       | None -> I32
+                     in
+                     Hashtbl.replace impl_method_return_types mangled_name ret_type;
+                     gen_function code_buf ctx mangled_name params_with_types ret_ty_opt body;
+                     ctx.var_struct_types <- []
                  | _ -> ()
                ) impl_block.impl_members
            | None ->

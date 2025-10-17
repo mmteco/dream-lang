@@ -355,7 +355,19 @@ let rec check_statement env = function
            (new_env, empty_subst))
 
   | SImpl (impl_block, pos) ->
-      let target_ty = type_expr_to_ty impl_block.impl_target in
+      (* 辅助函数：将类型表达式转换为类型，自动识别结构体 *)
+      let type_expr_to_ty_with_struct ty_expr =
+        match ty_expr with
+        | TVar name ->
+            (* 检查是否是已定义的结构体 *)
+            (match Env.find_struct name env with
+             | Some _ -> TyStruct (name, [])
+             | None -> type_expr_to_ty ty_expr)
+        | _ -> type_expr_to_ty ty_expr
+      in
+
+      (* 将 target 转换为类型，如果是结构体名称则转换为 TyStruct *)
+      let target_ty = type_expr_to_ty_with_struct impl_block.impl_target in
 
       (match impl_block.impl_interface with
        | None ->
@@ -368,16 +380,72 @@ let rec check_statement env = function
                 report_error err;
                 (env, empty_subst)
             | Some iface_def ->
+           (* 创建类型参数替换映射：interface type params -> impl type params *)
+           (* 例如：impl Add[Vec2] for Vec2，则 T -> Vec2 *)
+           let type_param_map =
+             try
+               List.combine iface_def.iface_type_params impl_block.impl_type_params
+             with Invalid_argument _ ->
+               (* 类型参数数量不匹配，报错但继续 *)
+               if List.length impl_block.impl_type_params > 0 then begin
+                 let err = make_error (TypeError "Type parameter mismatch") pos
+                   (Printf.sprintf "Interface '%s' expects %d type parameters but got %d"
+                     interface_name
+                     (List.length iface_def.iface_type_params)
+                     (List.length impl_block.impl_type_params)) in
+                 report_error err
+               end;
+               []
+           in
+
+           (* 类型替换函数：将类型表达式中的类型变量替换为具体类型 *)
+           let rec substitute_type_expr type_map ty_expr =
+             match ty_expr with
+             | TVar name ->
+                 (try
+                    let replacement = List.assoc name type_map in
+                    (* 将字符串转换回 type_expr *)
+                    TVar replacement
+                  with Not_found -> ty_expr)
+             | TList elem_ty -> TList (substitute_type_expr type_map elem_ty)
+             | TTuple tys -> TTuple (List.map (substitute_type_expr type_map) tys)
+             | TOption ty -> TOption (substitute_type_expr type_map ty)
+             | TResult (ok_ty, err_ty) ->
+                 TResult (substitute_type_expr type_map ok_ty, substitute_type_expr type_map err_ty)
+             | TDict (k, v) ->
+                 TDict (substitute_type_expr type_map k, substitute_type_expr type_map v)
+             | TFunc (params, ret) ->
+                 TFunc (List.map (substitute_type_expr type_map) params,
+                        substitute_type_expr type_map ret)
+             | TUnion tys -> TUnion (List.map (substitute_type_expr type_map) tys)
+             | TStruct (name, tys) ->
+                 TStruct (name, List.map (substitute_type_expr type_map) tys)
+             | TEnum (name, tys) ->
+                 TEnum (name, List.map (substitute_type_expr type_map) tys)
+             | TGeneric (name, ty) ->
+                 TGeneric (name, substitute_type_expr type_map ty)
+             | _ -> ty_expr
+           in
+
            let required_methods = List.filter_map (function
              | IMethod (name, _, params, ret_ty_opt, default_impl_opt, _) ->
                  if default_impl_opt = None then
-                   let param_types = List.map (fun (_, ty_opt, _) ->
-                     match ty_opt with
-                     | Some ty -> type_expr_to_ty ty
-                     | None -> fresh_type_var ()
+                   (* 应用类型参数替换，同时处理 self 参数 *)
+                   let param_types = List.mapi (fun i (pname, ty_opt, _) ->
+                     if i = 0 && pname = "self" then
+                       (* self 参数的类型是 impl 的目标类型 *)
+                       target_ty
+                     else
+                       match ty_opt with
+                       | Some ty ->
+                           let substituted_ty = substitute_type_expr type_param_map ty in
+                           type_expr_to_ty_with_struct substituted_ty
+                       | None -> fresh_type_var ()
                    ) params in
                    let ret_type = match ret_ty_opt with
-                     | Some ty -> type_expr_to_ty ty
+                     | Some ty ->
+                         let substituted_ty = substitute_type_expr type_param_map ty in
+                         type_expr_to_ty_with_struct substituted_ty
                      | None -> TyNone
                    in
                    Some (name, TyFunc (param_types, ret_type))
@@ -388,24 +456,33 @@ let rec check_statement env = function
 
            let impl_methods = List.filter_map (function
              | ImplMethod (name, _, params, ret_ty_opt, body, _) ->
-                 let param_types = List.map (fun (_, ty_opt, _) ->
-                   match ty_opt with
-                   | Some ty -> type_expr_to_ty ty
-                   | None -> fresh_type_var ()
+                 (* 第一个参数如果是 self，类型应该是目标类型 *)
+                 let param_types = List.mapi (fun i (pname, ty_opt, _) ->
+                   if i = 0 && pname = "self" then
+                     (* self 参数的类型是 impl 的目标类型 *)
+                     target_ty
+                   else
+                     match ty_opt with
+                     | Some ty -> type_expr_to_ty_with_struct ty
+                     | None -> fresh_type_var ()
                  ) params in
                  let ret_type = match ret_ty_opt with
-                   | Some ty -> type_expr_to_ty ty
+                   | Some ty -> type_expr_to_ty_with_struct ty
                    | None -> TyNone
                  in
 
-                 let method_env = List.fold_left
-                   (fun e (pname, pty_opt, _) ->
-                     let pty = match pty_opt with
-                       | Some t -> type_expr_to_ty t
-                       | None -> fresh_type_var ()
+                 let method_env = List.fold_left2
+                   (fun e (pname, pty_opt, _) inferred_ty ->
+                     let pty = if pname = "self" then
+                       (* self 使用推断的目标类型 *)
+                       inferred_ty
+                     else
+                       match pty_opt with
+                       | Some t -> type_expr_to_ty_with_struct t
+                       | None -> inferred_ty
                      in
                      Env.add_binding pname pty e)
-                   (Env.create_child_env env) params
+                   (Env.create_child_env env) params param_types
                  in
                  let (_, _) = check_statements method_env body in
 
@@ -417,8 +494,15 @@ let rec check_statement env = function
              not (List.exists (fun (impl_name, impl_ty) ->
                impl_name = req_name &&
                (try
-                  let _ = unify impl_ty req_ty in true
-                with Failure _ -> false)
+                  let _ = unify impl_ty req_ty in
+                  true
+                with Failure msg ->
+                  (* 调试：打印类型不匹配信息 *)
+                  Printf.eprintf "Method '%s' type mismatch:\n" req_name;
+                  Printf.eprintf "  Required: %s\n" (Types.ty_to_string req_ty);
+                  Printf.eprintf "  Impl:     %s\n" (Types.ty_to_string impl_ty);
+                  Printf.eprintf "  Error: %s\n" msg;
+                  false)
              ) impl_methods)
            ) required_methods in
 
@@ -476,8 +560,65 @@ let rec check_statement env = function
                  let func_type = TyFunc (param_types, ret_type) in
                  let default_values = List.map (fun (_, _, default_opt) -> default_opt) def_info.def_params in
                  Env.add_function_with_defaults name func_type default_values acc_env
-             | _ ->
-                 acc_env
+             | Module_loader.ExportedInterface (_original_name, interface_info) ->
+                 let iface_def = {
+                   Env.iface_name = interface_info.interface_name;
+                   Env.iface_type_params = interface_info.interface_type_params;
+                   Env.iface_members = interface_info.interface_members;
+                 } in
+                 Env.add_interface name iface_def acc_env
+             | Module_loader.ExportedStruct (_original_name, struct_info) ->
+                 let field_list = List.filter_map (function
+                   | SField field -> Some field
+                   | SMethod _ -> None
+                 ) struct_info.struct_members in
+
+                 let struct_fields = List.map (fun field ->
+                   let field_name = match field.field_name with
+                     | Some name -> name
+                     | None ->
+                         (match field.field_type with
+                          | TVar type_name -> type_name
+                          | _ -> "_invalid_")
+                   in
+                   (field_name, type_expr_to_ty field.field_type)
+                 ) field_list in
+
+                 let method_list = List.filter_map (function
+                   | SField _ -> None
+                   | SMethod (method_name, type_params, params, ret_ty_opt, _body, _) ->
+                       Some (method_name, type_params, params, ret_ty_opt)
+                 ) struct_info.struct_members in
+
+                 let struct_methods = List.fold_left (fun methods_map (method_name, _type_params, params, ret_ty_opt) ->
+                   let param_types = List.mapi (fun i (pname, pty_opt, _) ->
+                     if i = 0 && pname = "self" then
+                       TyStruct (struct_info.struct_name, [])
+                     else
+                       match pty_opt with
+                       | Some t -> type_expr_to_ty t
+                       | None -> fresh_type_var ()
+                   ) params in
+                   let ret_type = match ret_ty_opt with
+                     | Some t -> type_expr_to_ty t
+                     | None -> TyNone
+                   in
+                   let method_type = TyFunc (param_types, ret_type) in
+                   Env.StringMap.add method_name method_type methods_map
+                 ) Env.StringMap.empty method_list in
+
+                 let struct_def = {
+                   Env.struct_name = struct_info.struct_name;
+                   Env.struct_type_params = struct_info.struct_type_params;
+                   Env.struct_fields = struct_fields;
+                   Env.struct_methods = struct_methods;
+                 } in
+                 let acc_env_with_struct = Env.add_struct name struct_def acc_env in
+                 let struct_type = TyStruct (name, []) in
+                 add_binding name struct_type acc_env_with_struct
+             | Module_loader.ExportedEnum (_original_name, enum_info) ->
+                 let enum_type = TyEnum (enum_info.enum_name, []) in
+                 add_binding name enum_type acc_env
            ) env imports in
            (new_env, empty_subst))
 
@@ -503,8 +644,65 @@ let rec check_statement env = function
                  let func_type = TyFunc (param_types, ret_type) in
                  let default_values = List.map (fun (_, _, default_opt) -> default_opt) def_info.def_params in
                  Env.add_function_with_defaults name func_type default_values acc_env
-             | _ ->
-                 acc_env
+             | Module_loader.ExportedInterface (_original_name, interface_info) ->
+                 let iface_def = {
+                   Env.iface_name = interface_info.interface_name;
+                   Env.iface_type_params = interface_info.interface_type_params;
+                   Env.iface_members = interface_info.interface_members;
+                 } in
+                 Env.add_interface name iface_def acc_env
+             | Module_loader.ExportedStruct (_original_name, struct_info) ->
+                 let field_list = List.filter_map (function
+                   | SField field -> Some field
+                   | SMethod _ -> None
+                 ) struct_info.struct_members in
+
+                 let struct_fields = List.map (fun field ->
+                   let field_name = match field.field_name with
+                     | Some name -> name
+                     | None ->
+                         (match field.field_type with
+                          | TVar type_name -> type_name
+                          | _ -> "_invalid_")
+                   in
+                   (field_name, type_expr_to_ty field.field_type)
+                 ) field_list in
+
+                 let method_list = List.filter_map (function
+                   | SField _ -> None
+                   | SMethod (method_name, type_params, params, ret_ty_opt, _body, _) ->
+                       Some (method_name, type_params, params, ret_ty_opt)
+                 ) struct_info.struct_members in
+
+                 let struct_methods = List.fold_left (fun methods_map (method_name, _type_params, params, ret_ty_opt) ->
+                   let param_types = List.mapi (fun i (pname, pty_opt, _) ->
+                     if i = 0 && pname = "self" then
+                       TyStruct (struct_info.struct_name, [])
+                     else
+                       match pty_opt with
+                       | Some t -> type_expr_to_ty t
+                       | None -> fresh_type_var ()
+                   ) params in
+                   let ret_type = match ret_ty_opt with
+                     | Some t -> type_expr_to_ty t
+                     | None -> TyNone
+                   in
+                   let method_type = TyFunc (param_types, ret_type) in
+                   Env.StringMap.add method_name method_type methods_map
+                 ) Env.StringMap.empty method_list in
+
+                 let struct_def = {
+                   Env.struct_name = struct_info.struct_name;
+                   Env.struct_type_params = struct_info.struct_type_params;
+                   Env.struct_fields = struct_fields;
+                   Env.struct_methods = struct_methods;
+                 } in
+                 let acc_env_with_struct = Env.add_struct name struct_def acc_env in
+                 let struct_type = TyStruct (name, []) in
+                 add_binding name struct_type acc_env_with_struct
+             | Module_loader.ExportedEnum (_original_name, enum_info) ->
+                 let enum_type = TyEnum (enum_info.enum_name, []) in
+                 add_binding name enum_type acc_env
            ) env imports in
            (new_env, empty_subst))
 

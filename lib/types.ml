@@ -165,6 +165,26 @@ let rec unify t1 t2 =
             with Failure _ -> try_unify_with_members rest
       in
       try_unify_with_members ts
+  | (TyStruct (name1, params1), TyStruct (name2, params2)) when name1 = name2 && List.length params1 = List.length params2 ->
+      (* 结构体类型统一：名称相同且类型参数一致 *)
+      if params1 = [] && params2 = [] then
+        empty_subst
+      else
+        List.fold_left2
+          (fun subst t1 t2 ->
+            let s = unify (apply_subst subst t1) (apply_subst subst t2) in
+            compose_subst s subst)
+          empty_subst params1 params2
+  | (TyEnum (name1, params1), TyEnum (name2, params2)) when name1 = name2 && List.length params1 = List.length params2 ->
+      (* 枚举类型统一：名称相同且类型参数一致 *)
+      if params1 = [] && params2 = [] then
+        empty_subst
+      else
+        List.fold_left2
+          (fun subst t1 t2 ->
+            let s = unify (apply_subst subst t1) (apply_subst subst t2) in
+            compose_subst s subst)
+          empty_subst params1 params2
   | _ ->
       failwith (Printf.sprintf "Cannot unify %s and %s" (ty_to_string t1) (ty_to_string t2))
 

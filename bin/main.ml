@@ -198,9 +198,9 @@ let run_command input_file =
     (* 运行程序 *)
     let exit_code = Sys.command final_exe in
 
-    (* 清理生成的文件 *)
-    (try Sys.remove final_ll with _ -> ());
+    (* 清理生成的文件：删除 bin 文件和 cache 子目录 *)
     (try Sys.remove final_exe with _ -> ());
+    (try ignore (Sys.command (Printf.sprintf "rm -rf %s" program_cache_dir)) with _ -> ());
 
     exit exit_code
   with

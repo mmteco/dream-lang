@@ -48,6 +48,24 @@ let rec llvm_type_to_string = function
 let mangle_name name =
   "@" ^ String.map (fun c -> if c = '_' then '_' else c) name
 
+(* LLVM 字符串转义 *)
+let llvm_escape_string s =
+  let buf = Buffer.create (String.length s) in
+  let byte_count = ref 0 in
+  String.iter (fun c ->
+    incr byte_count;  (* 每个字符在 LLVM IR 中都占 1 字节 *)
+    match c with
+    | '\n' -> Buffer.add_string buf "\\0A"
+    | '\t' -> Buffer.add_string buf "\\09"
+    | '\r' -> Buffer.add_string buf "\\0D"
+    | '\\' -> Buffer.add_string buf "\\\\"
+    | '"' -> Buffer.add_string buf "\\\""
+    | c when Char.code c < 32 || Char.code c > 126 ->
+        Printf.bprintf buf "\\%02X" (Char.code c)
+    | c -> Buffer.add_char buf c
+  ) s;
+  (Buffer.contents buf, !byte_count + 1)  (* +1 for \00 *)
+
 (* AST 类型表达式转 LLVM 类型 *)
 let rec type_expr_to_llvm_type = function
   | TInt -> I32
@@ -61,7 +79,12 @@ let rec type_expr_to_llvm_type = function
   | TTuple _ -> TuplePtr
   | TDict _ -> DictPtr
   | TUnion _ -> UnionPtr  (* Union 类型映射为 union_t* *)
-  | TVar _ -> I32
+  | TVar name ->
+      (* 检查是否是已注册的结构体 *)
+      if Hashtbl.mem struct_registry name then
+        Ptr I32  (* 结构体类型映射为指针 *)
+      else
+        I32
   | TOption _ -> Ptr I32
   | TResult _ -> EnumPtr  (* Result 类型映射为 enum_t* *)
   | TEnum _ -> EnumPtr    (* Enum 类型映射为 enum_t* *)
@@ -85,7 +108,8 @@ let gen_binop = function
   | Or -> "or"
 
 (* 装箱：将具体类型值包装为 union_t* *)
-let box_to_union buf ctx value src_type =
+(* type_name_opt: 当装箱结构体时，提供具体的结构体名称 *)
+let box_to_union buf ctx value src_type type_name_opt =
   let result = fresh_temp () in
   (match src_type with
    | I32 ->
@@ -102,6 +126,44 @@ let box_to_union buf ctx value src_type =
        let bytes_ptr = fresh_temp () in
        Printf.bprintf buf "  %s = extractvalue { i32, i8* } %s, 1\n" bytes_ptr value;
        Printf.bprintf buf "  %s = call %%union_t* @union_create_bytes(i8* %s)\n" result bytes_ptr
+   | Ptr I8 ->
+       (* i8* 指针类型 - 通常是字符串字面量 *)
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_string(i8* %s)\n" result value
+   | StructPtr struct_name ->
+       (* 结构体指针类型 - 装箱为 union struct，使用结构体名称 *)
+       let type_name = struct_name in
+       (* 将 i32* 转换为 i8* *)
+       let ptr_as_i8 = fresh_temp () in
+       Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" ptr_as_i8 value;
+       (* 创建类型名字符串 *)
+       incr string_counter;
+       let type_str_name = Printf.sprintf "@.str%d" !string_counter in
+       let (escaped_type_name, type_name_len) = llvm_escape_string type_name in
+       (* 注意：这里需要在调用 box_to_union 的上下文中添加字符串字面量 *)
+       ctx.string_literals <- (type_str_name, escaped_type_name, type_name_len) :: ctx.string_literals;
+       let type_name_ptr = fresh_temp () in
+       Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+         type_name_ptr type_name_len type_name_len type_str_name;
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_struct(i8* %s, i8* %s)\n" result ptr_as_i8 type_name_ptr
+   | Ptr I32 ->
+       (* 通用指针类型 - 使用传入的类型名，或使用默认值 *)
+       let type_name = match type_name_opt with
+         | Some name -> name
+         | None -> "unknown_struct"
+       in
+       (* 将 i32* 转换为 i8* *)
+       let ptr_as_i8 = fresh_temp () in
+       Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" ptr_as_i8 value;
+       (* 创建类型名字符串 *)
+       incr string_counter;
+       let type_str_name = Printf.sprintf "@.str%d" !string_counter in
+       let (escaped_type_name, type_name_len) = llvm_escape_string type_name in
+       (* 注意：这里需要在调用 box_to_union 的上下文中添加字符串字面量 *)
+       ctx.string_literals <- (type_str_name, escaped_type_name, type_name_len) :: ctx.string_literals;
+       let type_name_ptr = fresh_temp () in
+       Printf.bprintf buf "  %s = getelementptr [%d x i8], [%d x i8]* %s, i32 0, i32 0\n"
+         type_name_ptr type_name_len type_name_len type_str_name;
+       Printf.bprintf buf "  %s = call %%union_t* @union_create_struct(i8* %s, i8* %s)\n" result ptr_as_i8 type_name_ptr
    | _ ->
        (* 其他类型暂不支持 *)
        Printf.bprintf buf "  ; TODO: box type %s to union\n" (llvm_type_to_string src_type);

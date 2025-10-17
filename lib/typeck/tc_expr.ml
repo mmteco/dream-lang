@@ -31,13 +31,15 @@ let rec infer_expr env = function
       let (t1, s1) = infer_expr env e1 in
       let (t2, s2) = infer_expr (apply_subst_to_env s1 env) e2 in
       let s3 = compose_subst s2 s1 in
-      (match op with
+      let t1' = apply_subst s3 t1 in
+      let t2' = apply_subst s3 t2 in
+
+      (* 检查内置运算符 *)
+      let builtin_result = match op with
        | Add ->
-           let t1' = apply_subst s3 t1 in
-           let t2' = apply_subst s3 t2 in
            (match t1', t2' with
             | TyList elem_t1, TyList elem_t2 ->
-                (try
+                Some (try
                    let s4 = unify elem_t1 elem_t2 in
                    (TyList (apply_subst s4 elem_t1), compose_subst s4 s3)
                  with Failure msg ->
@@ -45,76 +47,138 @@ let rec infer_expr env = function
                      (Printf.sprintf "List concatenation requires same element types: %s" msg) in
                    report_error err;
                    (TyList elem_t1, s3))
-            | TyInt, TyInt ->
-                (TyInt, s3)
-            | _, _ ->
-                (try
-                   let s4 = unify t1' TyInt in
-                   let s5 = unify (apply_subst s4 t2') TyInt in
-                   (TyInt, compose_subst s5 (compose_subst s4 s3))
-                 with Failure msg ->
-                   let err = make_error (TypeError msg) pos
-                     (Printf.sprintf "Type error in arithmetic operation: %s" msg) in
-                   report_error err;
-                   (TyUnknown, s3)))
+            | TyInt, TyInt -> Some (TyInt, s3)
+            | TyStr, TyStr -> Some (TyStr, s3)  (* 字符串拼接 *)
+            | _, _ -> None)  (* 尝试运算符重载 *)
        | Sub | Mul | Div | Mod ->
-           (try
-              let s4 = unify (apply_subst s3 t1) TyInt in
-              let s5 = unify (apply_subst s4 t2) TyInt in
-              let final_subst = compose_subst s5 (compose_subst s4 s3) in
-              (TyInt, final_subst)
-            with Failure msg ->
-              let err = make_error (TypeError msg) pos
-                (Printf.sprintf "Type error in arithmetic operation: %s" msg) in
-              report_error err;
-              (TyUnknown, s3))
+           (match t1', t2' with
+            | TyInt, TyInt -> Some (TyInt, s3)
+            | _, _ -> None)  (* 尝试运算符重载 *)
        | Eq | Neq | Lt | Gt | Lte | Gte ->
+           (* 比较运算符：先尝试内置 *)
            (try
-              let s4 = unify (apply_subst s3 t1) (apply_subst s3 t2) in
-              (TyBool, compose_subst s4 s3)
-            with Failure msg ->
-              let t1' = apply_subst s3 t1 in
-              let t2' = apply_subst s3 t2 in
+              let s4 = unify t1' t2' in
+              Some (TyBool, compose_subst s4 s3)
+            with Failure _ ->
               if t1' = TyUnknown || t2' = TyUnknown then
-                (TyBool, s3)
-              else begin
-                let err = make_error (TypeError msg) pos
-                  (Printf.sprintf "Type error in comparison: %s" msg) in
-                report_error err;
-                (TyBool, s3)
-              end)
+                Some (TyBool, s3)
+              else
+                None)  (* 尝试运算符重载 *)
        | And | Or ->
+           (* 逻辑运算符不可重载 *)
            (try
-              let s4 = unify (apply_subst s3 t1) TyBool in
-              let s5 = unify (apply_subst s4 t2) TyBool in
-              (TyBool, compose_subst s5 (compose_subst s4 s3))
+              let s4 = unify t1' TyBool in
+              let s5 = unify (apply_subst s4 t2') TyBool in
+              Some (TyBool, compose_subst s5 (compose_subst s4 s3))
             with Failure msg ->
               let err = make_error (TypeError msg) pos
                 (Printf.sprintf "Type error in logical operation: %s" msg) in
               report_error err;
-              (TyBool, s3)))
+              Some (TyBool, s3))
+      in
+
+      (* 如果内置运算符不适用，尝试运算符重载 *)
+      (match builtin_result with
+       | Some result -> result
+       | None ->
+           (* 查找接口实现 *)
+           (match Env.find_binop_impl t1' op t2' env with
+            | Some impl_def ->
+                let method_name = Env.binop_to_method_name op in
+                (match Env.get_operator_method_type impl_def method_name with
+                 | Some (TyFunc (param_types, ret_type)) ->
+                     (* 验证参数类型 *)
+                     (match param_types with
+                      | [self_ty; other_ty] ->
+                          (try
+                             let s4 = unify t1' self_ty in
+                             let s5 = unify (apply_subst s4 t2') (apply_subst s4 other_ty) in
+                             let final_subst = compose_subst s5 (compose_subst s4 s3) in
+                             (apply_subst final_subst ret_type, final_subst)
+                           with Failure msg ->
+                             let err = make_error (TypeError msg) pos
+                               (Printf.sprintf "Operator method type mismatch: %s" msg) in
+                             report_error err;
+                             (TyUnknown, s3))
+                      | _ ->
+                          let err = make_error (TypeError "Invalid operator method signature") pos
+                            "Operator method must have exactly two parameters" in
+                          report_error err;
+                          (TyUnknown, s3))
+                 | _ ->
+                     let err = make_error (TypeError "Method not found") pos
+                       (Printf.sprintf "Operator method '%s' not found in implementation" method_name) in
+                     report_error err;
+                     (TyUnknown, s3))
+            | None ->
+                (* 没有找到接口实现，报告错误 *)
+                let err = make_error (TypeError "Operator not supported") pos
+                  (Printf.sprintf "Operator %s not supported for types %s and %s"
+                    (match op with
+                     | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | Mod -> "%"
+                     | Eq -> "==" | Neq -> "!=" | Lt -> "<" | Gt -> ">"
+                     | Lte -> "<=" | Gte -> ">=" | And -> "and" | Or -> "or")
+                    (ty_to_string t1') (ty_to_string t2')) in
+                report_error err;
+                (TyUnknown, s3)))
 
   | EUnOp (op, e, pos) ->
       let (t, s) = infer_expr env e in
-      (match op with
+      let t' = apply_subst s t in
+
+      (* 检查内置一元运算符 *)
+      let builtin_result = match op with
        | Neg ->
-           (try
-              let s2 = unify (apply_subst s t) TyInt in
-              (TyInt, compose_subst s2 s)
-            with Failure msg ->
-              let err = make_error (TypeError msg) pos
-                (Printf.sprintf "Type error in negation: %s" msg) in
-              report_error err;
-              (TyUnknown, s))
+           (match t' with
+            | TyInt -> Some (TyInt, s)
+            | _ -> None)  (* 尝试运算符重载 *)
        | Not ->
            (try
-              let s2 = unify (apply_subst s t) TyBool in
-              (TyBool, compose_subst s2 s)
-            with Failure msg ->
-              let err = make_error (TypeError msg) pos
-                (Printf.sprintf "Type error in logical not: %s" msg) in
-              report_error err;
-              (TyBool, s)))
+              let s2 = unify t' TyBool in
+              Some (TyBool, compose_subst s2 s)
+            with Failure _ -> None)  (* 尝试运算符重载 *)
+      in
+
+      (* 如果内置运算符不适用，尝试运算符重载 *)
+      (match builtin_result with
+       | Some result -> result
+       | None ->
+           (* 查找接口实现 *)
+           (match Env.find_unop_impl t' op env with
+            | Some impl_def ->
+                let method_name = Env.unop_to_method_name op in
+                (match Env.get_operator_method_type impl_def method_name with
+                 | Some (TyFunc (param_types, ret_type)) ->
+                     (* 验证参数类型（一元运算符只有 self 参数） *)
+                     (match param_types with
+                      | [self_ty] ->
+                          (try
+                             let s2 = unify t' self_ty in
+                             let final_subst = compose_subst s2 s in
+                             (apply_subst final_subst ret_type, final_subst)
+                           with Failure msg ->
+                             let err = make_error (TypeError msg) pos
+                               (Printf.sprintf "Operator method type mismatch: %s" msg) in
+                             report_error err;
+                             (TyUnknown, s))
+                      | _ ->
+                          let err = make_error (TypeError "Invalid operator method signature") pos
+                            "Unary operator method must have exactly one parameter (self)" in
+                          report_error err;
+                          (TyUnknown, s))
+                 | _ ->
+                     let err = make_error (TypeError "Method not found") pos
+                       (Printf.sprintf "Operator method '%s' not found in implementation" method_name) in
+                     report_error err;
+                     (TyUnknown, s))
+            | None ->
+                (* 没有找到接口实现，报告错误 *)
+                let err = make_error (TypeError "Operator not supported") pos
+                  (Printf.sprintf "Unary operator %s not supported for type %s"
+                    (match op with Neg -> "-" | Not -> "not")
+                    (ty_to_string t')) in
+                report_error err;
+                (TyUnknown, s)))
 
   | EList (elems, pos) ->
       if elems = [] then

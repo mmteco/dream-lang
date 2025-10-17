@@ -1,6 +1,29 @@
 %{
   open Ast
 
+  (* 从 type_expr 提取类型名称字符串 *)
+  let rec type_expr_to_string = function
+    | TInt -> "int"
+    | TFloat -> "float"
+    | TStr -> "str"
+    | TRune -> "rune"
+    | TByte -> "byte"
+    | TBytes -> "bytes"
+    | TBool -> "bool"
+    | TNone -> "None"
+    | TVar name -> name
+    | TList ty -> "list[" ^ type_expr_to_string ty ^ "]"
+    | TTuple tys -> "(" ^ String.concat ", " (List.map type_expr_to_string tys) ^ ")"
+    | TUnion tys -> String.concat " | " (List.map type_expr_to_string tys)
+    | TDict (k, v) -> "dict[" ^ type_expr_to_string k ^ ", " ^ type_expr_to_string v ^ "]"
+    | TOption ty -> "Option[" ^ type_expr_to_string ty ^ "]"
+    | TResult (ok, err) -> "Result[" ^ type_expr_to_string ok ^ ", " ^ type_expr_to_string err ^ "]"
+    | TEnum (name, _) -> name
+    | TStruct (name, _) -> name
+    | TFunc (params, ret) ->
+        "(" ^ String.concat ", " (List.map type_expr_to_string params) ^ ") -> " ^ type_expr_to_string ret
+    | TGeneric (name, _) -> name
+
   let get_expr_pos = function
     | EInt (_, p) | EFloat (_, p) | EString (_, p) | ERune (_, p) | EByte (_, p) | EBool (_, p)
     | EVar (_, p) | EBinOp (_, _, _, p) | EUnOp (_, _, p)
@@ -165,9 +188,9 @@ statement:
                  impl_target = target;
                  impl_members = members;
                  impl_pos = { line = 0; column = 0 } }, { line = 0; column = 0 }) }
-  | IMPL interface_name = IDENT LBRACKET _type_params = separated_list(COMMA, type_expr) RBRACKET FOR target = type_expr COLON newline_sep INDENT members = impl_member_list DEDENT
+  | IMPL interface_name = IDENT LBRACKET type_params = separated_list(COMMA, type_expr) RBRACKET FOR target = type_expr COLON newline_sep INDENT members = impl_member_list DEDENT
       { SImpl ({ impl_interface = Some interface_name;
-                 impl_type_params = [];  (* 暂时忽略类型参数,后续实现 *)
+                 impl_type_params = List.map type_expr_to_string type_params;
                  impl_target = target;
                  impl_members = members;
                  impl_pos = { line = 0; column = 0 } }, { line = 0; column = 0 }) }

@@ -1,5 +1,16 @@
 (* LLVM 类型定义 *)
 
+(* Debug 输出辅助函数 - 运行时检查环境变量 DEBUG=true *)
+let debug_print format =
+  let debug_enabled =
+    try Sys.getenv "DEBUG" = "true"
+    with Not_found -> false
+  in
+  if debug_enabled then
+    Printf.eprintf format
+  else
+    Printf.ifprintf stderr format
+
 type llvm_type =
   | I32
   | U32  (* unsigned 32-bit *)
@@ -54,6 +65,18 @@ let struct_registry : (string, struct_definition) Hashtbl.t = Hashtbl.create 16
 
 (* 方法注册表: method_name -> struct_name *)
 let struct_method_registry : (string, string) Hashtbl.t = Hashtbl.create 16
+
+(* impl 方法注册表: (target_type, interface, method) -> mangled_name *)
+(* 例如: ("Vec2", "Add", "add") -> "Add_add_for_Vec2" *)
+let impl_method_registry : ((string * string * string), string) Hashtbl.t = Hashtbl.create 16
+
+(* impl 方法参数类型注册表: mangled_name -> param_types *)
+(* 用于存储每个 impl 方法的参数类型列表 *)
+let impl_method_param_types : (string, llvm_type list) Hashtbl.t = Hashtbl.create 16
+
+(* impl 方法返回类型注册表: mangled_name -> return_type *)
+(* 用于存储每个 impl 方法的返回类型 *)
+let impl_method_return_types : (string, llvm_type) Hashtbl.t = Hashtbl.create 16
 
 (* Context 上下文 *)
 type context = {

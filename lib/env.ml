@@ -231,6 +231,76 @@ let c_runtime_functions = [
 let is_c_runtime_function name =
   List.exists (fun (fn, _) -> fn = name) c_runtime_functions
 
+(* === 运算符重载支持 === *)
+
+(* 二元运算符到接口名的映射 *)
+let binop_to_interface_name = function
+  | Add -> Some "Add"
+  | Sub -> Some "Sub"
+  | Mul -> Some "Mul"
+  | Div -> Some "Div"
+  | Mod -> Some "Mod"
+  | Eq -> Some "Eq"
+  | Neq -> Some "Eq"  (* != 使用 Eq 接口的 neq 方法 *)
+  | Lt -> Some "Ord"
+  | Gt -> Some "Ord"
+  | Lte -> Some "Ord"
+  | Gte -> Some "Ord"
+  | And | Or -> None  (* 逻辑运算符不可重载 *)
+
+(* 二元运算符到方法名的映射 *)
+let binop_to_method_name = function
+  | Add -> "add"
+  | Sub -> "sub"
+  | Mul -> "mul"
+  | Div -> "div"
+  | Mod -> "mod"
+  | Eq -> "eq"
+  | Neq -> "neq"
+  | Lt -> "lt"
+  | Gt -> "gt"
+  | Lte -> "lte"
+  | Gte -> "gte"
+  | And | Or -> failwith "And/Or operators cannot be overloaded"
+
+(* 一元运算符到接口名的映射 *)
+let unop_to_interface_name = function
+  | Neg -> Some "Neg"
+  | Not -> Some "Not"
+
+(* 一元运算符到方法名的映射 *)
+let unop_to_method_name = function
+  | Neg -> "neg"
+  | Not -> "not_op"
+
+(* 查找二元运算符的接口实现 *)
+let find_binop_impl left_ty binop _right_ty env =
+  (* TODO: 未来可以验证右操作数类型是否与接口参数匹配 *)
+  match binop_to_interface_name binop with
+  | None -> None  (* 不可重载的运算符 *)
+  | Some interface_name ->
+      (* 查找形如 impl Interface[RightTy] for LeftTy 的实现 *)
+      List.find_opt (fun impl ->
+        impl.impl_interface_name = interface_name &&
+        is_compatible impl.impl_target_type left_ty
+      ) env.impls
+
+(* 查找一元运算符的接口实现 *)
+let find_unop_impl operand_ty unop env =
+  match unop_to_interface_name unop with
+  | None -> None
+  | Some interface_name ->
+      List.find_opt (fun impl ->
+        impl.impl_interface_name = interface_name &&
+        is_compatible impl.impl_target_type operand_ty
+      ) env.impls
+
+(* 获取运算符接口实现的方法类型 *)
+let get_operator_method_type impl_def method_name =
+  StringMap.find_opt method_name impl_def.impl_methods
+
+(* === 运算符重载支持结束 === *)
+
 let builtin_env =
   let env = empty_env in
   let env = add_binding "print" (TyFunc ([TyVar "T"], TyNone)) env in

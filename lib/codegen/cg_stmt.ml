@@ -20,7 +20,11 @@ let rec gen_statement buf ctx = function
         | Some (TUnion _) when t <> UnionPtr ->
             (* 类型注解是 union，但值不是 union_t*，需要装箱 *)
             Printf.bprintf buf "  ; Boxing value to union\n";
-            box_to_union buf ctx v t
+            let type_name_opt = match t with
+              | StructPtr name -> Some name
+              | _ -> None
+            in
+            box_to_union buf ctx v t type_name_opt
         | _ ->
             (v, t)
       in
@@ -342,7 +346,11 @@ let rec gen_statement buf ctx = function
         | Some UnionPtr when t <> UnionPtr ->
             (* 函数返回 union 但值不是 union,需要装箱 *)
             Printf.bprintf buf "  ; Boxing return value to union\n";
-            box_to_union buf ctx v t
+            let type_name_opt = match t with
+              | StructPtr name -> Some name
+              | _ -> None
+            in
+            box_to_union buf ctx v t type_name_opt
         | _ ->
             (v, t)
       in
