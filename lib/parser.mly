@@ -30,11 +30,12 @@
 %token AND OR NOT
 %token ASSIGN ARROW PIPE UNDERSCORE
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
-%token COMMA COLON SEMICOLON DOT QUESTION
+%token COMMA COLON SEMICOLON DOT QUESTION CONS
 %token INDENT DEDENT NEWLINE
 %token EOF
 
 %right QUESTION COLON  (* 三元运算符优先级最低 *)
+%right CONS  (* :: 右结合,用于列表模式匹配 *)
 %left PIPE
 %left OR
 %left AND
@@ -340,7 +341,9 @@ pattern:
         | [p] -> p  (* 单个模式，不是元组 *)
         | _ -> PTuple patterns
       }
-  | LBRACKET patterns = separated_list(COMMA, pattern) RBRACKET { PList patterns }
+  | LBRACKET RBRACKET { PList [] }  (* 空列表 *)
+  | LBRACKET patterns = separated_list(COMMA, pattern) RBRACKET { PList patterns }  (* 列表模式: [x, y, z] *)
+  | p1 = pattern CONS p2 = pattern { PCons (p1, p2) }  (* Cons模式: head :: tail *)
   | enum_name = IDENT DOT variant_name = IDENT LPAREN patterns = separated_list(COMMA, pattern) RPAREN
       { PEnumVariant (enum_name, variant_name, patterns) }
   | enum_name = IDENT DOT variant_name = IDENT
@@ -364,7 +367,9 @@ match_pattern:
         | [p] -> p
         | _ -> PTuple patterns
       }
-  | LBRACKET patterns = separated_list(COMMA, match_pattern) RBRACKET { PList patterns }
+  | LBRACKET RBRACKET { PList [] }  (* 空列表 *)
+  | LBRACKET patterns = separated_list(COMMA, match_pattern) RBRACKET { PList patterns }  (* 列表模式: [x, y, z] *)
+  | p1 = match_pattern CONS p2 = match_pattern { PCons (p1, p2) }  (* Cons模式: head :: tail *)
   | OPTION DOT SOME LPAREN patterns = separated_list(COMMA, match_pattern) RPAREN
       { PEnumVariant ("Option", "Some", patterns) }
   | OPTION DOT NONE

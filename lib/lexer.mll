@@ -266,6 +266,12 @@ rule token = parse
       let end_pos = make_lexing_pos () in
       (COMMA, start_pos, end_pos)
     }
+  | "::" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (CONS, start_pos, end_pos)
+    }
   | ':' {
       let start_pos = make_lexing_pos () in
       update_pos lexbuf;

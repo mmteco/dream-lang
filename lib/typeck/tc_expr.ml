@@ -508,7 +508,18 @@ let rec infer_expr env = function
                    | TyTuple elem_types when List.length pats = List.length elem_types ->
                        List.fold_left2 bind_pattern env pats elem_types
                    | _ -> env)
-              | PList _ -> env
+              | PList pats ->
+                  (match expected_type with
+                   | TyList elem_type ->
+                       List.fold_left (fun env pat -> bind_pattern env pat elem_type) env pats
+                   | _ -> env)
+              | PCons (head_pat, tail_pat) ->
+                  (* head :: tail: head是元素类型,tail是列表类型 *)
+                  (match expected_type with
+                   | TyList elem_type ->
+                       let env1 = bind_pattern env head_pat elem_type in
+                       bind_pattern env1 tail_pat expected_type  (* tail也是列表类型 *)
+                   | _ -> env)
               | PType (var_name, type_pattern) ->
                   let target_type = type_expr_to_ty type_pattern in
                   (match expected_type with

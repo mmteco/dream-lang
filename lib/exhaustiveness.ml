@@ -21,6 +21,7 @@ let rec pattern_to_space = function
   | PBool b -> PConst (PBool b)
   | PTuple pats -> PTup (List.map pattern_to_space pats)
   | PList _ -> PAny  (* 暂时简化处理列表 *)
+  | PCons _ -> PAny  (* Cons模式暂时简化处理 *)
   | PType (_, _) -> PAny  (* 类型模式暂时当作通配符处理 *)
   | PEnumVariant (enum_name, variant_name, pats) ->
       PVariant (enum_name, variant_name, List.map pattern_to_space pats)

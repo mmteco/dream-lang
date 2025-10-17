@@ -257,6 +257,38 @@ for (k, v) in dict_items(d):
     print(v)
 ```
 
+#### 列表解构 ✅
+```python
+# 基本列表解构
+let numbers = [10, 20, 30]
+let [a, b, c] = numbers
+print(a)  # 10
+print(b)  # 20
+print(c)  # 30
+
+# 多元素列表解构
+let data = [100, 200, 300, 400]
+let [first, second, third, fourth] = data
+let sum = first + second + third + fourth
+print(sum)  # 1000
+
+# 解构与计算结合
+let values = [5, 15, 25]
+let [x, y, z] = values
+let result = x + y + z
+print(result)  # 45
+```
+
+**特性**：
+- 支持任意长度的列表解构
+- 模式中的变量数量必须与列表长度匹配
+- 编译时类型检查确保列表类型正确
+- 高效的LLVM代码生成，直接访问数组元素
+
+**限制**：
+- 暂不支持嵌套列表解构（如 `let [[a, b], [c, d]] = data`）
+- 解构的列表必须是动态数组类型（DynArray）
+
 #### 字典 ✅
 ```python
 # 整数键值对

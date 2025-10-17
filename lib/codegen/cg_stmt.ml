@@ -89,6 +89,127 @@ let rec gen_statement buf ctx = function
                  ) pats
              | _ ->
                  Printf.bprintf buf "  ; pattern type mismatch - expected tuple\n")
+        | PList pats ->
+            (* 对于列表,需要从列表中提取每个元素 *)
+            (match value_type with
+             | DynArray elem_t ->
+                 (* 从动态数组结构中提取 data 指针 *)
+                 let data_ptr_field = fresh_temp () in
+                 Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 2\n"
+                   data_ptr_field (llvm_type_to_string value_type) (llvm_type_to_string value_type) value_temp;
+
+                 (* 加载 data 指针 *)
+                 let data_ptr = fresh_temp () in
+                 Printf.bprintf buf "  %s = load %s*, %s** %s\n"
+                   data_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr_field;
+
+                 (* 为每个模式提取对应索引的元素 *)
+                 List.iteri (fun i p ->
+                   let elem_ptr = fresh_temp () in
+                   let elem_val = fresh_temp () in
+                   Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 %d\n"
+                     elem_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr i;
+                   Printf.bprintf buf "  %s = load %s, %s* %s\n"
+                     elem_val (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) elem_ptr;
+                   gen_pattern_bindings p elem_val elem_t
+                 ) pats
+             | _ ->
+                 Printf.bprintf buf "  ; pattern type mismatch - expected list\n")
+        | PCons (head_pat, tail_pat) ->
+            (* Cons模式: head :: tail *)
+            (match value_type with
+             | DynArray elem_t ->
+                 (* 提取第一个元素 (head) *)
+                 let data_ptr_field = fresh_temp () in
+                 Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 2\n"
+                   data_ptr_field (llvm_type_to_string value_type) (llvm_type_to_string value_type) value_temp;
+
+                 let data_ptr = fresh_temp () in
+                 Printf.bprintf buf "  %s = load %s*, %s** %s\n"
+                   data_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr_field;
+
+                 (* 提取head *)
+                 let head_ptr = fresh_temp () in
+                 let head_val = fresh_temp () in
+                 Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0\n"
+                   head_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr;
+                 Printf.bprintf buf "  %s = load %s, %s* %s\n"
+                   head_val (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) head_ptr;
+
+                 (* 绑定head *)
+                 gen_pattern_bindings head_pat head_val elem_t;
+
+                 (* 创建tail列表 (从索引1开始的切片) - 直接用指针指向原数组数据+1 *)
+                 (* 由于这是let绑定,tail应该是一个新的独立列表 *)
+                 (* 获取原列表长度 *)
+                 let len_ptr = fresh_temp () in
+                 let len = fresh_temp () in
+                 Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 0, i32 1\n"
+                   len_ptr (llvm_type_to_string value_type) (llvm_type_to_string value_type) value_temp;
+                 Printf.bprintf buf "  %s = load i32, i32* %s\n" len len_ptr;
+
+                 (* 计算tail长度 = len - 1 *)
+                 let tail_len = fresh_temp () in
+                 Printf.bprintf buf "  %s = sub i32 %s, 1\n" tail_len len;
+
+                 (* 分配tail列表 *)
+                 let tail_list = fresh_temp () in
+                 Printf.bprintf buf "  %s = call { i32, i32, %s* }* @create_dynarray_i32(i32 %s)\n"
+                   tail_list (llvm_type_to_string elem_t) tail_len;
+
+
+                (* 设置tail的length字段为tail_len *)
+                let tail_len_field = fresh_temp () in
+                Printf.bprintf buf "  %s = getelementptr { i32, i32, %s* }, { i32, i32, %s* }* %s, i32 0, i32 1\n"
+                  tail_len_field (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) tail_list;
+                Printf.bprintf buf "  store i32 %s, i32* %s\n" tail_len tail_len_field;
+                 (* 复制数据: 从原数组的索引1开始复制tail_len个元素 *)
+                 let tail_data_ptr_field = fresh_temp () in
+                 Printf.bprintf buf "  %s = getelementptr { i32, i32, %s* }, { i32, i32, %s* }* %s, i32 0, i32 2\n"
+                   tail_data_ptr_field (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) tail_list;
+                 let tail_data_ptr = fresh_temp () in
+                 Printf.bprintf buf "  %s = load %s*, %s** %s\n"
+                   tail_data_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) tail_data_ptr_field;
+
+                 (* 源地址: data_ptr + 1 *)
+                 let src_ptr = fresh_temp () in
+                 Printf.bprintf buf "  %s = getelementptr %s, %s* %s, i32 1\n"
+                   src_ptr (llvm_type_to_string elem_t) (llvm_type_to_string elem_t) data_ptr;
+
+                 (* 使用memcpy复制数据 *)
+                 let elem_size = fresh_temp () in
+                 Printf.bprintf buf "  %s = getelementptr %s, %s* null, i32 1\n"
+                   elem_size (llvm_type_to_string elem_t) (llvm_type_to_string elem_t);
+                 let elem_size_int = fresh_temp () in
+                 Printf.bprintf buf "  %s = ptrtoint %s* %s to i32\n"
+                   elem_size_int (llvm_type_to_string elem_t) elem_size;
+                 let src_i8 = fresh_temp () in
+                 let dst_i8 = fresh_temp () in
+                 Printf.bprintf buf "  %s = bitcast %s* %s to i8*\n"
+                   src_i8 (llvm_type_to_string elem_t) src_ptr;
+                 Printf.bprintf buf "  %s = bitcast %s* %s to i8*\n"
+                   dst_i8 (llvm_type_to_string elem_t) tail_data_ptr;
+                 let copy_size = fresh_temp () in
+                 Printf.bprintf buf "  %s = mul i32 %s, %s\n" copy_size tail_len elem_size_int;
+                 Printf.bprintf buf "  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %s, i8* %s, i32 %s, i1 false)\n"
+                   dst_i8 src_i8 copy_size;
+
+                 (* 绑定tail - tail_list是指针,但需要作为DynArray类型绑定 *)
+                 (match tail_pat with
+                  | PVar tail_name ->
+                      let local = "%" ^ tail_name in
+                      Printf.bprintf buf "  %s = alloca %s*\n" local (llvm_type_to_string value_type);
+                      Printf.bprintf buf "  store %s* %s, %s** %s\n"
+                        (llvm_type_to_string value_type) tail_list (llvm_type_to_string value_type) local;
+                      add_variable ctx tail_name value_type
+                  | PCons _ ->
+                      (* 嵌套Cons模式: tail_list是指针,需要作为scrut_v传递给递归调用 *)
+                      gen_pattern_bindings tail_pat tail_list value_type
+                  | _ ->
+                      (* 其他复杂模式 *)
+                      Printf.bprintf buf "  ; unsupported nested pattern in cons\n")
+             | _ ->
+                 Printf.bprintf buf "  ; pattern type mismatch - expected list for cons\n")
         | _ ->
             Printf.bprintf buf "  ; unsupported pattern in let binding\n"
       in

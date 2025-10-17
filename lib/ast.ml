@@ -70,6 +70,7 @@ type token =
   | SEMICOLON
   | DOT
   | QUESTION  (* ? for error propagation and ternary operator *)
+  | CONS  (* :: for list pattern matching *)
   | INDENT
   | DEDENT
   | NEWLINE
@@ -150,7 +151,8 @@ and pattern =
   | PBool of bool
   | PVar of string
   | PTuple of pattern list
-  | PList of pattern list
+  | PList of pattern list  (* [x, y, z] - exact length match *)
+  | PCons of pattern * pattern  (* head :: tail - cons pattern *)
   | PType of string * type_expr
   | PWildcard
   | PEnumVariant of string * string * pattern list

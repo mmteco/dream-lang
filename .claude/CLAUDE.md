@@ -15,4 +15,4 @@
    2. test 测试，尽量只保存大而全的覆盖测试，避免太多文件；如果是已提交到git的就不要删了；如果 examples 里有，这里就不要重复
    3. docs markdown文档
 9. 永远不要替我操作 git，只允许只读的相关操作
-10. 编译器 dream 有子命令 build 和 run
+10. 编译器 dream 有子命令 build 和 run, run 命令结束后会删除生成文件，测试应该用 build 再手动运行

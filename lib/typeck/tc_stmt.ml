@@ -98,9 +98,31 @@ let rec check_statement env = function
                    (Printf.sprintf "Cannot unpack value into tuple pattern") in
                  report_error err;
                  env)
+        | PList pats ->
+            (match expected_type with
+             | TyList elem_type ->
+                 List.fold_left (fun env pat -> check_pattern env pat elem_type) env pats
+             | _ ->
+                 let err = make_error (TypeError "Pattern mismatch") pos
+                   (Printf.sprintf "Cannot unpack value into list pattern, expected list type but got %s"
+                     (Types.ty_to_string expected_type)) in
+                 report_error err;
+                 env)
+        | PCons (head_pat, tail_pat) ->
+            (* head :: tail: head是元素类型,tail是列表类型 *)
+            (match expected_type with
+             | TyList elem_type ->
+                 let env1 = check_pattern env head_pat elem_type in
+                 check_pattern env1 tail_pat expected_type  (* tail也是列表类型 *)
+             | _ ->
+                 let err = make_error (TypeError "Pattern mismatch") pos
+                   (Printf.sprintf "Cannot unpack value into cons pattern, expected list type but got %s"
+                     (Types.ty_to_string expected_type)) in
+                 report_error err;
+                 env)
         | _ ->
             let err = make_error (TypeError "Unsupported pattern") pos
-              "Only variable and tuple patterns are supported in let bindings" in
+              "Only variable, tuple, list, and cons patterns are supported in let bindings" in
             report_error err;
             env
       in

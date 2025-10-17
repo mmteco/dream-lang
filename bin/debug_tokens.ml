@@ -71,6 +71,7 @@ let tok_to_string = function
   | Parser.OPTION -> "OPTION"
   | Parser.RESULT -> "RESULT"
   | Parser.QUESTION -> "QUESTION"
+  | Parser.CONS -> "CONS"
 
 let () =
   if Array.length Sys.argv < 2 then begin
