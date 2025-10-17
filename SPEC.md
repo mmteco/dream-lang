@@ -57,7 +57,7 @@ and or not
 ```python
 "hello"             # 双引号字符串
 'world'             # 单引号字符串 (未实现)
-"""multiline"""     # 多行字符串 (未实现)
+'''multiline'''     # 多行字符串 (未实现)
 f"x = {x}"          # 格式化字符串 (未实现)
 ```
 
