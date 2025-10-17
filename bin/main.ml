@@ -111,7 +111,7 @@ let compile_to_exe output_ll =
     "runtime/memory.c";
     "runtime/dynarray.c";
     "runtime/string_ops.c";
-    "runtime/file_ops.c";
+    "runtime/file.c";
     "runtime/dict.c";
     "runtime/tuple.c";
     "runtime/union.c";

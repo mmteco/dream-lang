@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "file_ops.h"
+#include "file.h"
 #include "dynarray.h"
 
 char* __c_file_read(const char* path) {

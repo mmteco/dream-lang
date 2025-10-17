@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include "string_ops.h"
-#include "file_ops.h"
+#include "file.h"
 #include "dict.h"
 #include "tuple.h"
 #include "dynarray.h"
