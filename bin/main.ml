@@ -1,8 +1,6 @@
 open Dream_lib
 
-type backend =
-  | Legacy
-  | Dir
+open Compiler_backend
 
 let read_file filename =
   let ic = open_in filename in
@@ -17,17 +15,8 @@ let write_file filename content =
   close_out oc
 
 let generate_llvm backend program =
-  match backend with
-  | Legacy ->
-      (Llvmgen.gen_program program, None)
-  | Dir ->
-      (match Dir_lower.lower_program program with
-       | Error message -> failwith ("DIR lowering failed: " ^ message)
-       | Ok module_ ->
-           let verification_errors = Dir_verify.verify module_ in
-           if verification_errors <> [] then
-             failwith ("DIR verification failed:\n" ^ String.concat "\n" verification_errors);
-           (Dir_lower_llvm.render module_, Some (Dir_printer.render module_)))
+  let artifact = Compiler_backend.generate backend program in
+  (artifact.llvm_ir, artifact.dir_text)
 
 let compile_to_llvm ?(silent=false) ?(backend=Legacy) input_file =
   (* 重置错误计数器 *)

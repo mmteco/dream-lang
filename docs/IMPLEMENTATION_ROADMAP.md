@@ -54,7 +54,7 @@ AST/typed AST（逐步明确 HIR 边界）
 | 语法分析 | `lib/parser.mly`、`lib/ast.ml` |
 | 类型检查 | `lib/typeck/`、`lib/types.ml` |
 | 泛型单态化 | `lib/monomorphize.ml` |
-| LLVM 生成 | `lib/codegen/` |
+| legacy LLVM 生成 | `lib/backend/legacy/` |
 | 编译入口 | `bin/main.ml` |
 | 运行时 | `runtime/` |
 | 自举切片 | `bootstrap/compiler.dm`、`bootstrap/compiler.ll` |
@@ -64,10 +64,8 @@ AST/typed AST（逐步明确 HIR 边界）
 当前新增的 DIR 文件已经形成可选的端到端后端，并已有单元和示例回归测试：
 
 ```text
-lib/dir.ml
-lib/dir_verify.ml
-lib/dir_printer.ml
-lib/dir_lower_llvm.ml
+lib/ir/dir/
+lib/compiler/compiler_backend.ml
 ```
 
 它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串 lowering 和 LLVM lowering；通过

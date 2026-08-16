@@ -126,7 +126,7 @@ identity("hello")  # 生成 identity_str 版本
 
 #### 3.7 LLVM IR 代码生成
 ```
-lib/codegen/ → Llvmgen 模块
+lib/backend/legacy/ → Llvmgen 模块
 - llvmgen.ml      # 主入口和程序级代码生成
 - cg_expr.ml      # 表达式代码生成
 - cg_stmt.ml      # 语句代码生成
@@ -149,6 +149,19 @@ lib/codegen/ → Llvmgen 模块
 | enum      | %enum_t* | 枚举（Tagged Union）|
 | union     | %union_t* | Union类型 |
 | struct    | %struct_name | 结构体 |
+
+#### 3.8 DreamIR 后端
+```
+lib/ir/dir/ → Dir 模块
+lib/compiler/compiler_backend.ml → legacy/DIR 后端选择
+- dir.ml             # 类型化 CFG/SSA 数据结构
+- dir_lower.ml      # 类型检查后的 AST 到 DIR
+- dir_verify.ml     # DIR 验证
+- dir_printer.ml    # .dir 调试输出
+- dir_lower_llvm.ml # DIR 到 LLVM
+```
+
+通过 `--backend=dir` 选择 DreamIR；legacy 后端仍是默认后端，用于保持现有自举基线。
 
 **输出**：
 - 生成 `.ll` 文件（LLVM IR 文本格式）
@@ -238,14 +251,12 @@ dream/
 │   │   ├── tc_defaults.ml
 │   │   └── tc_utils.ml
 │   │
-│   └── codegen/       # 代码生成模块
-│       ├── llvmgen.ml
-│       ├── cg_expr.ml
-│       ├── cg_stmt.ml
-│       ├── cg_toplevel.ml
-│       ├── cg_types.ml
-│       ├── cg_utils.ml
-│       └── cg_shared.ml
+│   ├── ir/             # 中间表示
+│   │   └── dir/        # DreamIR
+│   ├── compiler/       # 编译管线和后端选择
+│   │   └── compiler_backend.ml
+│   └── backend/        # 后端实现
+│       └── legacy/     # 旧版直接 LLVM 生成
 │
 ├── runtime/           # C 运行时库
 │   ├── runtime.c      # 运行时初始化
@@ -312,7 +323,7 @@ dream/
          │
          ▼
 ┌─────────────────┐
-│  LLVM Codegen   │  lib/codegen/
+│  Legacy LLVM    │  lib/backend/legacy/
 │  代码生成       │  .ll 文件
 └────────┬────────┘
          │

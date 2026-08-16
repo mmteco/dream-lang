@@ -5,6 +5,7 @@
  (modules ast error types env lexer parser exhaustiveness monomorphize
           cg_types cg_utils cg_shared cg_expr cg_stmt cg_toplevel llvmgen
           dir dir_verify dir_printer dir_lower_llvm dir_lower
+          compiler_backend
           symbol_analyzer module_loader
           tc_utils tc_generics tc_expr tc_stmt tc_defaults typeck))
 

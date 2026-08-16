@@ -235,7 +235,7 @@ impl Mul[Matrix] for Matrix:
 3. **类型推导**
    - 返回类型为接口方法的返回类型
 
-#### 步骤 2：代码生成阶段（lib/codegen/cg_expr.ml）
+#### 步骤 2：代码生成阶段（lib/backend/legacy/cg_expr.ml）
 
 1. **运算符脱糖**
    - `a + b` → `a.add(b)`
@@ -353,7 +353,7 @@ let lookup_impl env target_type interface_name param_type =
 
 ### 4.5 代码生成器修改点
 
-#### 文件：lib/codegen/cg_expr.ml
+#### 文件：lib/backend/legacy/cg_expr.ml
 
 ```ocaml
 | EBinOp (left, op, right, pos) ->

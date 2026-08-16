@@ -3,7 +3,13 @@ _opam/
 _build/
 *.opam
 claude_docs/
-examples/
+.agents/
+.codegraph/
+tmp/
+
+# 示例源码应保留，编译产物不入库
+examples/*
+!examples/*.dm
 
 # 编译生成的文件
 *.ll
@@ -13,22 +19,18 @@ examples/
 *.cmx
 *.a
 *.so
+*.log
 
 # Dream ID
 *.dir
 
-# 可执行文件
-test/test_core
-bootstrap/compiler
-bootstrap/stage1
-bootstrap/stage2
-bootstrap/stage3
+# 可执行文件和无扩展名构建输出
+bootstrap/*
+!bootstrap/*.dm
+test/test_*
+!test/test_*.dm
 
 # 临时文件
 *.swp
 *.swo
 .DS_Store
-
-# IDE
-.vscode/
-*.iml
