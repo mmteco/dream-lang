@@ -6,6 +6,9 @@
 #include "memory.h"
 #include "utf8.h"
 
+static _Thread_local const char* cached_long_ascii_string = NULL;
+static _Thread_local size_t cached_long_ascii_length = 0;
+
 /**
  * string_length: 返回 rune 数量（不是字节数）
  *
@@ -59,9 +62,23 @@ char* string_substring(const char* str, int start, int end) {
         return empty;
     }
 
-    // 获取起始和结束的字节偏移
-    int byte_start = utf8_byte_offset(str, start);
-    int byte_end = utf8_byte_offset(str, end);
+    int byte_start;
+    int byte_end;
+    if (str == cached_long_ascii_string) {
+        byte_start = (size_t)start <= cached_long_ascii_length ? start : -1;
+        byte_end = (size_t)end <= cached_long_ascii_length ? end : -1;
+    } else if (utf8_is_ascii(str)) {
+        size_t ascii_length = strlen(str);
+        byte_start = (size_t)start <= ascii_length ? start : -1;
+        byte_end = (size_t)end <= ascii_length ? end : -1;
+        if (ascii_length >= 4096) {
+            cached_long_ascii_string = str;
+            cached_long_ascii_length = ascii_length;
+        }
+    } else {
+        byte_start = utf8_byte_offset(str, start);
+        byte_end = utf8_byte_offset(str, end);
+    }
 
     if (byte_start < 0) byte_start = 0;
     if (byte_end < 0) byte_end = strlen(str);

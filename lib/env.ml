@@ -216,6 +216,7 @@ let c_runtime_functions = [
   ("__c_utf8_encode_rune", TyFunc ([TyRune], TyBytes));  (* rune -> bytes (1-4 字节) *)
   ("__c_utf8_rune_count", TyFunc ([TyStr], TyInt));  (* str -> rune 数量 *)
   ("__c_utf8_rune_at", TyFunc ([TyStr; TyInt], TyRune));  (* (str, index) -> rune *)
+  ("__c_utf8_byte_at", TyFunc ([TyStr; TyInt], TyInt));  (* (str, byte_index) -> byte *)
   ("__c_utf8_byte_offset", TyFunc ([TyStr; TyInt], TyInt));  (* (str, rune_index) -> byte_offset *)
 
   (* bytes 操作 *)

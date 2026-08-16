@@ -15,6 +15,7 @@ let write_file filename content =
 let compile_to_llvm ?(silent=false) input_file =
   (* 重置错误计数器 *)
   Error.reset_counters ();
+  Typeck.clear_generic_instances ();
 
   let source = read_file input_file in
 
@@ -123,8 +124,8 @@ let compile_to_exe output_ll =
   ] in
   let runtime_args = String.concat " " runtime_files in
   let compile_cmd = Printf.sprintf
-    "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s -I runtime 2>&1 | grep -v \"search path\" || true"
-    output_exe output_ll runtime_args in
+    "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s -I runtime"
+    (Filename.quote output_exe) (Filename.quote output_ll) runtime_args in
   let exit_code = Sys.command compile_cmd in
   if exit_code = 0 then begin
     output_exe

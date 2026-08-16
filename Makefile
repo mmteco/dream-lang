@@ -1,4 +1,4 @@
-.PHONY: build clean run test examples help
+.PHONY: build clean run test examples bootstrap bootstrap-verify help
 
 # 默认目标
 help:
@@ -13,6 +13,8 @@ help:
 	@echo "  make factorial   - 编译并运行 factorial.dm"
 	@echo "  make quicksort   - 编译并运行 quicksort.dm"
 	@echo "  make dynarray    - 编译并运行 dynarray_full.dm"
+	@echo "  make bootstrap   - 执行 Stage 0 → Stage 1 自举切片"
+	@echo "  make bootstrap-verify - 验证已生成的自举 LLVM 文件"
 	@echo ""
 
 # 构建编译器
@@ -22,7 +24,7 @@ build:
 # 清理所有构建产物
 clean:
 	dune clean
-	rm -f examples/*.ll examples/hello examples/factorial examples/quicksort examples/dynarray_full
+	rm -f examples/*.ll examples/hello examples/factorial examples/quicksort examples/dynarray_full test/test_elif_switch
 	cd runtime && make clean
 
 # 构建运行时库
@@ -32,10 +34,10 @@ runtime:
 # 编译所有示例程序
 examples: build
 	@echo "编译示例程序..."
-	@_build/default/bin/main.exe examples/hello.dm
-	@_build/default/bin/main.exe examples/factorial.dm
-	@_build/default/bin/main.exe examples/quicksort.dm
-	@_build/default/bin/main.exe examples/dynarray_full.dm
+	@_build/default/bin/main.exe build examples/hello.dm
+	@_build/default/bin/main.exe build examples/factorial.dm
+	@_build/default/bin/main.exe build examples/quicksort.dm
+	@_build/default/bin/main.exe build examples/dynarray_full.dm
 
 # 运行所有示例测试
 test: examples
@@ -47,19 +49,56 @@ test: examples
 	@./examples/quicksort
 	@echo "\n=== 测试 dynarray_full.dm ==="
 	@./examples/dynarray_full
+	@echo "\n=== 测试 elif/switch ==="
+	@_build/default/bin/main.exe build test/test_elif_switch.dm
+	@./test/test_elif_switch
 
 # 单独运行各个示例
 hello: build
-	_build/default/bin/main.exe examples/hello.dm && ./examples/hello
+	_build/default/bin/main.exe build examples/hello.dm && ./examples/hello
 
 factorial: build
-	_build/default/bin/main.exe examples/factorial.dm && ./examples/factorial
+	_build/default/bin/main.exe build examples/factorial.dm && ./examples/factorial
 
 quicksort: build
-	_build/default/bin/main.exe examples/quicksort.dm && ./examples/quicksort
+	_build/default/bin/main.exe build examples/quicksort.dm && ./examples/quicksort
 
 dynarray: build
-	_build/default/bin/main.exe examples/dynarray_full.dm && ./examples/dynarray_full
+	_build/default/bin/main.exe build examples/dynarray_full.dm && ./examples/dynarray_full
+
+# 执行自举：Stage 0 编译编译器，Stage 1 生成 Stage 1/Stage 2 LLVM IR
+bootstrap: build
+	_build/default/bin/main.exe build bootstrap/compiler.dm
+	clang -Wno-override-module -o bootstrap/compiler bootstrap/compiler.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	./bootstrap/compiler
+	$(MAKE) bootstrap-verify
+	clang -Wno-override-module -o bootstrap/stage1 bootstrap/stage1.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	clang -Wno-override-module -o bootstrap/stage2 bootstrap/stage2.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	clang -Wno-override-module -o bootstrap/stage3 bootstrap/stage3.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	stage1_output=$$(./bootstrap/stage1); test "$$stage1_output" = "$$(printf '48\nstage2')"; echo "$$stage1_output"
+	./bootstrap/stage2
+	$(MAKE) bootstrap-verify
+	cmp bootstrap/stage2.ll bootstrap/stage3.ll
+	./bootstrap/stage3
+	$(MAKE) bootstrap-verify
+	cmp bootstrap/stage2.ll bootstrap/stage3.ll
+
+# 验证自举各阶段生成的 LLVM 文本，并保留失败上下文。
+bootstrap-verify:
+	@mkdir -p tmp
+	@for llvm_file in bootstrap/compiler.ll bootstrap/stage1.ll bootstrap/stage2.ll bootstrap/stage3.ll; do \
+		log_file="tmp/$$(basename "$$llvm_file").verify.log"; \
+		if [ ! -f "$$llvm_file" ]; then \
+			echo "错误: 缺少 $$llvm_file，请先运行 Stage 0 自举"; \
+			exit 1; \
+		fi; \
+		if ! clang -Wno-override-module -c -o /dev/null -x ir "$$llvm_file" >"$$log_file" 2>&1; then \
+			echo "错误: LLVM 验证失败: $$llvm_file"; \
+			cat "$$log_file"; \
+			exit 1; \
+		fi; \
+		rm -f "$$log_file"; \
+	done
 
 # 编译自定义文件 (使用方法: make compile FILE=path/to/file.dm)
 compile: build
@@ -67,7 +106,7 @@ compile: build
 		echo "错误: 请指定文件路径，例如: make compile FILE=examples/hello.dm"; \
 		exit 1; \
 	fi
-	_build/default/bin/main.exe $(FILE)
+	_build/default/bin/main.exe build $(FILE)
 
 # 编译并运行自定义文件 (使用方法: make run FILE=path/to/file.dm)
 run: build
@@ -75,4 +114,4 @@ run: build
 		echo "错误: 请指定文件路径，例如: make run FILE=examples/hello.dm"; \
 		exit 1; \
 	fi
-	_build/default/bin/main.exe $(FILE) && ./$(basename $(FILE))
+	_build/default/bin/main.exe build $(FILE) && ./$(basename $(FILE))

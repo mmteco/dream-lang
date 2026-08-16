@@ -45,6 +45,11 @@ int utf8_encode_rune(uint32_t rune, uint8_t* buffer);
 int utf8_rune_count(const char* utf8_str);
 
 /**
+ * 判断字符串是否只包含 ASCII 字节。
+ */
+int utf8_is_ascii(const char* utf8_str);
+
+/**
  * 获取第 n 个 rune 的字节偏移
  *
  * @param utf8_str UTF-8 字符串

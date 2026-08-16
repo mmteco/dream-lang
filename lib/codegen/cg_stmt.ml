@@ -87,7 +87,7 @@ let rec gen_statement buf ctx = function
                    let elem_temp = fresh_temp () in
                    let tuple_i8 = fresh_temp () in
                    Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 value_temp;
-                   Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %d)\n"
+                   Printf.bprintf buf "  %s = call i32 @tuple_get(i8* %s, i32 %d)\n"
                      elem_temp tuple_i8 i;
                    gen_pattern_bindings p elem_temp I32
                  ) pats
@@ -388,9 +388,16 @@ let rec gen_statement buf ctx = function
       Printf.bprintf buf "\n%s:\n" then_label;
       List.iter (gen_statement buf ctx) then_body;
       (* 检查 then 分支是否有 return *)
-      let then_has_return = match List.rev then_body with
+      let rec has_terminal_return statements =
+        match List.rev statements with
         | SReturn _ :: _ -> true
+        | SIf (_, nested_then, nested_elifs, Some nested_else, _) :: _ ->
+            has_terminal_return nested_then &&
+            List.for_all (fun (_, body) -> has_terminal_return body) nested_elifs &&
+            has_terminal_return nested_else
         | _ -> false
+      in
+      let then_has_return = has_terminal_return then_body
       in
       if not then_has_return then
         Printf.bprintf buf "  br label %%%s\n" end_label;
@@ -398,9 +405,7 @@ let rec gen_statement buf ctx = function
       Printf.bprintf buf "\n%s:\n" else_label;
       List.iter (gen_statement buf ctx) else_body;
       (* 检查 else 分支是否有 return *)
-      let else_has_return = match List.rev else_body with
-        | SReturn _ :: _ -> true
-        | _ -> false
+      let else_has_return = has_terminal_return else_body
       in
       if not else_has_return then
         Printf.bprintf buf "  br label %%%s\n" end_label;
@@ -409,6 +414,16 @@ let rec gen_statement buf ctx = function
       (* 如果两个分支都有 return,end 块不可达 *)
       if then_has_return && else_has_return then
         Printf.bprintf buf "  unreachable\n"
+
+  | SIf (cond, then_body, elifs, else_body, pos) when elifs <> [] ->
+      let rec lower_if current_cond current_body remaining_elifs current_else =
+        match remaining_elifs with
+        | [] -> SIf (current_cond, current_body, [], current_else, pos)
+        | (elif_cond, elif_body) :: rest ->
+            let nested = lower_if elif_cond elif_body rest current_else in
+            SIf (current_cond, current_body, [], Some [nested], pos)
+      in
+      gen_statement buf ctx (lower_if cond then_body elifs else_body)
 
   | SWhile (cond, body, _) ->
       let loop_label = fresh_label "while.loop" in
@@ -509,7 +524,7 @@ let rec gen_statement buf ctx = function
                         let elem_temp = fresh_temp () in
                         let tuple_i8 = fresh_temp () in
                         Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" tuple_i8 value_temp;
-                        Printf.bprintf buf "  %s = call i32 @tuple2_i32_get(i8* %s, i32 %d)\n"
+                        Printf.bprintf buf "  %s = call i32 @tuple_get(i8* %s, i32 %d)\n"
                           elem_temp tuple_i8 i;
                         gen_for_pattern_bindings p elem_temp I32
                       ) pats
@@ -737,4 +752,3 @@ let rec gen_statement buf ctx = function
 
   | _ ->
       Buffer.add_string buf "  ; unsupported statement\n"
-

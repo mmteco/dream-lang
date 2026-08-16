@@ -1,6 +1,51 @@
 #include "utf8.h"
 #include <string.h>
 
+#define UTF8_ASCII_CACHE_SIZE 8
+#define UTF8_ASCII_CACHE_THRESHOLD 4096
+
+static _Thread_local const char* cached_ascii_strings[UTF8_ASCII_CACHE_SIZE];
+static _Thread_local int cached_ascii_results[UTF8_ASCII_CACHE_SIZE];
+static _Thread_local size_t cached_ascii_lengths[UTF8_ASCII_CACHE_SIZE];
+static _Thread_local int active_ascii_cache_index = -1;
+
+int utf8_is_ascii(const char* utf8_str) {
+    if (utf8_str == NULL) return 0;
+
+    for (int cache_index = 0; cache_index < UTF8_ASCII_CACHE_SIZE; cache_index++) {
+        if (cached_ascii_strings[cache_index] == utf8_str) {
+            active_ascii_cache_index = cache_index;
+            return cached_ascii_results[cache_index];
+        }
+    }
+
+    const unsigned char* bytes = (const unsigned char*)utf8_str;
+    size_t length = 0;
+    while (*bytes != '\0') {
+        if (*bytes >= 0x80) {
+            active_ascii_cache_index = -1;
+            return 0;
+        }
+        bytes++;
+        length++;
+    }
+
+    active_ascii_cache_index = -1;
+    if (length >= UTF8_ASCII_CACHE_THRESHOLD) {
+        int replacement_index = 0;
+        for (int cache_index = 0; cache_index < UTF8_ASCII_CACHE_SIZE; cache_index++) {
+            if (cached_ascii_strings[cache_index] == NULL || cached_ascii_lengths[cache_index] < cached_ascii_lengths[replacement_index]) {
+                replacement_index = cache_index;
+            }
+        }
+        cached_ascii_strings[replacement_index] = utf8_str;
+        cached_ascii_results[replacement_index] = 1;
+        cached_ascii_lengths[replacement_index] = length;
+        active_ascii_cache_index = replacement_index;
+    }
+    return 1;
+}
+
 // UTF-8 非法字符替换字符
 #define UTF8_REPLACEMENT_CHAR 0xFFFD
 
@@ -109,6 +154,12 @@ int utf8_encode_rune(uint32_t rune, uint8_t* buffer) {
  */
 int utf8_rune_count(const char* utf8_str) {
     if (utf8_str == NULL) return 0;
+    if (utf8_is_ascii(utf8_str)) {
+        if (active_ascii_cache_index >= 0) {
+            return (int)cached_ascii_lengths[active_ascii_cache_index];
+        }
+        return (int)strlen(utf8_str);
+    }
 
     int count = 0;
     int offset = 0;
@@ -130,6 +181,12 @@ int utf8_rune_count(const char* utf8_str) {
  */
 int utf8_byte_offset(const char* utf8_str, int rune_index) {
     if (utf8_str == NULL || rune_index < 0) return -1;
+    if (utf8_is_ascii(utf8_str)) {
+        if (active_ascii_cache_index >= 0) {
+            return (size_t)rune_index <= cached_ascii_lengths[active_ascii_cache_index] ? rune_index : -1;
+        }
+        return (size_t)rune_index <= strlen(utf8_str) ? rune_index : -1;
+    }
 
     int offset = 0;
     int len = strlen(utf8_str);

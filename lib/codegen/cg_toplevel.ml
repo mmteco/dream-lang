@@ -198,6 +198,7 @@ let gen_program program =
   Buffer.add_string buf "declare { i32, i32, i8* }* @__c_utf8_encode_rune(i32)\n";
   Buffer.add_string buf "declare i32 @__c_utf8_rune_count(i8*)\n";
   Buffer.add_string buf "declare i32 @__c_utf8_rune_at(i8*, i32)\n";
+  Buffer.add_string buf "declare i32 @__c_utf8_byte_at(i8*, i32)\n";
   Buffer.add_string buf "declare i32 @__c_utf8_byte_offset(i8*, i32)\n\n";
 
   (* bytes operations *)

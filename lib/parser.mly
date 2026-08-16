@@ -47,7 +47,7 @@
 %token <bool> BOOL
 %token <string> IDENT
 %token LET DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
-%token IF ELSE ELIF MATCH CASE FOR WHILE RETURN
+%token IF ELSE ELIF SWITCH MATCH CASE DEFAULT FOR WHILE RETURN
 %token IMPORT FROM AS OF ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
 %token PLUS MINUS TIMES DIV MOD
@@ -158,6 +158,15 @@ statement:
       { SReturn (Some e, get_expr_pos e) }
   | IF cond = expr COLON newline_sep INDENT then_body = statement_list DEDENT newline_sep elifs = elif_list else_part = else_opt
       { SIf (cond, then_body, elifs, else_part, get_expr_pos cond) }
+  | SWITCH value = expr COLON newline_sep INDENT cases = switch_case_list DEDENT
+      { match cases with
+        | ([], None) -> SExpr (value, get_expr_pos value)
+        | ([], Some _) -> SExpr (value, get_expr_pos value)
+        | (first_case, first_body) :: rest, default_body ->
+            let position = get_expr_pos value in
+            let make_condition case_value = EBinOp (value, Eq, case_value, position) in
+            let elifs = List.map (fun (case_value, body) -> (make_condition case_value, body)) rest in
+            SIf (make_condition first_case, first_body, elifs, default_body, position) }
   | WHILE cond = expr COLON newline_sep INDENT body = statement_list DEDENT
       { SWhile (cond, body, get_expr_pos cond) }
   | FOR pat = for_pattern IN iter = expr COLON newline_sep INDENT body = statement_list DEDENT
@@ -248,6 +257,14 @@ else_opt:
   | { None }
   | ELSE COLON newline_sep INDENT body = statement_list DEDENT
       { Some body }
+
+switch_case_list:
+  | { ([], None) }
+  | CASE value = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = switch_case_list
+      { let (cases, default_body) = rest in
+        ((value, body) :: cases, default_body) }
+  | DEFAULT COLON newline_sep INDENT body = statement_list DEDENT
+      { ([], Some body) }
 
 type_case_list:
   | { [] }

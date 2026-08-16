@@ -46,8 +46,10 @@
         ("if", IF);
         ("else", ELSE);
         ("elif", ELIF);
+        ("switch", SWITCH);
         ("match", MATCH);
         ("case", CASE);
+        ("default", DEFAULT);
         ("for", FOR);
         ("while", WHILE);
         ("return", RETURN);

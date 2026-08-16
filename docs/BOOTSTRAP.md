@@ -3,6 +3,14 @@
 ## 目标
 用 Dream 语言重新实现 Dream 编译器，实现自举（self-hosting）。
 
+## 当前自举进度
+
+- [x] 直接 LLVM IR 后端的最小 Stage 1 编译器：支持整数、变量、四则运算、`let`、函数声明、参数、`return`、调用和 `print`。
+- [x] Stage 1 已增加字符串字面量、字符串局部变量与 `str` 函数参数、`list[int]` 动态数组参数/局部变量、`append`/`len`、`print_string`、函数调用参数中的四则运算和一层嵌套调用、`while` 循环和 `switch/case/default` 的 LLVM 控制流生成。
+- [x] Stage 0 支持 `elif`、`switch/case/default`；`switch` 当前在语法层降为 `if/elif/else` 链。
+- [x] Stage 0 编译并运行 Stage 1；Stage 1 编译 `bootstrap/compiler.dm` 生成 Stage 2 LLVM IR，并由 Clang 成功链接；样例输出 `48` 和 `stage2`。
+- [ ] Stage 2 直接运行时仍存在元组/动态数组 ABI 崩溃，需要完成 Stage 2→Stage 3 的运行闭环。
+
 ---
 
 ## 已完成基础 ✅

@@ -981,7 +981,7 @@ let rec gen_expr buf ctx = function
            let path_i8 = fresh_temp () in
            Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = call i32 @__c_file_write_bytes(i8* %s, i8* %s)\n"
+           Printf.bprintf buf "  %s = call i32 @__c_file_write_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
              result path_i8 data_v;
            (result, I32)
 
@@ -991,8 +991,37 @@ let rec gen_expr buf ctx = function
            let path_i8 = fresh_temp () in
            Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = call i32 @__c_file_append_bytes(i8* %s, i8* %s)\n"
+           Printf.bprintf buf "  %s = call i32 @__c_file_append_bytes(i8* %s, { i32, i32, i32* }* %s)\n"
              result path_i8 data_v;
+           (result, I32)
+
+       | ("__c_utf8_rune_at", [content_expr; index_expr]) ->
+           let (content_v, _) = gen_expr buf ctx content_expr in
+           let (index_v, _) = gen_expr buf ctx index_expr in
+           let content_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_utf8_rune_at(i8* %s, i32 %s)\n"
+             result content_i8 index_v;
+           (result, I32)
+
+       | ("__c_utf8_byte_at", [content_expr; index_expr]) ->
+           let (content_v, _) = gen_expr buf ctx content_expr in
+           let (index_v, _) = gen_expr buf ctx index_expr in
+           let content_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_utf8_byte_at(i8* %s, i32 %s)\n"
+             result content_i8 index_v;
+           (result, I32)
+
+       | ("__c_utf8_rune_count", [content_expr]) ->
+           let (content_v, _) = gen_expr buf ctx content_expr in
+           let content_i8 = fresh_temp () in
+           Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" content_i8 content_v;
+           let result = fresh_temp () in
+           Printf.bprintf buf "  %s = call i32 @__c_utf8_rune_count(i8* %s)\n"
+             result content_i8;
            (result, I32)
 
        | _ ->
@@ -3157,4 +3186,3 @@ and gen_pattern_bindings buf ctx pat scrut_v scrut_t scrut_var_name_opt =
            (* 非 match type of 的情况，不需要绑定 *)
            ())
   | _ -> ()  (* 其他模式不需要绑定变量 *)
-

@@ -73,7 +73,7 @@ let rec type_expr_to_llvm_type = function
   | TRune -> U32  (* rune 是 unsigned 32-bit Unicode codepoint *)
   | TByte -> U8   (* byte 是 unsigned 8-bit *)
   | TFloat -> I32
-  | TStr -> StrType   (* str 是 UTF-8 编码的不可变字符串 *)
+  | TStr -> Ptr I32   (* str 在当前代码生成器中以字符串指针表示 *)
   | TBytes -> BytesType  (* bytes 是不可变字节序列 *)
   | TList ty -> DynArray (type_expr_to_llvm_type ty)  (* list 是可变动态数组 *)
   | TTuple _ -> TuplePtr

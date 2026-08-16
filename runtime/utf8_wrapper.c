@@ -87,6 +87,18 @@ int32_t __c_utf8_rune_at(const char* utf8_str, int32_t rune_index) {
 }
 
 /**
+ * __c_utf8_byte_at: 获取指定字节
+ * Dream 签名: (str, index) -> int
+ * LLVM 签名: (i8*, i32) -> i32
+ */
+int32_t __c_utf8_byte_at(const char* utf8_str, int32_t byte_index) {
+    if (utf8_str == NULL || byte_index < 0) return 0;
+    const unsigned char* bytes = (const unsigned char*)utf8_str;
+    if (bytes[byte_index] == '\0') return 0;
+    return (int32_t)bytes[byte_index];
+}
+
+/**
  * __c_utf8_byte_offset: 获取第 n 个 rune 的字节偏移
  * Dream 签名: (str, rune_index) -> int
  * LLVM 签名: (i8*, i32) -> i32

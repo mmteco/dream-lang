@@ -1,7 +1,9 @@
+.claude/
 _opam/
 _build/
 *.opam
 claude_docs/
+examples/
 
 # 编译生成的文件
 *.ll
@@ -14,21 +16,16 @@ claude_docs/
 
 # 可执行文件
 test/test_core
-
-# Runtime 测试可执行文件
-runtime/test_hash
-runtime/test_gc
-runtime/test_memory
-runtime/test_str
-runtime/test_file_io
+bootstrap/compiler
+bootstrap/stage1
+bootstrap/stage2
+bootstrap/stage3
 
 # 临时文件
 *.swp
 *.swo
-*~
 .DS_Store
 
 # IDE
 .vscode/
-.idea/
 *.iml

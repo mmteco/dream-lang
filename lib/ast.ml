@@ -23,8 +23,10 @@ type token =
   | IF
   | ELSE
   | ELIF
+  | SWITCH
   | MATCH
   | CASE
+  | DEFAULT
   | FOR
   | WHILE
   | RETURN

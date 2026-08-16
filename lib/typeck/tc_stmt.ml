@@ -222,11 +222,22 @@ let rec check_statement env = function
 
   | SReturn (_, _) -> (env, empty_subst)
 
-  | SIf (cond, then_body, _elifs, _else_opt, pos) ->
+  | SIf (cond, then_body, elifs, else_opt, pos) ->
       let (cond_type, cond_subst) = !infer_expr env cond in
       (try
          let _ = unify (apply_subst cond_subst cond_type) TyBool in
-         let (_, _) = check_statements (apply_subst_to_env cond_subst env) then_body in
+         let branch_env = apply_subst_to_env cond_subst env in
+         let (_, _) = check_statements branch_env then_body in
+         List.iter (fun (elif_cond, elif_body) ->
+           let (elif_type, elif_subst) = !infer_expr branch_env elif_cond in
+           let _ = unify (apply_subst elif_subst elif_type) TyBool in
+           let (_, _) = check_statements (apply_subst_to_env elif_subst branch_env) elif_body in
+           ()) elifs;
+         (match else_opt with
+          | Some else_body ->
+              let (_, _) = check_statements branch_env else_body in
+              ()
+          | None -> ());
          (env, cond_subst)
        with Failure msg ->
          let err = make_error (TypeError msg) pos

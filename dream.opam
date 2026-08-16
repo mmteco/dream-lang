@@ -7,7 +7,7 @@ description:
 depends: [
   "ocaml" {>= "4.14"}
   "dune" {>= "3.0"}
-  "menhir"
+  "menhir" {>= "20180523"}
   "odoc" {with-doc}
 ]
 build: [
