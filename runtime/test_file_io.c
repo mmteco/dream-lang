@@ -3,11 +3,11 @@
 #include <string.h>
 #include <assert.h>
 
-char* file_read(const char* path);
-int file_write(const char* path, const char* content);
-int file_exists(const char* path);
-int file_append(const char* path, const char* content);
-int file_delete(const char* path);
+char* __c_file_read(const char* path);
+int __c_file_write(const char* path, const char* content);
+int __c_file_exists(const char* path);
+int __c_file_append(const char* path, const char* content);
+int __c_file_delete(const char* path);
 
 void test_file_write_read() {
     printf("Testing file_write and file_read...\n");
@@ -15,15 +15,15 @@ void test_file_write_read() {
     const char* test_path = "/tmp/dream_test_file.txt";
     const char* test_content = "Hello, Dream File I/O!";
 
-    int write_result = file_write(test_path, test_content);
-    assert(write_result == 1);
+    int write_result = __c_file_write(test_path, test_content);
+    assert(write_result == (int)strlen(test_content));
 
-    char* read_content = file_read(test_path);
+    char* read_content = __c_file_read(test_path);
     assert(read_content != NULL);
     assert(strcmp(read_content, test_content) == 0);
 
     free(read_content);
-    file_delete(test_path);
+    __c_file_delete(test_path);
 
     printf("  ✓ All write/read tests passed\n");
 }
@@ -33,13 +33,13 @@ void test_file_exists() {
 
     const char* test_path = "/tmp/dream_test_exists.txt";
 
-    assert(file_exists(test_path) == 0);
+    assert(__c_file_exists(test_path) == 0);
 
-    file_write(test_path, "test");
-    assert(file_exists(test_path) == 1);
+    __c_file_write(test_path, "test");
+    assert(__c_file_exists(test_path) == 1);
 
-    file_delete(test_path);
-    assert(file_exists(test_path) == 0);
+    __c_file_delete(test_path);
+    assert(__c_file_exists(test_path) == 0);
 
     printf("  ✓ All exists tests passed\n");
 }
@@ -49,16 +49,16 @@ void test_file_append() {
 
     const char* test_path = "/tmp/dream_test_append.txt";
 
-    file_write(test_path, "Line 1\n");
-    file_append(test_path, "Line 2\n");
-    file_append(test_path, "Line 3\n");
+    __c_file_write(test_path, "Line 1\n");
+    __c_file_append(test_path, "Line 2\n");
+    __c_file_append(test_path, "Line 3\n");
 
-    char* content = file_read(test_path);
+    char* content = __c_file_read(test_path);
     assert(content != NULL);
     assert(strcmp(content, "Line 1\nLine 2\nLine 3\n") == 0);
 
     free(content);
-    file_delete(test_path);
+    __c_file_delete(test_path);
 
     printf("  ✓ All append tests passed\n");
 }
@@ -68,14 +68,14 @@ void test_file_delete() {
 
     const char* test_path = "/tmp/dream_test_delete.txt";
 
-    file_write(test_path, "to be deleted");
-    assert(file_exists(test_path) == 1);
+    __c_file_write(test_path, "to be deleted");
+    assert(__c_file_exists(test_path) == 1);
 
-    int delete_result = file_delete(test_path);
+    int delete_result = __c_file_delete(test_path);
     assert(delete_result == 1);
-    assert(file_exists(test_path) == 0);
+    assert(__c_file_exists(test_path) == 0);
 
-    int delete_nonexistent = file_delete(test_path);
+    int delete_nonexistent = __c_file_delete(test_path);
     assert(delete_nonexistent == 0);
 
     printf("  ✓ All delete tests passed\n");
@@ -84,11 +84,11 @@ void test_file_delete() {
 void test_error_handling() {
     printf("Testing error handling...\n");
 
-    char* nonexistent = file_read("/nonexistent/path/file.txt");
+    char* nonexistent = __c_file_read("/nonexistent/path/file.txt");
     assert(nonexistent == NULL);
 
-    int write_result = file_write("/nonexistent/path/file.txt", "test");
-    assert(write_result == 0);
+    int write_result = __c_file_write("/nonexistent/path/file.txt", "test");
+    assert(write_result == -1);
 
     printf("  ✓ All error handling tests passed\n");
 }
@@ -98,15 +98,15 @@ void test_empty_file() {
 
     const char* test_path = "/tmp/dream_test_empty.txt";
 
-    file_write(test_path, "");
-    assert(file_exists(test_path) == 1);
+    __c_file_write(test_path, "");
+    assert(__c_file_exists(test_path) == 1);
 
-    char* content = file_read(test_path);
+    char* content = __c_file_read(test_path);
     assert(content != NULL);
     assert(strcmp(content, "") == 0);
 
     free(content);
-    file_delete(test_path);
+    __c_file_delete(test_path);
 
     printf("  ✓ All empty file tests passed\n");
 }
@@ -122,14 +122,14 @@ void test_large_file() {
     }
     large_content[9999] = '\0';
 
-    file_write(test_path, large_content);
+    __c_file_write(test_path, large_content);
 
-    char* read_content = file_read(test_path);
+    char* read_content = __c_file_read(test_path);
     assert(read_content != NULL);
     assert(strcmp(read_content, large_content) == 0);
 
     free(read_content);
-    file_delete(test_path);
+    __c_file_delete(test_path);
 
     printf("  ✓ All large file tests passed\n");
 }
@@ -147,10 +147,10 @@ void demonstrate_usage() {
         "print(add(2, 3))\n";
 
     printf("Writing Dream source code to file...\n");
-    file_write(source_path, dream_source);
+    __c_file_write(source_path, dream_source);
 
     printf("Reading source file...\n");
-    char* source = file_read(source_path);
+    char* source = __c_file_read(source_path);
     printf("Source:\n%s\n", source);
 
     const char* llvm_ir =
@@ -161,16 +161,16 @@ void demonstrate_usage() {
         "}\n";
 
     printf("Writing generated LLVM IR...\n");
-    file_write(output_path, llvm_ir);
+    __c_file_write(output_path, llvm_ir);
 
     printf("Verifying output file exists...\n");
-    if (file_exists(output_path)) {
+    if (__c_file_exists(output_path)) {
         printf("Output file created successfully!\n");
     }
 
     free(source);
-    file_delete(source_path);
-    file_delete(output_path);
+    __c_file_delete(source_path);
+    __c_file_delete(output_path);
 }
 
 int main() {

@@ -18,7 +18,6 @@ static unsigned int hash_bytes_fnv1a(const void* data, size_t len) {
 
 // 计算哈希分布的标准差（衡量均匀性）
 double calculate_stddev(int* buckets, int num_buckets) {
-    double sum = 0.0;
     int total_items = 0;
 
     for (int i = 0; i < num_buckets; i++) {
@@ -49,8 +48,8 @@ void test_int_hash_distribution() {
     // 测试连续整数
     printf("1. 连续整数 (0 到 %d):\n", num_keys - 1);
     for (int i = 0; i < num_keys; i++) {
-        int hash_old = dict_hash(i, capacity);
-        int hash_fnv = dict_hash_int_fnv1a(i, capacity);
+        int hash_old = (int)(hash_bytes_fnv1a(&i, sizeof(i)) % (unsigned int)capacity);
+        int hash_fnv = dict_hash_int(i, capacity);
         buckets_old[hash_old]++;
         buckets_fnv[hash_fnv]++;
     }
@@ -82,8 +81,8 @@ void test_int_hash_distribution() {
     srand(42);
     for (int i = 0; i < num_keys; i++) {
         int key = rand();
-        int hash_old = dict_hash(key, capacity);
-        int hash_fnv = dict_hash_int_fnv1a(key, capacity);
+        int hash_old = (int)(hash_bytes_fnv1a(&key, sizeof(key)) % (unsigned int)capacity);
+        int hash_fnv = dict_hash_int(key, capacity);
         buckets_old[hash_old]++;
         buckets_fnv[hash_fnv]++;
     }
@@ -166,7 +165,7 @@ void test_hash_collisions() {
     int total_chain_length = 0;
 
     for (int i = 0; i < num_tests; i++) {
-        int hash = dict_hash_int_fnv1a(i, capacity);
+        int hash = dict_hash_int(i, capacity);
         buckets[hash]++;
         if (buckets[hash] > max_chain) {
             max_chain = buckets[hash];

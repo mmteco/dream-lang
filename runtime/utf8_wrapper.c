@@ -28,7 +28,7 @@ typedef struct {
 tuple2_i32_t __c_utf8_decode_rune(dynarray_i32* bytes_arr, int32_t offset) {
     tuple2_i32_t result = {0, 0};
 
-    if (bytes_arr == NULL || offset < 0 || offset >= bytes_arr->length) {
+    if (bytes_arr == NULL || bytes_arr->data == NULL || offset < 0 || offset >= bytes_arr->length) {
         return result;
     }
 
@@ -36,7 +36,8 @@ tuple2_i32_t __c_utf8_decode_rune(dynarray_i32* bytes_arr, int32_t offset) {
     uint8_t* data = (uint8_t*)bytes_arr->data;
     int bytes_read = 0;
 
-    uint32_t rune = utf8_decode_rune(data, offset, &bytes_read);
+    uint32_t rune = utf8_decode_rune(data, (size_t)bytes_arr->length,
+                                     (size_t)offset, &bytes_read);
 
     result.first = (int32_t)rune;
     result.second = bytes_read;
@@ -59,6 +60,7 @@ dynarray_i32* __c_utf8_encode_rune(int32_t rune) {
 
     // 创建 dynarray 并复制数据
     dynarray_i32* result = create_dynarray_i32(bytes_written);
+    if (result == NULL) return NULL;
     for (int i = 0; i < bytes_written; i++) {
         append_i32(result, buffer[i]);
     }
@@ -93,8 +95,8 @@ int32_t __c_utf8_rune_at(const char* utf8_str, int32_t rune_index) {
  */
 int32_t __c_utf8_byte_at(const char* utf8_str, int32_t byte_index) {
     if (utf8_str == NULL || byte_index < 0) return 0;
+    if ((size_t)byte_index >= utf8_byte_length(utf8_str)) return 0;
     const unsigned char* bytes = (const unsigned char*)utf8_str;
-    if (bytes[byte_index] == '\0') return 0;
     return (int32_t)bytes[byte_index];
 }
 

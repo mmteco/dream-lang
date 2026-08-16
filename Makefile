@@ -1,4 +1,4 @@
-.PHONY: build clean run test examples bootstrap bootstrap-verify help
+.PHONY: build clean run test examples runtime-check check bootstrap bootstrap-verify help
 
 # 默认目标
 help:
@@ -9,6 +9,8 @@ help:
 	@echo "  make test        - 运行所有示例测试"
 	@echo "  make examples    - 编译所有示例程序"
 	@echo "  make runtime     - 构建运行时库"
+	@echo "  make runtime-check - 运行 runtime 常规测试和 UBSan 测试"
+	@echo "  make check       - 运行完整构建、测试和自举验证"
 	@echo "  make hello       - 编译并运行 hello.dm"
 	@echo "  make factorial   - 编译并运行 factorial.dm"
 	@echo "  make quicksort   - 编译并运行 quicksort.dm"
@@ -30,6 +32,21 @@ clean:
 # 构建运行时库
 runtime:
 	cd runtime && make
+
+# 运行时常规测试和未定义行为检查。
+runtime-check:
+	$(MAKE) -C runtime clean
+	$(MAKE) -C runtime test
+	$(MAKE) -C runtime clean
+	$(MAKE) -C runtime CFLAGS='-Wall -Wextra -g -O1 -std=c11 -fsanitize=undefined' LDFLAGS='-fsanitize=undefined' test
+	$(MAKE) -C runtime clean
+
+# 单一入口：前端、示例、runtime、UBSan 和 DIR 自举全部通过才算检查通过。
+check: build
+	dune test
+	$(MAKE) test
+	$(MAKE) runtime-check
+	$(MAKE) bootstrap
 
 # 编译所有示例程序
 examples: build
@@ -69,12 +86,12 @@ dynarray: build
 # 执行自举：Stage 0 使用 DIR 编译编译器，后续阶段继续由生成的编译器完成
 bootstrap: build
 	_build/default/bin/main.exe build --backend=dir bootstrap/compiler.dm
-	clang -Wno-override-module -o bootstrap/compiler bootstrap/compiler.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	clang -Wno-override-module -o bootstrap/compiler bootstrap/compiler.ll runtime/io.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
 	./bootstrap/compiler
 	$(MAKE) bootstrap-verify
-	clang -Wno-override-module -o bootstrap/stage1 bootstrap/stage1.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
-	clang -Wno-override-module -o bootstrap/stage2 bootstrap/stage2.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
-	clang -Wno-override-module -o bootstrap/stage3 bootstrap/stage3.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	clang -Wno-override-module -o bootstrap/stage1 bootstrap/stage1.ll runtime/io.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	clang -Wno-override-module -o bootstrap/stage2 bootstrap/stage2.ll runtime/io.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
+	clang -Wno-override-module -o bootstrap/stage3 bootstrap/stage3.ll runtime/io.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
 	stage1_output=$$(./bootstrap/stage1); test "$$stage1_output" = "$$(printf '48\nstage2')"; echo "$$stage1_output"
 	./bootstrap/stage2
 	$(MAKE) bootstrap-verify

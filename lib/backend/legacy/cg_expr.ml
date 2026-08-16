@@ -904,9 +904,9 @@ let rec gen_expr buf ctx = function
       let (dict_v, dict_t) = gen_expr buf ctx dict_expr in
       (match dict_t with
        | DictPtr | Ptr I32 ->
-           (* 调用 dict_items 函数 - 返回 dynarray_ptr *)
+           (* legacy ABI 使用 int -> int 字典项函数。 *)
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = call { i32, i32, i64* }* @dict_items(i8* %s)\n"
+           Printf.bprintf buf "  %s = call { i32, i32, i64* }* @dict_items_i32(i8* %s)\n"
              result dict_v;
            (result, DynArrayPtr)
        | _ ->

@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include "str.h"
 
 // 声明 runtime.c 中的字符串函数
 int string_length(const char* str);
-char string_char_at(const char* str, int index);
+uint32_t string_char_at(const char* str, int index);
 char* string_concat(const char* s1, const char* s2);
 char* string_substring(const char* str, int start, int end);
 int string_find(const char* str, const char* sub);
@@ -67,6 +68,10 @@ void test_string_substring() {
     result = string_substring(s, 0, 0);
     assert(strcmp(result, "") == 0);
     free(result);
+
+    result = string_substring("你好，Dream", 0, 2);
+    assert(strcmp(result, "你好") == 0);
+    free(result);
     printf("  ✓ All substring tests passed\n");
 }
 
@@ -76,6 +81,7 @@ void test_string_find() {
     assert(string_find("Hello World", "Hello") == 0);
     assert(string_find("Hello World", "xyz") == -1);
     assert(string_find("", "test") == -1);
+    assert(string_find("你好，世界", "世界") == 3);
     printf("  ✓ All find tests passed\n");
 }
 
@@ -104,6 +110,14 @@ void test_string_upper_lower() {
 
     result = string_lower("Hello World!");
     assert(strcmp(result, "hello world!") == 0);
+    free(result);
+
+    result = string_upper("Καλημέρα Привет");
+    assert(strcmp(result, "ΚΑΛΗΜΈΡΑ ПРИВЕТ") == 0);
+    free(result);
+
+    result = string_lower("ΚΑΛΗΜΈΡΑ ПРИВЕТ");
+    assert(strcmp(result, "καλημέρα привет") == 0);
     free(result);
     printf("  ✓ All upper/lower tests passed\n");
 }
@@ -159,6 +173,10 @@ void test_string_replace() {
 
     result = string_replace("hello", "", "x");
     assert(strcmp(result, "hello") == 0);
+    free(result);
+
+    result = string_replace("one two", "two", "three");
+    assert(strcmp(result, "one three") == 0);
     free(result);
     printf("  ✓ All replace tests passed\n");
 }

@@ -506,7 +506,7 @@ let rec gen_statement buf ctx = function
                  (match value_type with
                   | I32 ->
                       (* 假设这是一个 TuplePtr, 需要先转换为指针 *)
-                      (* 注意: dict_items 返回的动态数组的元素是 i32*, 实际上是元组指针 *)
+                      (* 注意: dict_items_i32 返回的动态数组元素是元组指针。 *)
                       (* 这里我们需要将 i32 value 当作 TuplePtr 使用 *)
                       List.iteri (fun i p ->
                         let elem_temp = fresh_temp () in

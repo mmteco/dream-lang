@@ -33,7 +33,11 @@ union_t* union_create_string(const char* value) {
     u->type_name = NULL;
     // 字符串也通过 GC 分配（如果有 GC 字符串分配器）
     // 目前仍使用 strdup，但在 union_free 中释放
-    u->value.as_string = strdup(value);
+    u->value.as_string = strdup(value == NULL ? "" : value);
+    if (u->value.as_string == NULL) {
+        gc_release(u);
+        return NULL;
+    }
     return u;
 }
 
@@ -67,7 +71,11 @@ union_t* union_create_struct(void* ptr, const char* type_name) {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_STRUCT;
-    u->type_name = strdup(type_name);  // 复制类型名
+    u->type_name = strdup(type_name == NULL ? "struct" : type_name);
+    if (u->type_name == NULL) {
+        gc_release(u);
+        return NULL;
+    }
     u->value.as_ptr = ptr;
     return u;
 }
@@ -101,7 +109,7 @@ bool union_is_none(union_t* u) {
 }
 
 bool union_is_struct(union_t* u, const char* type_name) {
-    if (u == NULL || u->tag != UNION_STRUCT || u->type_name == NULL) {
+    if (u == NULL || u->tag != UNION_STRUCT || u->type_name == NULL || type_name == NULL) {
         return false;
     }
     return strcmp(u->type_name, type_name) == 0;
@@ -165,7 +173,7 @@ const char* union_get_struct_type(union_t* u) {
 // ============================================================================
 
 bool union_try_get_int(union_t* u, int32_t* out) {
-    if (union_is_int(u)) {
+    if (out != NULL && union_is_int(u)) {
         *out = u->value.as_int;
         return true;
     }
@@ -173,7 +181,7 @@ bool union_try_get_int(union_t* u, int32_t* out) {
 }
 
 bool union_try_get_float(union_t* u, double* out) {
-    if (union_is_float(u)) {
+    if (out != NULL && union_is_float(u)) {
         *out = u->value.as_float;
         return true;
     }
@@ -181,7 +189,7 @@ bool union_try_get_float(union_t* u, double* out) {
 }
 
 bool union_try_get_string(union_t* u, char** out) {
-    if (union_is_string(u)) {
+    if (out != NULL && union_is_string(u)) {
         *out = u->value.as_string;
         return true;
     }
@@ -189,7 +197,7 @@ bool union_try_get_string(union_t* u, char** out) {
 }
 
 bool union_try_get_bool(union_t* u, bool* out) {
-    if (union_is_bool(u)) {
+    if (out != NULL && union_is_bool(u)) {
         *out = u->value.as_bool;
         return true;
     }
@@ -259,7 +267,7 @@ void union_print(union_t* u) {
             printf("Union(float: %f)", u->value.as_float);
             break;
         case UNION_STRING:
-            printf("Union(string: \"%s\")", u->value.as_string);
+            printf("Union(string: \"%s\")", u->value.as_string ? u->value.as_string : "");
             break;
         case UNION_BOOL:
             printf("Union(bool: %s)", u->value.as_bool ? "true" : "false");
@@ -309,7 +317,7 @@ void union_print_value(union_t* u) {
             printf("%f\n", u->value.as_float);
             break;
         case UNION_STRING:
-            printf("%s\n", u->value.as_string);
+            printf("%s\n", u->value.as_string ? u->value.as_string : "");
             break;
         case UNION_BOOL:
             printf("%s\n", u->value.as_bool ? "true" : "false");

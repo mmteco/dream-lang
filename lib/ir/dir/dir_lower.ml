@@ -387,7 +387,7 @@ let rec lower_expr context function_builder environment expression =
       expect_type position Str lowered_text.ty "text_char_code text";
       expect_type position I32 lowered_index.ty "text_char_code index";
       let value = fresh_value function_builder in
-      emit function_builder (Call (Some value, I32, "__c_utf8_byte_at",
+      emit function_builder (Call (Some value, I32, "__c_utf8_rune_at",
         [Str; I32], [lowered_text.operand; lowered_index.operand]));
       { operand = Value value; ty = I32 }
   | ECall (EVar ("read_text_file", _), [path], position) ->
@@ -414,9 +414,9 @@ let rec lower_expr context function_builder environment expression =
           match lowered_arguments with
           | [argument] ->
               let print_name = match argument.ty with
-                | I32 -> "print_int"
-                | Bool -> "print_bool"
-                | Str -> "print_string"
+                | I32 -> "dream_print_int"
+                | Bool -> "dream_print_bool"
+                | Str -> "dream_print_string"
                 | _ -> fail_at position "print supports int, bool and str in DIR subset"
               in
               (print_name, { parameter_types = [argument.ty]; return_type = Unit })
@@ -791,12 +791,12 @@ let is_builtin_enum = function
   | _ -> false
 
 let runtime_externs = [
-  { name = "print_int"; parameters = [I32]; return_type = Unit };
-  { name = "print_bool"; parameters = [Bool]; return_type = Unit };
-  { name = "print_string"; parameters = [Str]; return_type = Unit };
+  { name = "dream_print_int"; parameters = [I32]; return_type = Unit };
+  { name = "dream_print_bool"; parameters = [Bool]; return_type = Unit };
+  { name = "dream_print_string"; parameters = [Str]; return_type = Unit };
   { name = "__c_file_read"; parameters = [Str]; return_type = Str };
   { name = "__c_file_write_bytes"; parameters = [Str; List I32]; return_type = I32 };
-  { name = "__c_utf8_byte_at"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
 ]
 
 let lower_program program =

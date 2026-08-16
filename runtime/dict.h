@@ -53,6 +53,10 @@ void dict_remove_str(dict_t* dict, const char* key);
 int dict_size(dict_t* dict);
 void dict_free(dict_t* dict);
 
+// 释放字典内部资源；由 GC 在对象生命周期结束时调用。
+void dict_destroy_contents(dict_t* dict);
+void dict_release_contents(dict_t* dict);
+
 int dict_hash_int(int key, int capacity);
 int dict_hash_string(const char* key, int capacity);
 

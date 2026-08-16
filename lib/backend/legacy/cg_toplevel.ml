@@ -233,7 +233,7 @@ let gen_program program =
   Buffer.add_string buf "declare void @dict_free(i8*)\n";
   Buffer.add_string buf "declare { i32, i32, i32* }* @dict_keys(i8*)\n";
   Buffer.add_string buf "declare { i32, i32, i32* }* @dict_values(i8*)\n";
-  Buffer.add_string buf "declare { i32, i32, i64* }* @dict_items(i8*)\n\n";
+  Buffer.add_string buf "declare { i32, i32, i64* }* @dict_items_i32(i8*)\n\n";
 
   (* Tuple functions *)
   Buffer.add_string buf "; Tuple functions\n";

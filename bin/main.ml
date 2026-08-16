@@ -118,6 +118,7 @@ let compile_to_exe output_ll =
   let output_exe = Filename.remove_extension output_ll in
   let runtime_files = [
     "runtime/runtime.c";
+    "runtime/io.c";
     "runtime/memory.c";
     "runtime/dynarray.c";
     "runtime/utf8.c";

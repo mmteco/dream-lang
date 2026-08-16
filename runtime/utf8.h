@@ -2,6 +2,7 @@
 #define UTF8_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /**
  * UTF-8 编解码核心函数
@@ -23,7 +24,7 @@
  *
  * 返回 0xFFFD (REPLACEMENT CHARACTER) 如果遇到非法 UTF-8 序列
  */
-uint32_t utf8_decode_rune(const uint8_t* utf8_bytes, int offset, int* bytes_read);
+uint32_t utf8_decode_rune(const uint8_t* utf8_bytes, size_t length, size_t offset, int* bytes_read);
 
 /**
  * 将 rune 编码为 UTF-8 字节序列
@@ -45,9 +46,24 @@ int utf8_encode_rune(uint32_t rune, uint8_t* buffer);
 int utf8_rune_count(const char* utf8_str);
 
 /**
+ * 计算字符串前缀中的 rune 数量。
+ */
+int utf8_rune_count_prefix(const char* utf8_str, size_t byte_length);
+
+/**
  * 判断字符串是否只包含 ASCII 字节。
  */
 int utf8_is_ascii(const char* utf8_str);
+
+/**
+ * 获取以 NUL 结尾字符串的字节长度。
+ */
+size_t utf8_byte_length(const char* utf8_str);
+
+/**
+ * 忘记字符串缓存中的地址，供释放字符串内存的运行时调用。
+ */
+void utf8_cache_forget(const char* utf8_str);
 
 /**
  * 获取第 n 个 rune 的字节偏移

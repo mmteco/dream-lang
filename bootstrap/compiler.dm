@@ -1436,9 +1436,9 @@ def parse_branch_body(source: str, kinds: list[int], starts: list[int], ends: li
                     if branch_print_is_temporary == 2:
                         is_branch_print_string = 1
                     if is_branch_print_string == 1:
-                        append_text(output, "call void @print_string(i8* ")
+                        append_text(output, "call void @dream_print_string(i8* ")
                     if is_branch_print_string == 0:
-                        append_text(output, "call void @print_int(i32 ")
+                        append_text(output, "call void @dream_print_int(i32 ")
                     append_operand(output, branch_print_is_temporary, branch_print_value)
                     append_text(output, ")\n")
                     current_index = skip_source_newlines(source, starts, branch_print_next_index + 1)
@@ -1712,9 +1712,9 @@ def parse_function_body(source: str, kinds: list[int], starts: list[int], ends: 
                 if print_is_temporary == 2:
                     is_print_string = 1
                 if is_print_string == 1:
-                    append_text(output, "call void @print_string(i8* ")
+                    append_text(output, "call void @dream_print_string(i8* ")
                 if is_print_string == 0:
-                    append_text(output, "call void @print_int(i32 ")
+                    append_text(output, "call void @dream_print_int(i32 ")
                 append_operand(output, print_is_temporary, print_value)
                 append_text(output, ")\n")
                 current_index = skip_source_newlines(source, starts, print_next_index + 1)
@@ -1983,8 +1983,8 @@ def compile_source(source_path: str, output_path: str):
         if token_kind(kinds, literal_index) == 26:
             append_string_global(output, source, starts, ends, literal_index)
         literal_index = literal_index + 1
-    append_text(output, "declare void @print_int(i32)\n")
-    append_text(output, "declare void @print_string(i8*)\n")
+    append_text(output, "declare void @dream_print_int(i32)\n")
+    append_text(output, "declare void @dream_print_string(i8*)\n")
     append_text(output, "declare i8* @malloc(i32)\n")
     append_text(output, "declare i8* @string_substring(i8*, i32, i32)\n")
     append_text(output, "declare i32 @string_compare(i8*, i8*)\n")
@@ -2000,7 +2000,7 @@ def compile_source(source_path: str, output_path: str):
     append_text(output, "define i32 @len(%dynarray_i32* %array) {\nentry:\n%length = call i32 @len_dynarray_i32(%dynarray_i32* %array)\nret i32 %length\n}\n")
     append_text(output, "define i32 @get(%dynarray_i32* %array, i32 %index) {\nentry:\n%length = call i32 @len_dynarray_i32(%dynarray_i32* %array)\n%valid_low = icmp sge i32 %index, 0\n%valid_high = icmp slt i32 %index, %length\n%valid = and i1 %valid_low, %valid_high\nbr i1 %valid, label %get.valid, label %get.invalid\nget.valid:\n%value = call i32 @get_dynarray_i32(%dynarray_i32* %array, i32 %index)\nret i32 %value\nget.invalid:\nret i32 0\n}\n")
     append_text(output, "define i8* @read_text_file(i8* %path) {\nentry:\n%content = call i8* @__c_file_read(i8* %path)\nret i8* %content\n}\n")
-    append_text(output, "define i32 @text_char_code(i8* %content, i32 %index) {\nentry:\n%byte_pointer = getelementptr i8, i8* %content, i32 %index\n%byte = load i8, i8* %byte_pointer\n%code = zext i8 %byte to i32\nret i32 %code\n}\n")
+    append_text(output, "define i32 @text_char_code(i8* %content, i32 %index) {\nentry:\n%code = call i32 @__c_utf8_rune_at(i8* %content, i32 %index)\nret i32 %code\n}\n")
     append_text(output, "define i32 @text_length(i8* %content) {\nentry:\n%length = call i32 @__c_utf8_rune_count(i8* %content)\nret i32 %length\n}\n")
     append_text(output, "define i32 @write_text_codes(i8* %path, %dynarray_i32* %codes) {\nentry:\n%result = call i32 @__c_file_write_bytes(i8* %path, %dynarray_i32* %codes)\nret i32 %result\n}\n")
     let function_index = 0

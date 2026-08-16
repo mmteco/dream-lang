@@ -51,7 +51,7 @@ union_t* union_create_bool(bool value);
 union_t* union_create_bytes(void* bytes_array);
 
 // 创建 None union
-union_t* union_create_none();
+union_t* union_create_none(void);
 
 // 创建 struct union (存储结构体指针和类型名)
 union_t* union_create_struct(void* ptr, const char* type_name);

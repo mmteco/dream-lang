@@ -11,6 +11,7 @@
 // 对象类型枚举
 typedef enum {
     OBJ_DYNARRAY,
+    OBJ_DYNARRAY_PTR,
     OBJ_STRING,
     OBJ_DICT,
     OBJ_TUPLE,
@@ -47,6 +48,13 @@ void gc_retain(void* object);
 // - 共享对象：原子操作（线程安全）
 void gc_release(void* object);
 
+// 判断指针是否由 Dream GC 管理。
+int gc_is_managed(const void* object);
+
+// 仅在对象由 Dream GC 管理时调整引用计数。
+void gc_retain_if_managed(void* object);
+void gc_release_if_managed(void* object);
+
 // 获取对象的引用计数（调试用）
 uint32_t gc_get_ref_count(void* object);
 
@@ -64,24 +72,24 @@ void gc_promote_to_shared(void* object);
 // ============================================================================
 
 // 强制执行完整的垃圾回收（触发最高代 GC）
-void gc_collect();
+void gc_collect(void);
 
 // 执行指定代的垃圾回收
 // generation: 0 (年轻代), 1 (中年代), 2 (老年代)
 void gc_collect_generation(int generation);
 
 // Python 风格的循环引用检测（引用计数差值法）
-void gc_detect_cycles();
+void gc_detect_cycles(void);
 
 // ============================================================================
 // 统计和调试
 // ============================================================================
 
 // 打印 GC 统计信息
-void gc_print_stats();
+void gc_print_stats(void);
 
 // 清理所有对象（程序退出时自动调用）
-void gc_cleanup();
+void gc_cleanup(void);
 
 // ============================================================================
 // 设计说明

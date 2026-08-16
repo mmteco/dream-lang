@@ -1,24 +1,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 #include "dynarray.h"
-
-// 对象类型定义（与 memory.c 保持一致）
-typedef enum {
-    OBJ_DYNARRAY,
-    OBJ_STRING,
-    OBJ_DICT,
-    OBJ_TUPLE,
-} ObjectType;
-
-// 声明 GC 函数（在 memory.c 中实现）
-extern void* gc_alloc(size_t size, ObjectType type);
-extern void gc_retain(void* object);
-extern void gc_release(void* object);
+#include "memory.h"
 
 // 创建新的动态数组（使用 GC 分配）
 dynarray_i32* create_dynarray_i32(int initial_capacity) {
-    if (initial_capacity < 0) {
+    if (initial_capacity < 0 || initial_capacity > INT_MAX / (int)sizeof(int)) {
         initial_capacity = 0;
     }
 
@@ -60,6 +49,10 @@ void retain_dynarray_i32(dynarray_i32* arr) {
 
 // 扩容动态数组内部存储
 static int grow_dynarray_i32(dynarray_i32* arr, int new_capacity) {
+    if (arr == NULL || new_capacity > INT_MAX / (int)sizeof(int)) {
+        return 0;
+    }
+
     if (new_capacity <= arr->capacity) {
         return 1; // 无需扩容
     }
@@ -90,12 +83,24 @@ void append_i32(dynarray_i32* arr, int value) {
     // 检查是否需要扩容
     if (arr->length >= arr->capacity) {
         // 扩容为原来的 2 倍，最小为 4
-        int new_capacity = arr->capacity == 0 ? 4 : arr->capacity * 2;
+        int new_capacity;
+        if (arr->capacity == 0) {
+            new_capacity = 4;
+        } else if (arr->capacity > INT_MAX / 2) {
+            new_capacity = INT_MAX / (int)sizeof(int);
+        } else {
+            new_capacity = arr->capacity * 2;
+        }
 
         if (!grow_dynarray_i32(arr, new_capacity)) {
             fprintf(stderr, "Error: failed to grow array\n");
             return;
         }
+    }
+
+    if (arr->length == INT_MAX) {
+        fprintf(stderr, "Error: array length overflow\n");
+        return;
     }
 
     // 添加新元素
@@ -180,7 +185,10 @@ dynarray_i32* slice_dynarray_i32(dynarray_i32* arr, int start, int end) {
 
     // 边界检查
     if (start < 0) start = 0;
+    if (start > arr->length) start = arr->length;
+    if (end < 0) end = 0;
     if (end > arr->length) end = arr->length;
+    if (start > end) start = end;
     if (start >= end) {
         return create_dynarray_i32(0);
     }
@@ -200,6 +208,10 @@ dynarray_i32* slice_dynarray_i32(dynarray_i32* arr, int start, int end) {
 // 连接两个数组（创建新数组）
 dynarray_i32* concat_dynarray_i32(dynarray_i32* arr1, dynarray_i32* arr2) {
     if (arr1 == NULL || arr2 == NULL) return NULL;
+
+    if (arr1->length > INT_MAX - arr2->length) {
+        return NULL;
+    }
 
     int total_len = arr1->length + arr2->length;
     dynarray_i32* result = create_dynarray_i32(total_len);
@@ -239,17 +251,21 @@ void print_dynarray_i32(dynarray_i32* arr) {
 // ============================================================================
 
 dynarray_ptr* create_dynarray_ptr(int initial_capacity) {
-    dynarray_ptr* arr = (dynarray_ptr*)malloc(sizeof(dynarray_ptr));
+    dynarray_ptr* arr = (dynarray_ptr*)gc_alloc(sizeof(dynarray_ptr), OBJ_DYNARRAY_PTR);
     if (!arr) return NULL;
 
     if (initial_capacity < 4) initial_capacity = 4;
+    if (initial_capacity > INT_MAX / (int)sizeof(intptr_t)) {
+        gc_release(arr);
+        return NULL;
+    }
 
     arr->capacity = initial_capacity;
     arr->length = 0;
     arr->data = (intptr_t*)malloc(sizeof(intptr_t) * initial_capacity);
 
     if (!arr->data) {
-        free(arr);
+        gc_release(arr);
         return NULL;
     }
 
@@ -257,10 +273,13 @@ dynarray_ptr* create_dynarray_ptr(int initial_capacity) {
 }
 
 void free_dynarray_ptr(dynarray_ptr* arr) {
-    if (arr) {
-        if (arr->data) free(arr->data);
-        free(arr);
+    if (arr == NULL) return;
+    if (gc_is_managed(arr)) {
+        gc_release(arr);
+        return;
     }
+    free(arr->data);
+    free(arr);
 }
 
 void append_ptr(dynarray_ptr* arr, intptr_t value) {
@@ -268,7 +287,14 @@ void append_ptr(dynarray_ptr* arr, intptr_t value) {
 
     // 扩容
     if (arr->length >= arr->capacity) {
+        if (arr->length == INT_MAX || arr->capacity > INT_MAX / 2) {
+            return;
+        }
+
         int new_capacity = arr->capacity * 2;
+        if (new_capacity > INT_MAX / (int)sizeof(intptr_t)) {
+            return;
+        }
         intptr_t* new_data = (intptr_t*)realloc(arr->data, sizeof(intptr_t) * new_capacity);
         if (!new_data) return;
         arr->data = new_data;
@@ -276,6 +302,7 @@ void append_ptr(dynarray_ptr* arr, intptr_t value) {
     }
 
     arr->data[arr->length++] = value;
+    gc_retain_if_managed((void*)value);
 }
 
 intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index) {

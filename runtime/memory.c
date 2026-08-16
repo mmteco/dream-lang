@@ -6,6 +6,10 @@
 #include <stdatomic.h>
 #include <pthread.h>
 #include <assert.h>
+#include "union.h"
+#include "utf8.h"
+#include "dict.h"
+#include "tuple.h"
 
 // ============================================================================
 // Dream 语言 GC 管理系统
@@ -21,6 +25,7 @@
 // 对象类型标记
 typedef enum {
     OBJ_DYNARRAY,
+    OBJ_DYNARRAY_PTR,
     OBJ_STRING,
     OBJ_DICT,
     OBJ_TUPLE,
@@ -111,7 +116,7 @@ typedef struct {
 } MemoryPool;
 
 static MemoryPool pools[POOL_SIZE_CLASSES];
-static int pools_initialized = 0;
+static pthread_once_t pools_once = PTHREAD_ONCE_INIT;
 
 // 统计信息
 static struct {
@@ -127,17 +132,17 @@ static struct {
 } gc_stats = {0};
 
 // 前向声明
-void gc_cleanup();
+void gc_cleanup(void);
 void gc_collect_generation(int generation);
-void gc_detect_cycles();
+void gc_detect_cycles(void);
+void gc_retain(void* object);
+void gc_release(void* object);
 
 // ============================================================================
 // 内存池管理
 // ============================================================================
 
-static void init_pools() {
-    if (pools_initialized) return;
-
+static void initialize_pools(void) {
     for (int i = 0; i < POOL_SIZE_CLASSES; i++) {
         pools[i].free_list = NULL;
         pools[i].object_size = pool_sizes[i];
@@ -145,8 +150,11 @@ static void init_pools() {
         pthread_mutex_init(&pools[i].lock, NULL);
     }
 
-    pools_initialized = 1;
     atexit(gc_cleanup);
+}
+
+static void init_pools(void) {
+    pthread_once(&pools_once, initialize_pools);
 }
 
 static int find_pool_index(size_t size) {
@@ -206,7 +214,8 @@ static ObjectHeader* get_header(void* object) {
 }
 
 static int is_container(ObjectType type) {
-    return (type == OBJ_DYNARRAY || type == OBJ_DICT || type == OBJ_TUPLE);
+    return (type == OBJ_DYNARRAY || type == OBJ_DYNARRAY_PTR ||
+            type == OBJ_DICT || type == OBJ_TUPLE);
 }
 
 // 将容器对象加入容器链表
@@ -234,6 +243,31 @@ static void remove_from_container_list(ObjectHeader* header) {
     }
 
     pthread_mutex_unlock(&g_container_lock);
+}
+
+static ObjectHeader* find_managed_header_locked(const void* object) {
+    for (ObjectHeader* header = g_object_list; header != NULL; header = header->next) {
+        void* managed_object = (void*)((char*)header + sizeof(ObjectHeader));
+        if (managed_object == object) return header;
+    }
+    return NULL;
+}
+
+int gc_is_managed(const void* object) {
+    if (object == NULL) return 0;
+
+    pthread_mutex_lock(&g_object_list_lock);
+    int is_managed = find_managed_header_locked(object) != NULL;
+    pthread_mutex_unlock(&g_object_list_lock);
+    return is_managed;
+}
+
+void gc_retain_if_managed(void* object) {
+    if (gc_is_managed(object)) gc_retain(object);
+}
+
+void gc_release_if_managed(void* object) {
+    if (gc_is_managed(object)) gc_release(object);
 }
 
 // ============================================================================
@@ -401,6 +435,9 @@ void gc_release(void* object) {
 
         // 特定类型的清理
         void* obj_data = object;
+        if (header->type == OBJ_STRING) {
+            utf8_cache_forget(obj_data);
+        }
         switch (header->type) {
             case OBJ_DYNARRAY: {
                 typedef struct {
@@ -415,29 +452,32 @@ void gc_release(void* object) {
                 }
                 break;
             }
+            case OBJ_DYNARRAY_PTR: {
+                dynarray_ptr* arr = (dynarray_ptr*)obj_data;
+                if (arr->data != NULL) {
+                    for (int index = 0; index < arr->length; index++) {
+                        gc_release_if_managed((void*)arr->data[index]);
+                    }
+                    free(arr->data);
+                }
+                break;
+            }
+            case OBJ_DICT:
+                dict_release_contents((dict_t*)obj_data);
+                break;
+            case OBJ_TUPLE: {
+                tuple_t* tuple = (tuple_t*)obj_data;
+                free(tuple->elements);
+                tuple->elements = NULL;
+                break;
+            }
             case OBJ_UNION: {
-                // Union 类型的清理（释放字符串内存）
-                typedef enum {
-                    UNION_INT,
-                    UNION_FLOAT,
-                    UNION_STRING,
-                    UNION_BOOL,
-                    UNION_NONE,
-                } UnionTag;
-
-                typedef struct {
-                    UnionTag tag;
-                    union {
-                        int32_t as_int;
-                        double as_float;
-                        char* as_string;
-                        bool as_bool;
-                    } value;
-                } union_t;
-
                 union_t* u = (union_t*)obj_data;
                 if (u->tag == UNION_STRING && u->value.as_string != NULL) {
                     free(u->value.as_string);
+                }
+                if (u->tag == UNION_STRUCT && u->type_name != NULL) {
+                    free(u->type_name);
                 }
                 break;
             }
@@ -489,9 +529,6 @@ uint32_t gc_get_ref_count(void* object) {
 // 对象提升机制（局部 -> 共享）
 // ============================================================================
 
-// 前向声明
-static void promote_array_elements(void* object);
-
 // 提升对象为共享对象
 void gc_promote_to_shared(void* object) {
     if (!object) return;
@@ -506,29 +543,23 @@ void gc_promote_to_shared(void* object) {
 
     atomic_fetch_add(&gc_stats.promotions, 1);
 
-    // 递归提升子对象
-    if (h->type == OBJ_DYNARRAY) {
-        promote_array_elements(object);
-    }
-    // TODO: 处理其他容器类型（DICT, TUPLE）
-}
-
-// 提升动态数组中的所有元素
-static void promote_array_elements(void* object) {
-    typedef struct {
-        int capacity;
-        int length;
-        void** data;  // 假设存储对象指针
-    } DynArrayData;
-
-    DynArrayData* arr = (DynArrayData*)object;
-    if (arr->data == NULL) return;
-
-    // 递归提升所有元素
-    for (int i = 0; i < arr->length; i++) {
-        void* elem = arr->data[i];
-        if (elem != NULL) {
-            gc_promote_to_shared(elem);
+    if (h->type == OBJ_DYNARRAY_PTR) {
+        dynarray_ptr* arr = (dynarray_ptr*)object;
+        for (int index = 0; arr->data != NULL && index < arr->length; index++) {
+            void* child = (void*)arr->data[index];
+            if (gc_is_managed(child)) gc_promote_to_shared(child);
+        }
+    } else if (h->type == OBJ_DICT) {
+        dict_t* dict = (dict_t*)object;
+        if (dict->val_type == DICT_VAL_PTR && dict->buckets != NULL) {
+            for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
+                for (dict_entry_t* entry = dict->buckets[bucket_index];
+                     entry != NULL; entry = entry->next) {
+                    if (gc_is_managed(entry->value)) {
+                        gc_promote_to_shared(entry->value);
+                    }
+                }
+            }
         }
     }
 }
@@ -539,34 +570,41 @@ static void promote_array_elements(void* object) {
 
 // 减少子对象的 gc_refs
 static void subtract_refs_from_children(ObjectHeader* obj) {
-    void* object = (void*)((char*)obj + sizeof(ObjectHeader));
-
     switch (obj->type) {
-        case OBJ_DYNARRAY: {
-            typedef struct {
-                int capacity;
-                int length;
-                void** data;
-            } DynArrayData;
-
-            DynArrayData* arr = (DynArrayData*)object;
-            if (arr->data == NULL) break;
-
-            for (int i = 0; i < arr->length; i++) {
-                void* child = arr->data[i];
-                if (child) {
-                    ObjectHeader* child_h = get_header(child);
-                    if (child_h->gc_refs > 0) {
-                        child_h->gc_refs--;
+        case OBJ_DYNARRAY:
+            // dynarray_i32 不包含对象引用，不能进行指针遍历。
+            break;
+        case OBJ_DYNARRAY_PTR: {
+            dynarray_ptr* arr = (dynarray_ptr*)((char*)obj + sizeof(ObjectHeader));
+            for (int index = 0; arr->data != NULL && index < arr->length; index++) {
+                void* child = (void*)arr->data[index];
+                pthread_mutex_lock(&g_object_list_lock);
+                ObjectHeader* child_header = find_managed_header_locked(child);
+                if (child_header != NULL && child_header->gc_refs > 0) {
+                    child_header->gc_refs--;
+                }
+                pthread_mutex_unlock(&g_object_list_lock);
+            }
+            break;
+        }
+        case OBJ_DICT: {
+            dict_t* dict = (dict_t*)((char*)obj + sizeof(ObjectHeader));
+            if (dict->val_type != DICT_VAL_PTR || dict->buckets == NULL) break;
+            for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
+                for (dict_entry_t* entry = dict->buckets[bucket_index];
+                     entry != NULL; entry = entry->next) {
+                    pthread_mutex_lock(&g_object_list_lock);
+                    ObjectHeader* child_header = find_managed_header_locked(entry->value);
+                    if (child_header != NULL && child_header->gc_refs > 0) {
+                        child_header->gc_refs--;
                     }
+                    pthread_mutex_unlock(&g_object_list_lock);
                 }
             }
             break;
         }
-
-        case OBJ_DICT:
         case OBJ_TUPLE:
-            // TODO: 实现字典和元组的子对象遍历
+            // tuple_t 当前只保存 i32，不包含对象引用。
             break;
 
         default:
@@ -638,6 +676,19 @@ void gc_detect_cycles() {
                     }
                     break;
                 }
+                case OBJ_DYNARRAY_PTR: {
+                    dynarray_ptr* arr = (dynarray_ptr*)object;
+                    free(arr->data);
+                    break;
+                }
+                case OBJ_DICT:
+                    dict_destroy_contents((dict_t*)object);
+                    break;
+                case OBJ_TUPLE: {
+                    tuple_t* tuple = (tuple_t*)object;
+                    free(tuple->elements);
+                    break;
+                }
                 default:
                     break;
             }
@@ -672,35 +723,15 @@ void gc_detect_cycles() {
 // 分代垃圾回收
 void gc_collect_generation(int generation) {
     if (generation < 0 || generation >= NUM_GENERATIONS) return;
-
-    // 更新计数
-    generations[generation].count++;
-
-    if (generations[generation].count < generations[generation].threshold) {
-        return;  // 未达到阈值
-    }
-
-    // 重置计数
     generations[generation].count = 0;
-
-    // 触发更高代的 GC
-    if (generation < NUM_GENERATIONS - 1) {
-        generations[generation + 1].count++;
-        if (generations[generation + 1].count >= generations[generation + 1].threshold) {
-            gc_collect_generation(generation + 1);
-            return;
-        }
-    }
-
-    // 执行当前代的 GC
     gc_detect_cycles();
-
     atomic_fetch_add(&gc_stats.gc_runs, 1);
 }
 
 // 强制运行垃圾回收
-void gc_collect() {
-    gc_collect_generation(2);  // 触发最高代的完整 GC
+void gc_collect(void) {
+    gc_detect_cycles();
+    atomic_fetch_add(&gc_stats.gc_runs, 1);
 }
 
 // ============================================================================
@@ -729,13 +760,14 @@ void gc_cleanup() {
     pthread_mutex_lock(&g_object_list_lock);
 
     ObjectHeader* obj = g_object_list;
-    size_t leaked = 0;
-
     while (obj != NULL) {
         ObjectHeader* next = obj->next;
 
         // 清理对象数据
         void* object = (void*)((char*)obj + sizeof(ObjectHeader));
+        if (obj->type == OBJ_STRING) {
+            utf8_cache_forget(object);
+        }
         switch (obj->type) {
             case OBJ_DYNARRAY: {
                 typedef struct {
@@ -750,29 +782,26 @@ void gc_cleanup() {
                 }
                 break;
             }
+            case OBJ_DYNARRAY_PTR: {
+                dynarray_ptr* arr = (dynarray_ptr*)object;
+                free(arr->data);
+                break;
+            }
+            case OBJ_DICT:
+                dict_destroy_contents((dict_t*)object);
+                break;
+            case OBJ_TUPLE: {
+                tuple_t* tuple = (tuple_t*)object;
+                free(tuple->elements);
+                break;
+            }
             case OBJ_UNION: {
-                // Union 类型的清理（释放字符串内存）
-                typedef enum {
-                    UNION_INT,
-                    UNION_FLOAT,
-                    UNION_STRING,
-                    UNION_BOOL,
-                    UNION_NONE,
-                } UnionTag;
-
-                typedef struct {
-                    UnionTag tag;
-                    union {
-                        int32_t as_int;
-                        double as_float;
-                        char* as_string;
-                        bool as_bool;
-                    } value;
-                } union_t;
-
                 union_t* u = (union_t*)object;
                 if (u->tag == UNION_STRING && u->value.as_string != NULL) {
                     free(u->value.as_string);
+                }
+                if (u->tag == UNION_STRUCT && u->type_name != NULL) {
+                    free(u->type_name);
                 }
                 break;
             }
@@ -794,7 +823,6 @@ void gc_cleanup() {
         }
 
         free(obj);
-        leaked++;
         obj = next;
     }
 

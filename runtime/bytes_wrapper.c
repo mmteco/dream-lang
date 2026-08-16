@@ -3,6 +3,7 @@
 #include "dynarray.h"
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 /**
  * bytes 函数的 Dream 类型包装器
@@ -29,7 +30,7 @@ int32_t __c_bytes_length(dynarray_i32* bytes_arr) {
  * LLVM 签名: ({ i32, i32, i8* }*, i32) -> i32
  */
 int32_t __c_bytes_get(dynarray_i32* bytes_arr, int32_t index) {
-    if (bytes_arr == NULL || index < 0 || index >= bytes_arr->length) {
+    if (bytes_arr == NULL || bytes_arr->data == NULL || index < 0 || index >= bytes_arr->length) {
         return -1;
     }
     // dynarray_i32 中存储的是 i32，但实际上是 byte (0-255)
@@ -42,15 +43,21 @@ int32_t __c_bytes_get(dynarray_i32* bytes_arr, int32_t index) {
  * LLVM 签名: ({ i32, i32, i8* }*, i32, i32) -> { i32, i32, i8* }*
  */
 dynarray_i32* __c_bytes_slice(dynarray_i32* bytes_arr, int32_t start, int32_t end) {
-    if (bytes_arr == NULL || start < 0 || end > bytes_arr->length || start > end) {
-        return create_dynarray_i32(0);
-    }
+    if (bytes_arr == NULL) return create_dynarray_i32(0);
+    if (start < 0) start = 0;
+    if (end < 0) end = 0;
+    if (start > bytes_arr->length) start = bytes_arr->length;
+    if (end > bytes_arr->length) end = bytes_arr->length;
+    if (start > end) start = end;
 
     int32_t new_length = end - start;
     dynarray_i32* result = create_dynarray_i32(new_length);
+    if (result == NULL) return NULL;
 
-    for (int32_t i = 0; i < new_length; i++) {
-        append_i32(result, bytes_arr->data[start + i]);
+    if (new_length > 0 && bytes_arr->data != NULL) {
+        memcpy(result->data, bytes_arr->data + start,
+               (size_t)new_length * sizeof(int));
+        result->length = new_length;
     }
 
     return result;
@@ -71,9 +78,15 @@ dynarray_i32* __c_bytes_from_array(dynarray_i32* byte_list) {
 
     // 创建新的 dynarray 并复制数据
     dynarray_i32* result = create_dynarray_i32(byte_list->length);
-    for (int32_t i = 0; i < byte_list->length; i++) {
-        append_i32(result, byte_list->data[i] & 0xFF);
+    if (result == NULL) return NULL;
+    if (byte_list->length > 0 && byte_list->data == NULL) {
+        free_dynarray_i32(result);
+        return NULL;
     }
+    for (int32_t i = 0; i < byte_list->length; i++) {
+        result->data[i] = byte_list->data[i] & 0xFF;
+    }
+    result->length = byte_list->length;
 
     return result;
 }
@@ -88,12 +101,16 @@ dynarray_i32* __c_str_to_bytes(const char* str) {
         return create_dynarray_i32(0);
     }
 
-    int32_t length = strlen(str);
+    size_t string_length = strlen(str);
+    if (string_length > INT32_MAX) return NULL;
+    int32_t length = (int32_t)string_length;
     dynarray_i32* result = create_dynarray_i32(length);
+    if (result == NULL) return NULL;
 
     for (int32_t i = 0; i < length; i++) {
-        append_i32(result, (uint8_t)str[i]);
+        result->data[i] = (uint8_t)str[i];
     }
+    result->length = length;
 
     return result;
 }
@@ -104,14 +121,15 @@ dynarray_i32* __c_str_to_bytes(const char* str) {
  * LLVM 签名: { i32, i32, i8* }* -> i8*
  */
 char* __c_bytes_to_str(dynarray_i32* bytes_arr) {
-    if (bytes_arr == NULL || bytes_arr->length == 0) {
+    if (bytes_arr == NULL || bytes_arr->length == 0 || bytes_arr->data == NULL) {
         char* empty = (char*)gc_alloc(1, OBJ_STRING);
+        if (empty == NULL) return NULL;
         empty[0] = '\0';
         return empty;
     }
 
     // 分配字符串内存 (+1 for null terminator)
-    char* result = (char*)gc_alloc(bytes_arr->length + 1, OBJ_STRING);
+    char* result = (char*)gc_alloc((size_t)bytes_arr->length + 1, OBJ_STRING);
     if (result == NULL) return NULL;
 
     // 复制字节数据

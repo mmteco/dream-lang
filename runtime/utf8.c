@@ -1,4 +1,5 @@
 #include "utf8.h"
+#include <limits.h>
 #include <string.h>
 
 #define UTF8_ASCII_CACHE_SIZE 8
@@ -10,6 +11,7 @@ static _Thread_local size_t cached_ascii_lengths[UTF8_ASCII_CACHE_SIZE];
 static _Thread_local int active_ascii_cache_index = -1;
 static _Thread_local const char* last_checked_string = NULL;
 static _Thread_local int last_checked_result = 0;
+static _Thread_local size_t last_checked_length = 0;
 
 int utf8_is_ascii(const char* utf8_str) {
     if (utf8_str == NULL) return 0;
@@ -31,6 +33,7 @@ int utf8_is_ascii(const char* utf8_str) {
         if (*bytes >= 0x80) {
             last_checked_string = utf8_str;
             last_checked_result = 0;
+            last_checked_length = length;
             active_ascii_cache_index = -1;
             return 0;
         }
@@ -40,6 +43,7 @@ int utf8_is_ascii(const char* utf8_str) {
 
     last_checked_string = utf8_str;
     last_checked_result = 1;
+    last_checked_length = length;
     active_ascii_cache_index = -1;
     if (length >= UTF8_ASCII_CACHE_THRESHOLD) {
         int replacement_index = 0;
@@ -56,14 +60,50 @@ int utf8_is_ascii(const char* utf8_str) {
     return 1;
 }
 
+size_t utf8_byte_length(const char* utf8_str) {
+    if (utf8_str == NULL) return 0;
+    if (utf8_str == last_checked_string && last_checked_result) {
+        return last_checked_length;
+    }
+
+    for (int cache_index = 0; cache_index < UTF8_ASCII_CACHE_SIZE; cache_index++) {
+        if (cached_ascii_strings[cache_index] == utf8_str) {
+            return cached_ascii_lengths[cache_index];
+        }
+    }
+
+    return strlen(utf8_str);
+}
+
+void utf8_cache_forget(const char* utf8_str) {
+    if (utf8_str == NULL) return;
+    if (utf8_str == last_checked_string) {
+        last_checked_string = NULL;
+        last_checked_result = 0;
+        last_checked_length = 0;
+    }
+
+    for (int cache_index = 0; cache_index < UTF8_ASCII_CACHE_SIZE; cache_index++) {
+        if (cached_ascii_strings[cache_index] == utf8_str) {
+            cached_ascii_strings[cache_index] = NULL;
+            cached_ascii_results[cache_index] = 0;
+            cached_ascii_lengths[cache_index] = 0;
+        }
+    }
+}
+
 // UTF-8 非法字符替换字符
 #define UTF8_REPLACEMENT_CHAR 0xFFFD
 
 /**
  * 从 UTF-8 字节序列解码单个 rune
  */
-uint32_t utf8_decode_rune(const uint8_t* utf8_bytes, int offset, int* bytes_read) {
+uint32_t utf8_decode_rune(const uint8_t* utf8_bytes, size_t length, size_t offset, int* bytes_read) {
     if (utf8_bytes == NULL || bytes_read == NULL) {
+        if (bytes_read != NULL) *bytes_read = 0;
+        return 0;
+    }
+    if (offset >= length) {
         *bytes_read = 0;
         return 0;
     }
@@ -79,26 +119,49 @@ uint32_t utf8_decode_rune(const uint8_t* utf8_bytes, int offset, int* bytes_read
 
     // 2 字节：110xxxxx 10xxxxxx
     if ((first & 0xE0) == 0xC0) {
+        if (length - offset < 2) {
+            *bytes_read = 1;
+            return UTF8_REPLACEMENT_CHAR;
+        }
         if ((p[1] & 0xC0) != 0x80) {
             *bytes_read = 1;
             return UTF8_REPLACEMENT_CHAR;
         }
+        uint32_t codepoint = ((first & 0x1F) << 6) | (p[1] & 0x3F);
+        if (codepoint < 0x80) {
+            *bytes_read = 1;
+            return UTF8_REPLACEMENT_CHAR;
+        }
         *bytes_read = 2;
-        return ((first & 0x1F) << 6) | (p[1] & 0x3F);
+        return codepoint;
     }
 
     // 3 字节：1110xxxx 10xxxxxx 10xxxxxx
     if ((first & 0xF0) == 0xE0) {
+        if (length - offset < 3) {
+            *bytes_read = 1;
+            return UTF8_REPLACEMENT_CHAR;
+        }
         if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80) {
             *bytes_read = 1;
             return UTF8_REPLACEMENT_CHAR;
         }
+        uint32_t codepoint = ((first & 0x0F) << 12) |
+          ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        if (codepoint < 0x800 || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
+            *bytes_read = 1;
+            return UTF8_REPLACEMENT_CHAR;
+        }
         *bytes_read = 3;
-        return ((first & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        return codepoint;
     }
 
     // 4 字节：11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
     if ((first & 0xF8) == 0xF0) {
+        if (length - offset < 4) {
+            *bytes_read = 1;
+            return UTF8_REPLACEMENT_CHAR;
+        }
         if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80 || (p[3] & 0xC0) != 0x80) {
             *bytes_read = 1;
             return UTF8_REPLACEMENT_CHAR;
@@ -107,7 +170,7 @@ uint32_t utf8_decode_rune(const uint8_t* utf8_bytes, int offset, int* bytes_read
                              ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
 
         // 检查是否在有效 Unicode 范围内 (U+0000 to U+10FFFF)
-        if (codepoint > 0x10FFFF) {
+        if (codepoint < 0x10000 || codepoint > 0x10FFFF) {
             *bytes_read = 1;
             return UTF8_REPLACEMENT_CHAR;
         }
@@ -128,7 +191,7 @@ int utf8_encode_rune(uint32_t rune, uint8_t* buffer) {
     if (buffer == NULL) return 0;
 
     // 检查有效范围
-    if (rune > 0x10FFFF) return 0;
+    if (rune > 0x10FFFF || (rune >= 0xD800 && rune <= 0xDFFF)) return 0;
 
     // 1 字节：0xxxxxxx (U+0000 to U+007F)
     if (rune <= 0x7F) {
@@ -168,21 +231,39 @@ int utf8_rune_count(const char* utf8_str) {
         if (active_ascii_cache_index >= 0) {
             return (int)cached_ascii_lengths[active_ascii_cache_index];
         }
-        return (int)strlen(utf8_str);
+        return last_checked_length > INT_MAX ? INT_MAX : (int)last_checked_length;
     }
 
     int count = 0;
     int offset = 0;
-    int len = strlen(utf8_str);
+    size_t len = strlen(utf8_str);
 
-    while (offset < len) {
+    while ((size_t)offset < len) {
         int bytes_read = 0;
-        utf8_decode_rune((const uint8_t*)utf8_str, offset, &bytes_read);
+        utf8_decode_rune((const uint8_t*)utf8_str, len, (size_t)offset, &bytes_read);
         if (bytes_read == 0) break;
         offset += bytes_read;
         count++;
     }
 
+    return count;
+}
+
+int utf8_rune_count_prefix(const char* utf8_str, size_t byte_length) {
+    if (utf8_str == NULL) return 0;
+
+    size_t string_length = strlen(utf8_str);
+    if (byte_length > string_length) byte_length = string_length;
+
+    int count = 0;
+    size_t offset = 0;
+    while (offset < byte_length) {
+        int bytes_read = 0;
+        utf8_decode_rune((const uint8_t*)utf8_str, string_length, offset, &bytes_read);
+        if (bytes_read <= 0 || (size_t)bytes_read > byte_length - offset) break;
+        offset += (size_t)bytes_read;
+        count++;
+    }
     return count;
 }
 
@@ -195,22 +276,22 @@ int utf8_byte_offset(const char* utf8_str, int rune_index) {
         if (active_ascii_cache_index >= 0) {
             return (size_t)rune_index <= cached_ascii_lengths[active_ascii_cache_index] ? rune_index : -1;
         }
-        return (size_t)rune_index <= strlen(utf8_str) ? rune_index : -1;
+        return (size_t)rune_index <= last_checked_length ? rune_index : -1;
     }
 
     int offset = 0;
-    int len = strlen(utf8_str);
+    size_t len = strlen(utf8_str);
     int current_rune = 0;
 
-    while (offset < len && current_rune < rune_index) {
+    while ((size_t)offset < len && current_rune < rune_index) {
         int bytes_read = 0;
-        utf8_decode_rune((const uint8_t*)utf8_str, offset, &bytes_read);
+        utf8_decode_rune((const uint8_t*)utf8_str, len, (size_t)offset, &bytes_read);
         if (bytes_read == 0) return -1;
         offset += bytes_read;
         current_rune++;
     }
 
-    if (current_rune == rune_index && offset <= len) {
+    if (current_rune == rune_index && (size_t)offset <= len) {
         return offset;
     }
 
@@ -225,5 +306,6 @@ uint32_t utf8_rune_at(const char* utf8_str, int rune_index) {
     if (offset < 0) return 0;
 
     int bytes_read = 0;
-    return utf8_decode_rune((const uint8_t*)utf8_str, offset, &bytes_read);
+    return utf8_decode_rune((const uint8_t*)utf8_str, utf8_byte_length(utf8_str),
+                            (size_t)offset, &bytes_read);
 }
