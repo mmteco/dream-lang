@@ -14,6 +14,9 @@ examples/
 *.a
 *.so
 
+# Dream ID
+*.dir
+
 # 可执行文件
 test/test_core
 bootstrap/compiler

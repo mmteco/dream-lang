@@ -1,0 +1,3 @@
+(test
+ (name dir_test)
+ (libraries dream_lib))
