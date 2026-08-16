@@ -72,6 +72,37 @@ let list_function =
     blocks = [entry];
   }
 
+let branch_merge_program =
+  let position = {Ast.line = 1; column = 1} in
+  let integer value = Ast.EInt (value, position) in
+  let variable name = Ast.EVar (name, position) in
+  let definition = {
+    Ast.def_name = "main";
+    def_name_pos = position;
+    def_type_params = [];
+    def_params = [];
+    def_return_type = Some Ast.TInt;
+    def_body = [
+      Ast.SLet {
+        let_name = "value";
+        let_name_pos = position;
+        let_type = Some Ast.TInt;
+        let_value = integer 0;
+        let_pos = position;
+      };
+      Ast.SIf (
+        Ast.EBool (true, position),
+        [Ast.SAssign ("value", integer 1, position)],
+        [],
+        None,
+        position
+      );
+      Ast.SReturn (Some (variable "value"), position);
+    ];
+    def_pos = position;
+  } in
+  [Ast.SDef definition]
+
 let () =
   let module_ = {
     Dir.name = "dir_test";
@@ -103,4 +134,19 @@ let () =
   } in
   assert_true (contains list_llvm_text "@set_dynarray_i32")
     "LLVM lowering lost list mutation";
+  let merged_module = match Dir_lower.lower_program branch_merge_program with
+    | Ok module_ -> module_
+    | Error message -> failwith message
+  in
+  let merged_function = List.find (fun (function_def : Dir.function_def) -> function_def.name = "main")
+    (merged_module.functions)
+  in
+  let join_block = List.find (fun (block : Dir.block) ->
+    String.length block.label >= 8 && String.sub block.label 0 8 = "if_join_")
+    merged_function.blocks
+  in
+  assert_true (List.length join_block.params = 1)
+    "DIR if lowering lost the merged variable";
+  assert_true (Dir_verify.verify merged_module = [])
+    "DIR if merge failed verification";
   print_endline "DIR pipeline test passed"

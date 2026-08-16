@@ -45,6 +45,7 @@ let rec type_of_ast = function
   | TBool -> Bool
   | TStr -> Str
   | TList element_type -> List (type_of_ast element_type)
+  | TTuple element_types -> Tuple (List.map type_of_ast element_types)
   | TNone -> Unit
   | TVar _ -> I32
   | type_expression ->
@@ -66,6 +67,82 @@ let rec type_of_ast = function
          | TStruct (name, _) -> name
          | TInt | TBool | TStr | TList _ | TNone -> "unknown")))
 
+let rec expression_type_hint = function
+  | EInt _ -> Some I32
+  | EBool _ -> Some Bool
+  | EString _ -> Some Str
+  | EList (elements, _) ->
+      if List.for_all (fun element -> expression_type_hint element = Some I32) elements then
+        Some (List I32)
+      else
+        None
+  | ETuple (elements, _) ->
+      let element_types = List.map expression_type_hint elements in
+      if List.for_all Option.is_some element_types then
+        Some (Tuple (List.map Option.get element_types))
+      else
+        None
+  | EBinOp (left, operation, _, _) ->
+      (match operation, expression_type_hint left with
+       | (Eq | Neq | Lt | Gt | Lte | Gte | And | Or), _ -> Some Bool
+       | (Add | Sub | Mul | Div | Mod), Some I32 -> Some I32
+       | Add, Some (List I32) -> Some (List I32)
+       | _ -> None)
+  | EUnOp (Neg, _, _) -> Some I32
+  | EUnOp (Not, _, _) -> Some Bool
+  | EIndex _ -> Some I32
+  | ESlice (collection, _, _, _) ->
+      (match expression_type_hint collection with
+       | Some (List I32) -> Some (List I32)
+       | Some Str -> Some Str
+       | _ -> None)
+  | ECall (EVar ("len", _), _, _)
+  | ECall (EVar ("text_char_code", _), _, _) -> Some I32
+  | ECall (EVar ("text_length", _), _, _) -> Some I32
+  | ECall (EVar ("read_text_file", _), _, _) -> Some Str
+  | ECall (EVar ("write_text_codes", _), _, _) -> Some I32
+  | ECall _ -> Some I32
+  | EVar _
+  | EIf _
+  | EMatch _
+  | EDict _
+  | EAttr _
+  | ELambda _
+  | EListComp _
+  | EEnumVariant _
+  | EStructLiteral _
+  | EStructAccess _
+  | ETernary _
+  | ETry _
+  | ETypeOf _
+  | EFloat _
+  | ERune _
+  | EByte _ -> None
+
+let rec first_return_type statements =
+  match statements with
+  | [] -> None
+  | SReturn (Some expression, _) :: _ -> expression_type_hint expression
+  | SReturn (None, _) :: _ -> Some Unit
+  | SIf (_, then_body, elifs, else_body, _) :: rest ->
+      (match first_return_type then_body with
+       | Some _ as result -> result
+       | None ->
+           (match List.find_map (fun (_, body) -> first_return_type body) elifs with
+            | Some _ as result -> result
+            | None ->
+                (match else_body with
+                 | Some body ->
+                     (match first_return_type body with
+                      | Some _ as result -> result
+                      | None -> first_return_type rest)
+                 | None -> first_return_type rest)))
+  | SWhile (_, body, _) :: rest ->
+      (match first_return_type body with
+       | Some _ as result -> result
+       | None -> first_return_type rest)
+  | _ :: rest -> first_return_type rest
+
 let signature_of_def def_info =
   let parameter_types = List.map (fun (name, type_opt, default_opt) ->
     match type_opt, default_opt with
@@ -78,7 +155,10 @@ let signature_of_def def_info =
   let return_type = match def_info.def_return_type with
     | Some type_expression -> type_of_ast type_expression
     | None when def_info.def_name = "main" -> I32
-    | None -> Unit
+    | None ->
+        (match first_return_type def_info.def_body with
+         | Some return_type -> return_type
+         | None -> Unit)
   in
   { parameter_types; return_type }
 
@@ -163,7 +243,7 @@ let default_return return_type =
   | Unit -> Return None
   | I32 -> Return (Some (Int 0))
   | Bool -> Return (Some (Bool false))
-  | Str | List _ ->
+  | Str | List _ | Tuple _ ->
       raise (Lower_error "DIR subset cannot synthesize a default reference return")
 
 let finish_function function_builder parameters =
@@ -250,12 +330,20 @@ let rec lower_expr context function_builder environment expression =
            { operand = Value value; ty = Bool }
        | Eq | Neq | Lt | Gt | Lte | Gte ->
            (match left.ty with
-            | I32 | Bool -> ()
-            | _ -> fail_at position "DIR subset only compares int and bool");
-           let value = fresh_value function_builder in
-           emit function_builder (Compare (value, compare_of_ast operation,
-             left.operand, right.operand));
-           { operand = Value value; ty = Bool })
+            | I32 | Bool ->
+                let value = fresh_value function_builder in
+                emit function_builder (Compare (value, compare_of_ast operation,
+                  left.operand, right.operand));
+                { operand = Value value; ty = Bool }
+            | Str ->
+                let comparison = fresh_value function_builder in
+                emit function_builder (StringCompare (comparison,
+                  left.operand, right.operand));
+                let value = fresh_value function_builder in
+                emit function_builder (Compare (value, compare_of_ast operation,
+                  Value comparison, Int 0));
+                { operand = Value value; ty = Bool }
+            | _ -> fail_at position "DIR subset only compares int, bool and str"))
   | EUnOp (Neg, expression, position) ->
       let value = lower_expr context function_builder environment expression in
       expect_type position I32 value.ty "negation operand";
@@ -287,6 +375,37 @@ let rec lower_expr context function_builder environment expression =
       expect_type position I32 lowered_item.ty "append value";
       emit function_builder (ListAppend (lowered_collection.operand, lowered_item.operand));
       { operand = Int 0; ty = Unit }
+  | ECall (EVar ("text_length", _), [argument], position) ->
+      let lowered_argument = lower_expr context function_builder environment argument in
+      expect_type position Str lowered_argument.ty "text_length argument";
+      let value = fresh_value function_builder in
+      emit function_builder (StringLength (value, lowered_argument.operand));
+      { operand = Value value; ty = I32 }
+  | ECall (EVar ("text_char_code", _), [text; index], position) ->
+      let lowered_text = lower_expr context function_builder environment text in
+      let lowered_index = lower_expr context function_builder environment index in
+      expect_type position Str lowered_text.ty "text_char_code text";
+      expect_type position I32 lowered_index.ty "text_char_code index";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_utf8_byte_at",
+        [Str; I32], [lowered_text.operand; lowered_index.operand]));
+      { operand = Value value; ty = I32 }
+  | ECall (EVar ("read_text_file", _), [path], position) ->
+      let lowered_path = lower_expr context function_builder environment path in
+      expect_type position Str lowered_path.ty "read_text_file path";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Str, "__c_file_read",
+        [Str], [lowered_path.operand]));
+      { operand = Value value; ty = Str }
+  | ECall (EVar ("write_text_codes", _), [path; codes], position) ->
+      let lowered_path = lower_expr context function_builder environment path in
+      let lowered_codes = lower_expr context function_builder environment codes in
+      expect_type position Str lowered_path.ty "write_text_codes path";
+      expect_type position (List I32) lowered_codes.ty "write_text_codes codes";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_file_write_bytes",
+        [Str; List I32], [lowered_path.operand; lowered_codes.operand]));
+      { operand = Value value; ty = I32 }
   | ECall (EVar (name, _), arguments, position) ->
       let lowered_arguments = List.map
         (lower_expr context function_builder environment) arguments in
@@ -336,6 +455,17 @@ let rec lower_expr context function_builder environment expression =
       emit function_builder (ListCreate (value, I32,
         List.map (fun element -> element.operand) lowered_elements));
       { operand = Value value; ty = List I32 }
+  | ETuple (elements, position) ->
+      let lowered_elements = List.map
+        (lower_expr context function_builder environment) elements in
+      List.iter (fun element ->
+        expect_type position I32 element.ty "tuple element"
+      ) lowered_elements;
+      let value = fresh_value function_builder in
+      emit function_builder (TupleCreate (value,
+        List.map (fun _ -> I32) lowered_elements,
+        List.map (fun element -> element.operand) lowered_elements));
+      { operand = Value value; ty = Tuple (List.map (fun _ -> I32) lowered_elements) }
   | EIndex (collection, index, position) ->
       let lowered_collection = lower_expr context function_builder environment collection in
       let lowered_index = lower_expr context function_builder environment index in
@@ -346,7 +476,6 @@ let rec lower_expr context function_builder environment expression =
       { operand = Value value; ty = I32 }
   | ESlice (collection, start, end_, position) ->
       let lowered_collection = lower_expr context function_builder environment collection in
-      expect_type position (List I32) lowered_collection.ty "slice collection";
       let start_value = match start with
         | Some expression ->
             let value = lower_expr context function_builder environment expression in
@@ -361,12 +490,25 @@ let rec lower_expr context function_builder environment expression =
             value.operand
         | None ->
             let value = fresh_value function_builder in
-            emit function_builder (ListLength (value, lowered_collection.operand));
+            (match lowered_collection.ty with
+             | List I32 ->
+                 emit function_builder (ListLength (value, lowered_collection.operand))
+             | Str ->
+                 emit function_builder (StringLength (value, lowered_collection.operand))
+             | _ -> fail_at position "slice collection must be a string or list<i32>");
             Value value
       in
       let value = fresh_value function_builder in
-      emit function_builder (ListSlice (value, lowered_collection.operand, start_value, end_value));
-      { operand = Value value; ty = List I32 }
+      (match lowered_collection.ty with
+       | List I32 ->
+           emit function_builder (ListSlice (value, lowered_collection.operand,
+             start_value, end_value));
+           { operand = Value value; ty = List I32 }
+       | Str ->
+           emit function_builder (StringSlice (value, lowered_collection.operand,
+             start_value, end_value));
+           { operand = Value value; ty = Str }
+       | _ -> fail_at position "slice collection must be a string or list<i32>")
   | EListComp (element_expression, variable_name, iterable_expression,
                condition_expression, position) ->
       lower_list_comp context function_builder environment element_expression
@@ -375,7 +517,6 @@ let rec lower_expr context function_builder environment expression =
   | EIf (_, _, _, position)
   | EMatch (_, _, position)
   | EDict (_, position)
-  | ETuple (_, position)
   | EAttr (_, _, position)
   | ELambda (_, _, position)
   | EEnumVariant (_, _, _, position)
@@ -451,6 +592,20 @@ and lower_if context function_builder environment condition then_body elifs else
   expect_type position Bool condition_value.ty "if condition";
   let join_label = fresh_label function_builder "if_join" in
   create_block function_builder join_label;
+  let join_bindings = Hashtbl.fold (fun name value bindings ->
+    (name, value.ty) :: bindings
+  ) environment [] |> List.sort (fun (left, _) (right, _) -> compare left right) in
+  let join_parameters = List.map (fun (name, ty) ->
+    (name, fresh_value function_builder, ty)
+  ) join_bindings in
+  let join_arguments branch_environment =
+    List.map (fun (name, _, _) ->
+      (lookup_value position branch_environment name).operand
+    ) join_parameters
+  in
+  let jump_to_join branch_environment =
+    terminate function_builder (Jump (join_label, join_arguments branch_environment))
+  in
   let rec lower_branch current_condition current_body remaining_elifs =
     let then_label = fresh_label function_builder "if_then" in
     let next_label = fresh_label function_builder "if_next" in
@@ -459,9 +614,10 @@ and lower_if context function_builder environment condition then_body elifs else
     terminate function_builder (Branch (current_condition,
       (then_label, []), (next_label, [])));
     switch_to function_builder then_label;
-    lower_statements context function_builder (Hashtbl.copy environment) current_body;
+    let then_environment = Hashtbl.copy environment in
+    lower_statements context function_builder then_environment current_body;
     if not (is_terminated function_builder) then
-      terminate function_builder (Jump (join_label, []));
+      jump_to_join then_environment;
     switch_to function_builder next_label;
     match remaining_elifs with
     | (elif_condition, elif_body) :: rest ->
@@ -471,13 +627,20 @@ and lower_if context function_builder environment condition then_body elifs else
     | [] ->
         (match else_body with
          | Some body ->
-             lower_statements context function_builder (Hashtbl.copy environment) body;
+             let else_environment = Hashtbl.copy environment in
+             lower_statements context function_builder else_environment body;
              if not (is_terminated function_builder) then
-               terminate function_builder (Jump (join_label, []))
-         | None -> terminate function_builder (Jump (join_label, [])));
+               jump_to_join else_environment
+         | None -> jump_to_join environment);
   in
   lower_branch condition_value.operand then_body elifs;
-  switch_to function_builder join_label
+  switch_to function_builder join_label;
+  set_block_params function_builder join_label
+    (List.map (fun (_, value, ty) -> (value, ty)) join_parameters);
+  Hashtbl.clear environment;
+  List.iter (fun (name, value, ty) ->
+    Hashtbl.replace environment name { operand = Value value; ty }
+  ) join_parameters
 
 and lower_while context function_builder environment condition body position =
   let condition_label = fresh_label function_builder "while_condition" in
@@ -543,6 +706,26 @@ and lower_statement context function_builder environment statement =
            expect_type let_info.let_pos (type_of_ast type_expression) value.ty "let binding"
        | None -> ());
       Hashtbl.replace environment let_info.let_name value
+  | SLetPat (PTuple patterns, expression, position) ->
+      let value = lower_expr context function_builder environment expression in
+      (match value.ty with
+       | Tuple element_types when List.length element_types = List.length patterns ->
+           List.iteri (fun index pattern ->
+             let element_type = List.nth element_types index in
+             let element_value = fresh_value function_builder in
+             emit function_builder (TupleGet (
+               element_value, element_type, value.operand, index));
+             (match pattern with
+              | PVar name ->
+                  Hashtbl.replace environment name {
+                    operand = Value element_value;
+                    ty = element_type;
+                  }
+              | PWildcard -> ()
+              | _ -> fail_at position "DIR tuple patterns only support variables"
+             )
+           ) patterns
+       | _ -> fail_at position "tuple pattern requires a tuple value")
   | SReturn (expression, position) ->
       (match expression with
        | None ->
@@ -573,12 +756,13 @@ and lower_statement context function_builder environment statement =
       expect_type position I32 lowered_value.ty "index assignment value";
       emit function_builder (ListSet (
         lowered_collection.operand, lowered_index.operand, lowered_value.operand))
+  | SImport _
+  | SFromImport _ ->
+      ()
   | SDef _ -> fail_at { line = 0; column = 0 } "nested function definitions are unsupported"
   | SLetPat (_, _, position)
   | SFor (_, _, _, position)
   | SFieldAssign (_, _, _, position)
-  | SImport (_, _, position)
-  | SFromImport (_, _, position)
   | SImpl (_, position) ->
       fail_at position "statement is outside the initial DIR subset"
   | SStruct struct_info ->
@@ -605,6 +789,15 @@ let lower_function context def_info =
 let is_builtin_enum = function
   | SEnum enum_info -> enum_info.enum_name = "Option" || enum_info.enum_name = "Result"
   | _ -> false
+
+let runtime_externs = [
+  { name = "print_int"; parameters = [I32]; return_type = Unit };
+  { name = "print_bool"; parameters = [Bool]; return_type = Unit };
+  { name = "print_string"; parameters = [Str]; return_type = Unit };
+  { name = "__c_file_read"; parameters = [Str]; return_type = Str };
+  { name = "__c_file_write_bytes"; parameters = [Str; List I32]; return_type = I32 };
+  { name = "__c_utf8_byte_at"; parameters = [Str; I32]; return_type = I32 };
+]
 
 let lower_program program =
   try
@@ -657,21 +850,13 @@ let lower_program program =
       let functions = functions @ [lower_function context main_def] in
       Ok {
         Dir.name = "dream";
-        externs = [
-          { name = "print_int"; parameters = [I32]; return_type = Unit };
-          { name = "print_bool"; parameters = [Bool]; return_type = Unit };
-          { name = "print_string"; parameters = [Str]; return_type = Unit };
-        ];
+        externs = runtime_externs;
         functions;
       }
     else
       Ok {
         Dir.name = "dream";
-        externs = [
-          { name = "print_int"; parameters = [I32]; return_type = Unit };
-          { name = "print_bool"; parameters = [Bool]; return_type = Unit };
-          { name = "print_string"; parameters = [Str]; return_type = Unit };
-        ];
+        externs = runtime_externs;
         functions;
       }
   with

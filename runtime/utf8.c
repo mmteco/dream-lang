@@ -8,9 +8,15 @@ static _Thread_local const char* cached_ascii_strings[UTF8_ASCII_CACHE_SIZE];
 static _Thread_local int cached_ascii_results[UTF8_ASCII_CACHE_SIZE];
 static _Thread_local size_t cached_ascii_lengths[UTF8_ASCII_CACHE_SIZE];
 static _Thread_local int active_ascii_cache_index = -1;
+static _Thread_local const char* last_checked_string = NULL;
+static _Thread_local int last_checked_result = 0;
 
 int utf8_is_ascii(const char* utf8_str) {
     if (utf8_str == NULL) return 0;
+    if (utf8_str == last_checked_string) {
+        active_ascii_cache_index = -1;
+        return last_checked_result;
+    }
 
     for (int cache_index = 0; cache_index < UTF8_ASCII_CACHE_SIZE; cache_index++) {
         if (cached_ascii_strings[cache_index] == utf8_str) {
@@ -23,6 +29,8 @@ int utf8_is_ascii(const char* utf8_str) {
     size_t length = 0;
     while (*bytes != '\0') {
         if (*bytes >= 0x80) {
+            last_checked_string = utf8_str;
+            last_checked_result = 0;
             active_ascii_cache_index = -1;
             return 0;
         }
@@ -30,6 +38,8 @@ int utf8_is_ascii(const char* utf8_str) {
         length++;
     }
 
+    last_checked_string = utf8_str;
+    last_checked_result = 1;
     active_ascii_cache_index = -1;
     if (length >= UTF8_ASCII_CACHE_THRESHOLD) {
         int replacement_index = 0;

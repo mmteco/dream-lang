@@ -116,6 +116,14 @@ let verify module_ =
            add_error (Printf.sprintf "duplicate value %%v%d" value)
          else
            Hashtbl.add value_types value I32
+     | StringSlice (value, string_value, start, end_) ->
+         verify_operand value_types string_value Str "string_slice string";
+         verify_operand value_types start I32 "string_slice start";
+         verify_operand value_types end_ I32 "string_slice end";
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value Str
      | ListLength (value, collection) ->
          verify_operand value_types collection (List I32) "list_length";
          if Hashtbl.mem value_types value then
@@ -154,6 +162,35 @@ let verify module_ =
            add_error (Printf.sprintf "duplicate value %%v%d" value)
          else
            Hashtbl.add value_types value (List I32)
+     | TupleCreate (value, element_types, values) ->
+         if List.length element_types <> List.length values then
+           add_error "tuple_create element count does not match type count";
+         if List.length element_types = List.length values then
+           List.iter2 (fun element_type item ->
+             if not (equal_ty element_type I32) then
+               add_error "tuple_create currently supports only i32 elements";
+             verify_operand value_types item element_type "tuple_create element"
+           ) element_types values;
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value (Tuple element_types)
+     | TupleGet (value, element_type, tuple_value, index) ->
+         (match tuple_value with
+          | Value tuple_value_id ->
+              (match Hashtbl.find_opt value_types tuple_value_id with
+               | Some (Tuple element_types) when index >= 0 && index < List.length element_types ->
+                   let actual_type = List.nth element_types index in
+                   if not (equal_ty actual_type element_type) then
+                     add_error "tuple_get result type does not match tuple element"
+               | Some (Tuple _) -> add_error "tuple_get index is out of bounds"
+               | Some _ -> add_error "tuple_get requires a tuple value"
+               | None -> add_error "tuple_get uses an undefined tuple value")
+          | _ -> add_error "tuple_get requires an SSA tuple value");
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value element_type
      | ListAppend (collection, value) ->
          verify_operand value_types collection (List I32) "list_append collection";
          verify_operand value_types value I32 "list_append value"

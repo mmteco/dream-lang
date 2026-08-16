@@ -49,6 +49,9 @@ let instruction = function
       Printf.sprintf "%%v%d = string_length %s" value (operand string_value)
   | StringCompare (value, left, right) ->
       Printf.sprintf "%%v%d = string_compare %s, %s" value (operand left) (operand right)
+  | StringSlice (value, string_value, start, end_) ->
+      Printf.sprintf "%%v%d = string_slice %s, %s, %s" value
+        (operand string_value) (operand start) (operand end_)
   | ListLength (value, collection) ->
       Printf.sprintf "%%v%d = list_length %s" value (operand collection)
   | ListGet (value, collection, index) ->
@@ -61,6 +64,13 @@ let instruction = function
         (operand collection) (operand start) (operand end_)
   | ListConcat (value, left, right) ->
       Printf.sprintf "%%v%d = list_concat %s, %s" value (operand left) (operand right)
+  | TupleCreate (value, element_types, values) ->
+      Printf.sprintf "%%v%d = tuple_create (%s) [%s]" value
+        (String.concat ", " (List.map ty element_types))
+        (String.concat ", " (List.map operand values))
+  | TupleGet (value, element_type, tuple_value, index) ->
+      Printf.sprintf "%%v%d = tuple_get %s %d %s" value
+        (ty element_type) index (operand tuple_value)
   | ListAppend (collection, value) ->
       Printf.sprintf "list_append %s, %s" (operand collection) (operand value)
   | ListSet (collection, index, value) ->

@@ -6,6 +6,7 @@ let llvm_ty = function
   | I32 -> "i32"
   | Str -> "i8*"
   | List I32 -> "%dynarray_i32*"
+  | Tuple _ -> "%dynarray_i32*"
   | List _ -> failwith "DIR LLVM lowering only supports list<i32>"
 
 let value_name value = Printf.sprintf "%%v%d" value
@@ -85,6 +86,9 @@ let render_instruction string_literals value_types buffer instruction =
    | StringCompare (value, left, right) ->
        Printf.bprintf buffer "  %s = call i32 @string_compare(i8* %s, i8* %s)\n"
          (value_name value) (operand left) (operand right)
+   | StringSlice (value, string_value, start, end_) ->
+       Printf.bprintf buffer "  %s = call i8* @string_substring(i8* %s, i32 %s, i32 %s)\n"
+         (value_name value) (operand string_value) (operand start) (operand end_)
    | ListLength (value, collection) ->
        Printf.bprintf buffer "  %s = call i32 @len_dynarray_i32(%%dynarray_i32* %s)\n"
          (value_name value) (operand collection)
@@ -104,6 +108,16 @@ let render_instruction string_literals value_types buffer instruction =
    | ListConcat (value, left, right) ->
        Printf.bprintf buffer "  %s = call %%dynarray_i32* @concat_dynarray_i32(%%dynarray_i32* %s, %%dynarray_i32* %s)\n"
          (value_name value) (operand left) (operand right)
+   | TupleCreate (value, _, values) ->
+       Printf.bprintf buffer "  %s = call %%dynarray_i32* @create_dynarray_i32(i32 %d)\n"
+         (value_name value) (List.length values);
+       List.iter (fun item ->
+         Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+           (value_name value) (operand item)
+       ) values
+   | TupleGet (value, _, tuple_value, index) ->
+       Printf.bprintf buffer "  %s = call i32 @get_dynarray_i32(%%dynarray_i32* %s, i32 %d)\n"
+         (value_name value) (operand tuple_value) index
    | ListAppend (collection, value) ->
        Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
          (operand collection) (operand value)
@@ -239,6 +253,9 @@ let render module_ =
   Buffer.add_string buffer "declare i32 @get_dynarray_i32(%dynarray_i32*, i32)\n";
   Buffer.add_string buffer "declare %dynarray_i32* @slice_dynarray_i32(%dynarray_i32*, i32, i32)\n";
   Buffer.add_string buffer "declare %dynarray_i32* @concat_dynarray_i32(%dynarray_i32*, %dynarray_i32*)\n\n";
+  Buffer.add_string buffer "declare i8* @string_substring(i8*, i32, i32)\n";
+  Buffer.add_string buffer "declare i32 @string_length(i8*)\n";
+  Buffer.add_string buffer "declare i32 @string_compare(i8*, i8*)\n";
   List.iter (fun function_def ->
     Buffer.add_string buffer (render_function literals function_def);
     Buffer.add_char buffer '\n'

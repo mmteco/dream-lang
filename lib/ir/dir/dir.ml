@@ -4,6 +4,7 @@ type ty =
   | I32
   | Str
   | List of ty
+  | Tuple of ty list
 
 type value = int
 
@@ -36,11 +37,14 @@ type instruction =
   | Call of value option * ty * string * ty list * operand list
   | StringLength of value * operand
   | StringCompare of value * operand * operand
+  | StringSlice of value * operand * operand * operand
   | ListLength of value * operand
   | ListGet of value * operand * operand
   | ListCreate of value * ty * operand list
   | ListSlice of value * operand * operand * operand
   | ListConcat of value * operand * operand
+  | TupleCreate of value * ty list * operand list
+  | TupleGet of value * ty * operand * int
   | ListAppend of operand * operand
   | ListSet of operand * operand * operand
 
@@ -90,6 +94,9 @@ let rec equal_ty left right =
   | I32, I32
   | Str, Str -> true
   | List left_element, List right_element -> equal_ty left_element right_element
+  | Tuple left_elements, Tuple right_elements ->
+      List.length left_elements = List.length right_elements &&
+      List.for_all2 equal_ty left_elements right_elements
   | _ -> false
 
 let rec ty_to_string = function
@@ -98,6 +105,8 @@ let rec ty_to_string = function
   | I32 -> "i32"
   | Str -> "str"
   | List element -> "list<" ^ ty_to_string element ^ ">"
+  | Tuple elements ->
+      "(" ^ String.concat ", " (List.map ty_to_string elements) ^ ")"
 
 let operand_value = function
   | Value value -> Some value
@@ -107,11 +116,14 @@ let instruction_result = function
   | Binop (value, ty, _, _, _) -> Some (value, ty)
   | StringLength (value, _) -> Some (value, I32)
   | StringCompare (value, _, _) -> Some (value, I32)
+  | StringSlice (value, _, _, _) -> Some (value, Str)
   | ListLength (value, _) -> Some (value, I32)
   | ListGet (value, _, _) -> Some (value, I32)
   | ListCreate (value, element_type, _) -> Some (value, List element_type)
   | ListSlice (value, _, _, _) -> Some (value, List I32)
   | ListConcat (value, _, _) -> Some (value, List I32)
+  | TupleCreate (value, element_types, _) -> Some (value, Tuple element_types)
+  | TupleGet (value, element_type, _, _) -> Some (value, element_type)
   | Compare (value, _, _, _) -> Some (value, Bool)
   | Call (Some value, ty, _, _, _) -> Some (value, ty)
   | Call (None, _, _, _, _)
@@ -125,10 +137,13 @@ let instruction_operands = function
   | Call (_, _, _, _, arguments) -> arguments
   | StringLength (_, value)
   | ListLength (_, value) -> [value]
+  | StringSlice (_, string_value, start, end_) -> [string_value; start; end_]
   | ListGet (_, collection, index) -> [collection; index]
   | ListCreate (_, _, values) -> values
   | ListSlice (_, collection, start, end_) -> [collection; start; end_]
   | ListConcat (_, left, right) -> [left; right]
+  | TupleCreate (_, _, values) -> values
+  | TupleGet (_, _, tuple_value, _) -> [tuple_value]
   | ListAppend (collection, value) -> [collection; value]
   | ListSet (collection, index, value) -> [collection; index; value]
 

@@ -66,9 +66,9 @@ quicksort: build
 dynarray: build
 	_build/default/bin/main.exe build examples/dynarray_full.dm && ./examples/dynarray_full
 
-# 执行自举：Stage 0 编译编译器，Stage 1 生成 Stage 1/Stage 2 LLVM IR
+# 执行自举：Stage 0 使用 DIR 编译编译器，后续阶段继续由生成的编译器完成
 bootstrap: build
-	_build/default/bin/main.exe build bootstrap/compiler.dm
+	_build/default/bin/main.exe build --backend=dir bootstrap/compiler.dm
 	clang -Wno-override-module -o bootstrap/compiler bootstrap/compiler.ll runtime/runtime.c runtime/memory.c runtime/dynarray.c runtime/utf8.c runtime/bytes.c runtime/utf8_wrapper.c runtime/bytes_wrapper.c runtime/str.c runtime/file.c runtime/dict.c runtime/tuple.c runtime/union.c runtime/enum.c -I runtime
 	./bootstrap/compiler
 	$(MAKE) bootstrap-verify
