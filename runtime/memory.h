@@ -1,6 +1,7 @@
 #ifndef DREAM_MEMORY_H
 #define DREAM_MEMORY_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -49,7 +50,7 @@ void gc_retain(void* object);
 void gc_release(void* object);
 
 // 判断指针是否由 Dream GC 管理。
-int gc_is_managed(const void* object);
+bool gc_is_managed(const void* object);
 
 // 仅在对象由 Dream GC 管理时调整引用计数。
 void gc_retain_if_managed(void* object);

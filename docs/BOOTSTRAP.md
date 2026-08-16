@@ -9,7 +9,42 @@
 - [x] Stage 1 已增加字符串字面量、字符串局部变量与 `str` 函数参数、`list[int]` 动态数组参数/局部变量、`append`/`len`、`print_string`、函数调用参数中的四则运算和一层嵌套调用、`while` 循环和 `switch/case/default` 的 LLVM 控制流生成。
 - [x] Stage 0 支持 `elif`、`switch/case/default`；`switch` 当前在语法层降为 `if/elif/else` 链。
 - [x] Stage 0 编译并运行 Stage 1；Stage 1 编译 `bootstrap/compiler.dm` 生成 Stage 2 LLVM IR，并由 Clang 成功链接；样例输出 `48` 和 `stage2`。
-- [ ] Stage 2 直接运行时仍存在元组/动态数组 ABI 崩溃，需要完成 Stage 2→Stage 3 的运行闭环。
+- [x] Stage 2、Stage 3 可以运行并生成字节一致的 LLVM 固定点。
+- [x] `scripts/bootstrap_build.fish` 可以使用 Stage 2 bootstrapped 编译器构建当前自举语法子集，并由 Clang/runtime 链接为可执行文件。
+- [x] Stage 2 已支持整数列表字面量、列表索引读取和列表元素赋值；`hello.dm`、`factorial.dm`、`dynarray_full.dm` 已纳入 `make bootstrap` 回归。
+- [x] Stage 2 已支持 `for value in list[int]`，并通过 `test_for_dir.dm` 的 `60` 输出回归。
+- [x] Stage 2 已支持 typed list、整数列表推导式、整数 tuple 字面量、tuple 解包和一元负号；`test_bootstrap_collections.dm` 固定回归输出 `3`、`2`、`30`、`1`。
+- [x] Stage 2 已支持整数结构体构造、声明顺序字段布局、乱序命名字段初始化和字段访问；`test_bootstrap_struct.dm` 回归输出 `7`。
+- [x] Stage 2/3 的 `switch/case/default` 已支持 `int`、`bool`、`float`、`str`；整数/布尔使用 `icmp`，浮点使用 `fcmp oeq double`，字符串通过 `string_compare`，`test_bootstrap_switch_basic.dm` 回归输出 `20`、`1`、`25`、`1`。
+- [x] bootstrap 函数收集器会从声明提取 ABI 返回类型，并贯通表达式/语句解析；`test_bootstrap_result.dm` 和 `test_bootstrap_return_metadata.dm` 使用任意函数名验证，不依赖业务函数名硬编码。
+- [x] DreamIR 的结构化 `Switch` 已支持 `int`、`float`、`bool`、`str`；整数使用 LLVM 原生 `switch`，其余标量渲染为比较链，并由 verifier 检查 case 类型一致性。
+- [x] Stage 2 已支持整数 `match`、通配符和整数载荷 enum 的基础表达式分支；`test_bootstrap_match.dm` 回归输出 `100`。
+- [x] Stage 2 已复用 `[tag, payload]` 表示支持用户 enum 和 `Some/None`、`Ok/Err` 的基础 `match`；`test_bootstrap_match_enum.dm` 与 `test_bootstrap_match_builtin.dm` 已纳入自举回归。
+- [ ] 完整语言编译器仍未完成自举；bootstrap 已迁移基础 float 字面量、参数、返回值和 switch，但浮点算术、函数值、lambda、bytes 及完整类型推导仍未完成，`language_tour.dm` 等 DIR 高级语法仍需宿主 `dream --backend=dir`。
+
+### 使用 bootstrapped 编译器
+
+先生成并验证 Stage 2：
+
+```fish
+make bootstrap
+```
+
+构建当前自举子集中的源文件：
+
+```fish
+fish scripts/bootstrap_build.fish run bootstrap/sample_functions.dm
+```
+
+或者：
+
+```fish
+make bootstrap-build FILE=bootstrap/sample_functions.dm
+```
+
+这条路径使用 `bootstrap/stage2`，不会调用 `_build/default/bin/main.exe` 编译目标文件。当前自举编译器仍是编译器子集，超出其语法和代码生成能力的源文件会在 LLVM 验证或链接阶段失败，而不会被标记为完整语言支持。
+
+没有显式 `def main()` 的示例会由 `bootstrap_build.fish` 在 `tmp/` 中生成临时入口，将顶层可执行语句放入 `main` 后再交给 Stage 2；临时文件会在脚本退出时清理。
 
 ---
 

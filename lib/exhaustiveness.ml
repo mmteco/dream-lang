@@ -8,6 +8,9 @@ type pattern_space =
   | PAny                                    (* 通配符 _ *)
   | PConst of pattern                       (* 常量模式 *)
   | PTup of pattern_space list              (* 元组模式 *)
+  | PListSpace of pattern_space list        (* 精确长度列表模式 *)
+  | PConsSpace of pattern_space * pattern_space (* 非空列表模式 *)
+  | PStructSpace of string                  (* 结构体模式 *)
   | PVariant of string * string * pattern_space list  (* 枚举变体 enum_name * variant_name * args *)
   | POr of pattern_space list               (* 或模式 *)
 
@@ -22,12 +25,12 @@ let rec pattern_to_space = function
   | PByte b -> PConst (PByte b)
   | PBool b -> PConst (PBool b)
   | PTuple pats -> PTup (List.map pattern_to_space pats)
-  | PList _ -> PAny  (* 暂时简化处理列表 *)
-  | PCons _ -> PAny  (* Cons模式暂时简化处理 *)
+  | PList pats -> PListSpace (List.map pattern_to_space pats)
+  | PCons (head, tail) -> PConsSpace (pattern_to_space head, pattern_to_space tail)
   | PType (_, _) -> PAny  (* 类型模式暂时当作通配符处理 *)
   | PEnumVariant (enum_name, variant_name, pats) ->
       PVariant (enum_name, variant_name, List.map pattern_to_space pats)
-  | PStruct (_, _) -> PAny  (* 结构体模式暂时当作通配符处理 *)
+  | PStruct (name, _) -> PStructSpace name
 
 (* 检查 match 是否全是类型模式 *)
 let all_type_patterns patterns =
@@ -85,7 +88,10 @@ let get_enum_variants _env enum_name =
 let rec is_covered space patterns =
   match space, patterns with
   | _, [] -> false
-  | PAny, _ :: _ -> true
+  | PAny, p :: rest ->
+      (match p with
+       | PAny -> true
+       | _ -> is_covered space rest)
   | PConst c1, p :: rest ->
       (match p with
        | PAny -> true
@@ -96,6 +102,23 @@ let rec is_covered space patterns =
        | PAny -> true
        | PTup pats when List.length spaces = List.length pats ->
            List.for_all2 (fun s p -> is_covered s [p]) spaces pats
+       | _ -> is_covered space rest)
+  | PListSpace spaces, p :: rest ->
+      (match p with
+       | PAny -> true
+       | PListSpace patterns when List.length spaces = List.length patterns ->
+           List.for_all2 (fun space pattern -> is_covered space [pattern]) spaces patterns
+       | _ -> is_covered space rest)
+  | PConsSpace (head_space, tail_space), p :: rest ->
+      (match p with
+       | PAny -> true
+       | PConsSpace (head_pattern, tail_pattern) ->
+           is_covered head_space [head_pattern] && is_covered tail_space [tail_pattern]
+       | _ -> is_covered space rest)
+  | PStructSpace name, p :: rest ->
+      (match p with
+       | PAny -> true
+       | PStructSpace other_name when name = other_name -> true
        | _ -> is_covered space rest)
   | PVariant (enum1, var1, args1), p :: rest ->
       (match p with

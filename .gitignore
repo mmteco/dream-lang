@@ -5,6 +5,7 @@ _build/
 claude_docs/
 .agents/
 .codegraph/
+codegraph.json
 tmp/
 
 # 示例源码应保留，编译产物不入库

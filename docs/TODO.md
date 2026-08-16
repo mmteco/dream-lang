@@ -2,6 +2,33 @@
 
 ## 当前优先级
 
+### 🚧 自举与 DIR 完整化主线
+
+- [x] 稳定当前 bootstrap/compiler.dm 自举切片，并通过 Stage 0 → Stage 1 → Stage 2 回归
+- [ ] 冻结 bootstrap 语法子集，增加语法边界和行为回归协议
+- [ ] 用 Dream 重写完整 lexer、parser、typechecker 和 DIR compiler
+- [ ] 完成真正的完整编译器自举，而不只验证 bootstrap/compiler.dm 切片
+- [ ] 设计并实现函数类型和函数值
+  - [ ] 确定 lambda 语法和函数类型标注语法
+  - [ ] 无捕获 lambda 的函数提升和间接调用
+  - [ ] 闭包捕获环境和闭包 runtime ABI
+- [ ] 完善泛型和单态化
+  - [ ] 泛型容器（list、dict、tuple、struct、enum）
+  - [ ] 高阶泛型函数和泛型约束
+- [ ] 完善 enum 和错误处理
+  - [ ] 多载荷 enum
+  - [ ] Option/Result 的完整类型参数传播
+  - [ ] 可转换错误类型的 `?` 错误传播
+- [ ] 完成动态对象和接口派发
+  - [ ] 动态对象表示和生命周期规则
+  - [ ] interface/impl 的 DIR lowering
+  - [ ] vtable 和动态方法调用
+- [ ] 补齐标准库实现，移除 `pass` 占位模块
+- [ ] 完整自举验收
+  - [ ] Stage 2 → Stage 3 使用完整 Dream 编译器
+  - [ ] DIR verifier、LLVM verifier 和行为测试全部通过
+  - [ ] 规范化 DIR 达到固定点
+
 ### 🚀 高优先级
 
 #### P0 - 核心功能缺失

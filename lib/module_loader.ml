@@ -10,12 +10,17 @@ let resolve_module_path module_path =
   if Sys.file_exists stdlib_path then
     Some stdlib_path
   else
-    (* 尝试在当前目录查找 *)
-    let local_path = module_name ^ ".dm" in
-    if Sys.file_exists local_path then
-      Some local_path
+    (* 尝试在 bootstrap 目录查找 *)
+    let bootstrap_path = "bootstrap/" ^ module_name ^ ".dm" in
+    if Sys.file_exists bootstrap_path then
+      Some bootstrap_path
     else
-      None
+      (* 尝试在当前目录查找 *)
+      let local_path = module_name ^ ".dm" in
+      if Sys.file_exists local_path then
+        Some local_path
+      else
+        None
 
 (* 读取文件内容 *)
 let read_file filename =
@@ -75,6 +80,7 @@ let load_module module_path =
 (* 导出的符号类型 *)
 type exported_symbol =
   | ExportedFunc of string * def_stmt  (* 函数名 * 函数定义 *)
+  | ExportedConst of string * const_stmt  (* 常量名 * 常量定义 *)
   | ExportedStruct of string * struct_def  (* 结构体名 * 定义 *)
   | ExportedInterface of string * interface_def  (* 接口名 * 定义 *)
   | ExportedEnum of string * enum_def  (* 枚举名 * 定义 *)
@@ -84,6 +90,7 @@ let extract_exports (ast : program) : exported_symbol list =
   let extract_from_stmt stmt =
     match stmt with
     | SDef def_info -> [ExportedFunc (def_info.def_name, def_info)]
+    | SConst const_info -> [ExportedConst (const_info.const_name, const_info)]
     | SStruct struct_info -> [ExportedStruct (struct_info.struct_name, struct_info)]
     | SInterface interface_info -> [ExportedInterface (interface_info.interface_name, interface_info)]
     | SEnum enum_info -> [ExportedEnum (enum_info.enum_name, enum_info)]
@@ -94,6 +101,7 @@ let extract_exports (ast : program) : exported_symbol list =
 (* 获取符号的名称 *)
 let get_symbol_name = function
   | ExportedFunc (name, _) -> name
+  | ExportedConst (name, _) -> name
   | ExportedStruct (name, _) -> name
   | ExportedInterface (name, _) -> name
   | ExportedEnum (name, _) -> name
@@ -142,4 +150,11 @@ let import_selected_from_module module_path selections =
                 let imported = import_symbol symbol alias in
                 find_and_import rest (imported :: acc)
       in
-      find_and_import selections []
+      (match find_and_import selections [] with
+       | Error msg -> Error msg
+       | Ok selected_imports ->
+           let constant_imports = List.filter_map (function
+             | ExportedConst _ as symbol -> Some (import_symbol symbol None)
+             | _ -> None
+           ) exports in
+           Ok (selected_imports @ constant_imports))

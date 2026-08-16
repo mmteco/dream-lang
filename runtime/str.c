@@ -212,18 +212,18 @@ char* string_strip(const char* str) {
     return result;
 }
 
-int string_starts_with(const char* str, const char* prefix) {
-    if (str == NULL || prefix == NULL) return 0;
+bool string_starts_with(const char* str, const char* prefix) {
+    if (str == NULL || prefix == NULL) return false;
     size_t len = strlen(prefix);
-    return strncmp(str, prefix, len) == 0 ? 1 : 0;
+    return strncmp(str, prefix, len) == 0;
 }
 
-int string_ends_with(const char* str, const char* suffix) {
-    if (str == NULL || suffix == NULL) return 0;
+bool string_ends_with(const char* str, const char* suffix) {
+    if (str == NULL || suffix == NULL) return false;
     size_t str_len = strlen(str);
     size_t suffix_len = strlen(suffix);
-    if (suffix_len > str_len) return 0;
-    return strcmp(str + str_len - suffix_len, suffix) == 0 ? 1 : 0;
+    if (suffix_len > str_len) return false;
+    return strcmp(str + str_len - suffix_len, suffix) == 0;
 }
 
 char* string_replace(const char* str, const char* old, const char* new_str) {
@@ -291,16 +291,16 @@ char* string_replace(const char* str, const char* old, const char* new_str) {
     return result;
 }
 
-int string_is_digit(char c) {
-    return isdigit((unsigned char)c) ? 1 : 0;
+bool string_is_digit(char c) {
+    return isdigit((unsigned char)c) != 0;
 }
 
-int string_is_alpha(char c) {
-    return isalpha((unsigned char)c) ? 1 : 0;
+bool string_is_alpha(char c) {
+    return isalpha((unsigned char)c) != 0;
 }
 
-int string_is_whitespace(char c) {
-    return isspace((unsigned char)c) ? 1 : 0;
+bool string_is_whitespace(char c) {
+    return isspace((unsigned char)c) != 0;
 }
 
 dynarray_ptr* string_split(const char* str, const char* delimiter) {

@@ -89,6 +89,15 @@ int32_t __c_utf8_rune_at(const char* utf8_str, int32_t rune_index) {
 }
 
 /**
+ * __c_rune_to_int: 将 rune 显式转换为 int
+ * Dream 签名: rune -> int
+ * LLVM 签名: i32 -> i32
+ */
+int32_t __c_rune_to_int(int32_t rune) {
+    return rune;
+}
+
+/**
  * __c_utf8_byte_at: 获取指定字节
  * Dream 签名: (str, index) -> int
  * LLVM 签名: (i8*, i32) -> i32

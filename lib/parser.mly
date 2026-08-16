@@ -42,11 +42,11 @@
 %token <int> INT
 %token <float> FLOAT
 %token <string> STRING
-%token <char> RUNE
+%token <int> RUNE
 %token <int> BYTE
 %token <bool> BOOL
 %token <string> IDENT
-%token LET DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
+%token LET LAMBDA DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
 %token IF ELSE ELIF SWITCH MATCH CASE DEFAULT FOR WHILE RETURN
 %token IMPORT FROM AS OF ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
@@ -90,6 +90,22 @@ newline_sep:
 
 statement:
   | e = expr { SExpr (e, get_expr_pos e) }
+  | CONST name = IDENT ASSIGN value = expr
+      { SConst {
+          const_name = name;
+          const_name_pos = make_position $startpos(name);
+          const_type = None;
+          const_value = value;
+          const_pos = make_position $startpos;
+        } }
+  | CONST name = IDENT COLON ty = type_expr ASSIGN value = expr
+      { SConst {
+          const_name = name;
+          const_name_pos = make_position $startpos(name);
+          const_type = Some ty;
+          const_value = value;
+          const_pos = make_position $startpos;
+        } }
   | LET name = IDENT ASSIGN value = expr
       { SLet {
           let_name = name;
@@ -480,6 +496,12 @@ type_expr:
       (* 支持 Result[T, E] 语法 *)
       TResult (ty1, ty2)
     }
+  | name = IDENT LBRACKET key_type = type_expr COMMA value_type = type_expr RBRACKET {
+      match name with
+      | "dict" -> TDict (key_type, value_type)
+      | "Result" -> TResult (key_type, value_type)
+      | _ -> TGeneric (name, TTuple [key_type; value_type])
+    }
   | name = IDENT LBRACKET ty = type_expr RBRACKET {
       (* 支持 list[T] 和 Option[T] 语法 *)
       match name with
@@ -498,6 +520,8 @@ type_expr:
       | name -> TVar name
     }
   | LBRACKET ty = type_expr RBRACKET { TList ty }
+  | LPAREN params = separated_list(COMMA, type_expr) RPAREN ARROW ret = type_expr
+      { TFunc (params, ret) }
   | LPAREN tys = separated_list(COMMA, type_expr) RPAREN { TTuple tys }
   | ty1 = type_expr PIPE ty2 = type_expr {
       (* 扁平化嵌套的TUnion: int | string | bool -> TUnion [int; string; bool] *)
@@ -510,6 +534,8 @@ type_expr:
     }
 
 expr:
+  | LAMBDA LPAREN params = separated_list(COMMA, lambda_param) RPAREN ARROW body = expr
+      { ELambda (params, body, make_position $startpos) }
   | n = INT { EInt (n, make_position $startpos) }
   | f = FLOAT { EFloat (f, make_position $startpos) }
   | s = STRING { EString (s, make_position $startpos) }
@@ -589,6 +615,10 @@ expr:
       { ETry (e, get_expr_pos e) }
   | TYPE OF e = expr
       { ETypeOf (e, make_position $startpos) }
+
+lambda_param:
+  | name = IDENT { (name, None) }
+  | name = IDENT COLON ty = type_expr { (name, Some ty) }
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }

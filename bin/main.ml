@@ -18,7 +18,7 @@ let generate_llvm backend program =
   let artifact = Compiler_backend.generate backend program in
   (artifact.llvm_ir, artifact.dir_text)
 
-let compile_to_llvm ?(silent=false) ?(backend=Legacy) input_file =
+let compile_to_llvm ?(silent=false) ?(backend=Dir) input_file =
   (* 重置错误计数器 *)
   Error.reset_counters ();
   Typeck.clear_generic_instances ();
@@ -130,7 +130,8 @@ let compile_to_exe output_ll =
     "runtime/dict.c";
     "runtime/tuple.c";
     "runtime/union.c";
-    "runtime/enum.c"
+    "runtime/enum.c";
+    "runtime/closure.c"
   ] in
   let runtime_args = String.concat " " runtime_files in
   let compile_cmd = Printf.sprintf
@@ -144,7 +145,7 @@ let compile_to_exe output_ll =
     exit 1
   end
 
-let build_command ?(backend=Legacy) input_file =
+let build_command ?(backend=Dir) input_file =
   try
     let output_ll = compile_to_llvm ~backend input_file in
     let output_exe = compile_to_exe output_ll in
@@ -160,7 +161,7 @@ let build_command ?(backend=Legacy) input_file =
       Printf.eprintf "Error: %s\n" msg;
       exit 1
 
-let run_command ?(backend=Legacy) input_file =
+let run_command ?(backend=Dir) input_file =
   try
     (* 获取用户主目录 *)
     let home = try Sys.getenv "HOME" with Not_found -> "." in
@@ -267,6 +268,7 @@ let lsp_command input_file =
 
 let print_usage () =
   Printf.printf "Usage: dream <command> [--backend=legacy|dir] <input.dm>\n";
+  Printf.printf "Default backend: dir (use --backend=legacy for the legacy backend)\n";
   Printf.printf "\n";
   Printf.printf "Commands:\n";
   Printf.printf "  build    Compile the source file to executable\n";
@@ -309,7 +311,7 @@ let () =
         in
         (backend, first_argument + 1)
       else
-        (Legacy, first_argument)
+        (Dir, first_argument)
     in
     if Array.length Sys.argv <= input_index then begin
       Printf.eprintf "Error: Missing input file\n\n";

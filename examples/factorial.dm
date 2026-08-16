@@ -1,3 +1,4 @@
+# dream-test: smoke
 def factorial(n: int) -> int:
     if n <= 1:
         return 1

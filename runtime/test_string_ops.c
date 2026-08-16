@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdbool.h>
 #include "str.h"
+#include "utf8.h"
 
 // 声明 runtime.c 中的字符串函数
 int string_length(const char* str);
@@ -14,12 +16,12 @@ int string_compare(const char* s1, const char* s2);
 char* string_upper(const char* str);
 char* string_lower(const char* str);
 char* string_strip(const char* str);
-int string_starts_with(const char* str, const char* prefix);
-int string_ends_with(const char* str, const char* suffix);
+bool string_starts_with(const char* str, const char* prefix);
+bool string_ends_with(const char* str, const char* suffix);
 char* string_replace(const char* str, const char* old, const char* new_str);
-int string_is_digit(char c);
-int string_is_alpha(char c);
-int string_is_whitespace(char c);
+bool string_is_digit(char c);
+bool string_is_alpha(char c);
+bool string_is_whitespace(char c);
 
 void test_string_length() {
     printf("Testing string_length...\n");
@@ -34,6 +36,30 @@ void test_string_char_at() {
     const char* s = "Hello";
     assert(string_char_at(s, 0) == 'H');
     assert(string_char_at(s, 4) == 'o');
+
+    const char* unicode = "A你𐀀";
+    assert(string_length(unicode) == 3);
+    assert(string_char_at(unicode, 0) == 'A');
+    assert(string_char_at(unicode, 1) == 0x4F60);
+    assert(string_char_at(unicode, 2) == 0x10000);
+    assert(string_char_at(unicode, 3) == 0);
+
+    char long_unicode[121];
+    for (int index = 0; index < 40; index++) {
+        long_unicode[index * 3] = (char)0xE4;
+        long_unicode[index * 3 + 1] = (char)0xBD;
+        long_unicode[index * 3 + 2] = (char)0xA0;
+    }
+    long_unicode[120] = '\0';
+    assert(utf8_rune_count(long_unicode) == 40);
+    assert(utf8_byte_offset(long_unicode, 20) == 60);
+    assert(utf8_byte_offset(long_unicode, 40) == 120);
+    assert(utf8_rune_count_prefix(long_unicode, 60) == 20);
+    assert(string_char_at(long_unicode, 20) == 0x4F60);
+    utf8_cache_forget(long_unicode);
+    assert(utf8_rune_count(long_unicode) == 40);
+    assert(utf8_byte_offset(long_unicode, 20) == 60);
+
     printf("  ✓ All char_at tests passed\n");
 }
 
@@ -146,13 +172,13 @@ void test_string_strip() {
 void test_string_starts_ends_with() {
     printf("Testing string_starts_with and string_ends_with...\n");
 
-    assert(string_starts_with("Hello World", "Hello") == 1);
-    assert(string_starts_with("Hello World", "World") == 0);
-    assert(string_starts_with("Hello", "Hello World") == 0);
+    assert(string_starts_with("Hello World", "Hello"));
+    assert(!string_starts_with("Hello World", "World"));
+    assert(!string_starts_with("Hello", "Hello World"));
 
-    assert(string_ends_with("Hello World", "World") == 1);
-    assert(string_ends_with("Hello World", "Hello") == 0);
-    assert(string_ends_with("World", "Hello World") == 0);
+    assert(string_ends_with("Hello World", "World"));
+    assert(!string_ends_with("Hello World", "Hello"));
+    assert(!string_ends_with("World", "Hello World"));
     printf("  ✓ All starts_with/ends_with tests passed\n");
 }
 
@@ -184,20 +210,20 @@ void test_string_replace() {
 void test_char_classification() {
     printf("Testing character classification...\n");
 
-    assert(string_is_digit('0') == 1);
-    assert(string_is_digit('5') == 1);
-    assert(string_is_digit('9') == 1);
-    assert(string_is_digit('a') == 0);
+    assert(string_is_digit('0'));
+    assert(string_is_digit('5'));
+    assert(string_is_digit('9'));
+    assert(!string_is_digit('a'));
 
-    assert(string_is_alpha('a') == 1);
-    assert(string_is_alpha('Z') == 1);
-    assert(string_is_alpha('0') == 0);
-    assert(string_is_alpha(' ') == 0);
+    assert(string_is_alpha('a'));
+    assert(string_is_alpha('Z'));
+    assert(!string_is_alpha('0'));
+    assert(!string_is_alpha(' '));
 
-    assert(string_is_whitespace(' ') == 1);
-    assert(string_is_whitespace('\t') == 1);
-    assert(string_is_whitespace('\n') == 1);
-    assert(string_is_whitespace('a') == 0);
+    assert(string_is_whitespace(' '));
+    assert(string_is_whitespace('\t'));
+    assert(string_is_whitespace('\n'));
+    assert(!string_is_whitespace('a'));
     printf("  ✓ All character classification tests passed\n");
 }
 
@@ -224,7 +250,8 @@ void demonstrate_usage() {
     if (string_find(trimmed, "42") != -1) {
         printf("Found number literal: 42\n");
         char first_digit = string_char_at(trimmed, string_find(trimmed, "42"));
-        printf("First digit is: %c, is_digit=%d\n", first_digit, string_is_digit(first_digit));
+    printf("First digit is: %c, is_digit=%s\n", first_digit,
+           string_is_digit(first_digit) ? "true" : "false");
     }
 
     free(trimmed);

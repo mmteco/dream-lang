@@ -22,6 +22,9 @@ enum_t* enum_create_simple(int32_t tag);
 // 创建包含单个 int 值的枚举
 enum_t* enum_create_int(int32_t tag, int32_t value);
 
+// 创建包含单个 float 值的枚举
+enum_t* enum_create_float(int32_t tag, double value);
+
 // 创建包含单个 string 值的枚举
 enum_t* enum_create_string(int32_t tag, const char* value);
 
@@ -50,6 +53,9 @@ int32_t enum_get_tag(enum_t* e);
 
 // 从枚举中提取 int 值
 int32_t enum_get_int(enum_t* e);
+
+// 从枚举中提取 float 值
+double enum_get_float(enum_t* e);
 
 // 从枚举中提取 string 值
 char* enum_get_string(enum_t* e);

@@ -1,3 +1,4 @@
+# dream-test: smoke
 def quicksort(arr: list[T]) -> list[T]:
     if len(arr) <= 1:
         return arr

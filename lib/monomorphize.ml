@@ -110,6 +110,8 @@ let rec substitute_type_params type_params type_args ty =
         substitute_type_params type_params type_args ok,
         substitute_type_params type_params type_args err
       )
+  | TyGeneric (name, parameter) ->
+      TyGeneric (name, substitute_type_params type_params type_args parameter)
   | TyEnum (name, params) ->
       TyEnum (name, List.map (substitute_type_params type_params type_args) params)
   | TyInterface (name, params) ->
@@ -124,19 +126,7 @@ let rec substitute_type_expr type_params type_args = function
         match idx with
         | Some i ->
             let ty = List.nth type_args i in
-            (* 将 ty 转换回 type_expr *)
-            (match ty with
-             | TyInt -> TInt
-             | TyFloat -> TFloat
-             | TyStr -> TStr
-             | TyRune -> TRune
-             | TyByte -> TByte
-             | TyBytes -> TBytes
-             | TyBool -> TBool
-             | TyNone -> TNone
-             | TyVar n -> TVar n
-             | TyList t -> TList (type_expr_of_ty t)
-             | _ -> TVar name)
+            type_expr_of_ty ty
         | None -> TVar name
        with _ -> TVar name)
   | TList t -> TList (substitute_type_expr type_params type_args t)
@@ -152,6 +142,21 @@ let rec substitute_type_expr type_params type_args = function
         List.map (substitute_type_expr type_params type_args) params,
         substitute_type_expr type_params type_args ret
       )
+  | TUnion types ->
+      TUnion (List.map (substitute_type_expr type_params type_args) types)
+  | TOption element_type ->
+      TOption (substitute_type_expr type_params type_args element_type)
+  | TResult (ok_type, error_type) ->
+      TResult (
+        substitute_type_expr type_params type_args ok_type,
+        substitute_type_expr type_params type_args error_type
+      )
+  | TGeneric (name, parameter) ->
+      TGeneric (name, substitute_type_expr type_params type_args parameter)
+  | TEnum (name, parameters) ->
+      TEnum (name, List.map (substitute_type_expr type_params type_args) parameters)
+  | TStruct (name, parameters) ->
+      TStruct (name, List.map (substitute_type_expr type_params type_args) parameters)
   | t -> t
 
 and type_expr_of_ty = function
@@ -167,10 +172,13 @@ and type_expr_of_ty = function
   | TyList t -> TList (type_expr_of_ty t)
   | TyDict (k, v) -> TDict (type_expr_of_ty k, type_expr_of_ty v)
   | TyTuple ts -> TTuple (List.map type_expr_of_ty ts)
+  | TyUnion types -> TUnion (List.map type_expr_of_ty types)
   | TyFunc (params, ret) -> TFunc (List.map type_expr_of_ty params, type_expr_of_ty ret)
   | TyOption t -> TOption (type_expr_of_ty t)
   | TyResult (ok, err) -> TResult (type_expr_of_ty ok, type_expr_of_ty err)
+  | TyGeneric (name, parameter) -> TGeneric (name, type_expr_of_ty parameter)
   | TyEnum (name, params) -> TEnum (name, List.map type_expr_of_ty params)
+  | TyStruct (name, params) -> TStruct (name, List.map type_expr_of_ty params)
   | TyInterface (_, _) -> TNone  (* 接口类型暂时没有对应的 type_expr *)
   | _ -> TNone
 
@@ -230,6 +238,16 @@ let rec substitute_statement ctx type_params type_args stmt =
         let_info with
         let_type = new_ty;
         let_value = substitute_expr ctx type_params type_args let_info.let_value
+      }
+  | SConst const_info ->
+      let new_ty = match const_info.const_type with
+        | Some ty -> Some (substitute_type_expr type_params type_args ty)
+        | None -> None
+      in
+      SConst {
+        const_info with
+        const_type = new_ty;
+        const_value = substitute_expr ctx type_params type_args const_info.const_value
       }
   | SExpr (e, pos) ->
       SExpr (substitute_expr ctx type_params type_args e, pos)
@@ -338,6 +356,11 @@ let rec rewrite_statement generic_instances generic_funcs stmt =
       SLet {
         let_info with
         let_value = rewrite_generic_calls generic_instances generic_funcs let_info.let_value
+      }
+  | SConst const_info ->
+      SConst {
+        const_info with
+        const_value = rewrite_generic_calls generic_instances generic_funcs const_info.const_value
       }
   | SExpr (e, pos) ->
       SExpr (rewrite_generic_calls generic_instances generic_funcs e, pos)

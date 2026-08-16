@@ -1,3 +1,4 @@
+# dream-test: legacy
 def classify(value: int) -> int:
     if value < 0:
         return 1

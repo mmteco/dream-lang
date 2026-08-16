@@ -4,9 +4,6 @@ def read_text_file(path: str) -> str:
 def write_text_file(path: str, content: str) -> int:
     return __c_file_write(path, content)
 
-def text_char_code(content: str, index: int) -> int:
-    return __c_utf8_rune_at(content, index)
-
 def text_length(content: str) -> int:
     return __c_utf8_rune_count(content)
 

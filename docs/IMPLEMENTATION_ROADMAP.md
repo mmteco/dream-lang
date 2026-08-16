@@ -1,5 +1,7 @@
 # Dream 实现全流程最佳实践
 
+本文中的 `DIR` 是 Dream Intermediate Representation（Dream 中间表示）的正式缩写；`DreamIR` 是项目对该语言特定中间表示的名称。命令行参数、目录和模块文件名中的 `dir` 保持小写。
+
 本文是 Dream 当前代码库的实现路线和工程约束。目标不是尽快增加语法，而是建立一条可验证、可调试、可自举、可长期演进的编译器链路。
 
 ## 零、针对 Dream 的技术取舍
@@ -68,10 +70,13 @@ lib/ir/dir/
 lib/compiler/compiler_backend.ml
 ```
 
-它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串 lowering 和 LLVM lowering；通过
-`dream build --backend=dir file.dm` 可以生成 `.dir`、`.ll` 并链接运行时。DIR 当前已覆盖整数、布尔值、字符串、`list<i32>`、列表索引/切片/拼接、`append`/索引赋值、列表推导式、`if/elif`、`while` 和函数调用；默认后端仍保留为 legacy，以便继续验证自举兼容性。
+它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串/bytes/tuple lowering 和 LLVM lowering；通过
+`dream build file.dm` 默认使用 DIR 后端并生成 `.dir`、`.ll`，也可以通过 `--backend=legacy` 显式选择旧后端。DIR 当前已覆盖整数、浮点数、布尔值、字符串、bytes、`list<i32>`、有限字段结构体、单载荷 enum（int/float/bool/str）、i32 tuple、字典（int/str 键值）、列表/字典索引与赋值、列表索引/切片/拼接、bytes 索引/切片、`append`、列表推导式、`if/elif`、while、for、条件/三元表达式、标量/列表/结构体/enum match、match guard、函数调用、`Result` 的同类型 `?` 传播和导入的标准库包装。多载荷 enum、闭包/函数值、动态对象和泛型容器仍需后续 DIR 表示设计，不能假装已经支持。
 
 当前自举 Makefile 已增加 LLVM 预验证：Stage 0 生成 `compiler.ll`、`stage1.ll`、`stage2.ll` 后，必须先通过 `clang -c -o /dev/null -x ir`，失败日志暂存到 `tmp/`。这只能证明 LLVM 文件合法，不能证明 Stage2→Stage3 已闭环。
+
+Makefile 只保留任务依赖，具体流程集中在 `scripts/*.fish`：测试脚本自动发现带有
+`# dream-test: smoke` 标记的示例和 `test/*_dir.dm`，bootstrap 脚本共享 runtime 文件集合、LLVM 参数和 Stage 列表；新增同类文件时无需继续扩展长命令。
 
 ## 二、目标架构
 
@@ -117,21 +122,24 @@ DreamIR 是 Dream 的语言特定中间表示，不是 LLVM 的别名。它应�
 unit
 bool
 i32
+f64
 str
+bytes
 list<i32>
+tuple<i32...>
+struct<Name>
+enum<Name>
+result<T, E>（当前 `?` 要求传播结果类型相同）
 ```
 
 后续按需求增加：
 
 ```text
-float
-bytes
-tuple<T...>
+tuple<T...>（当前仅 i32 元素）
 function<T...>
 option<T>
-result<T, E>
-enum<Name>
-struct<Name>
+多载荷 enum
+泛型容器
 ```
 
 DIR 类型不能直接使用 `i8*`、`%dynarray_i32*` 作为语言类型。它们只能出现在 LLVM lowering 层。
@@ -309,7 +317,7 @@ DIR 和 LLVM 生成都必须满足：
 Llvmgen.gen_program mono_ast
 ```
 
-旧后端作为回退路径和行为基准。此阶段只新增 DIR 模块、verifier、打印器和测试，不改变默认 `build` 行为。
+旧后端作为回退路径和行为基准。DIR 已成为默认 `build` 后端；旧后端通过 `--backend=legacy` 显式选择。
 
 退出条件：
 
@@ -386,19 +394,23 @@ dream emit-llvm file.dm
 Dream source → DreamIR → LLVM
 ```
 
-`bootstrap/compiler.dm` 不应再直接拼接 LLVM 指令字符串。它应分成：
+`bootstrap/compiler.dm` 不应再直接拼接 LLVM 指令字符串。当前自举切片仍保留 LLVM 文本生成作为兼容边界，但编译器源码已经按职责拆成：
 
 ```text
-bootstrap/frontend.dm
-bootstrap/dir.dm
-bootstrap/dir_verify.dm
-bootstrap/dir_lower_llvm.dm
-bootstrap/main.dm
+bootstrap/compiler.dm
+bootstrap/compiler_lex.dm
+bootstrap/compiler_expr.dm
+bootstrap/compiler_stmt.dm
+bootstrap/compiler_main.dm
 ```
+
+仓库中的对应实现是 `bootstrap/compiler.dm` 作为导入入口，配合 `compiler_lex.dm`、`compiler_expr.dm`、`compiler_stmt.dm` 和 `compiler_main.dm`。宿主模块加载器与自举阶段的源码加载器都必须以确定顺序解析这些本地模块，并对重复导入去重。
 
 先用 OCaml 编译器把这些文件编译成 Stage 1，再由 Stage 1 编译自身生成 Stage 2。只有当 Stage 2 能生成合法的下一轮 DIR 和 LLVM，才算完成真正自举。
 
-当前执行顺序是先完成直接 LLVM 后端的 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点，再迁移 `bootstrap/compiler.dm`。原因是 DIR 迁移同时会改变编译器内部表示、控制流 lowering 和自举产物；先固定行为基线，才能把迁移失败准确归因到 DIR，而不是自举链路本身。迁移期间保留 legacy 后端作为差分基准，直到 Stage 2/Stage 3 的规范化 DIR 和运行结果一致。
+迁移初期先完成了直接 LLVM 后端的 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点，再逐步迁移 `bootstrap/compiler.dm`。这是因为 DIR 迁移同时会改变编译器内部表示、控制流 lowering 和自举产物；先固定行为基线，才能把迁移失败准确归因到 DIR，而不是自举链路本身。迁移期间继续保留 legacy 后端作为差分基准，直到 Stage 2/Stage 3 的规范化 DIR 和运行结果一致。
+
+当前实现状态已经进入迁移后的稳定化阶段：`make bootstrap` 默认通过 `--backend=dir` 生成 Stage 0，`bootstrap/compiler.dm` 已经从 `stdlib/dir_bootstrap.dm` 导入 DIR 构建与渲染桥，并完成 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点验证。自举桥采用定长 typed record payload；`ret`、整数算术、`and/or`、整数 `icmp`、`zext i1 -> i32` 和零操作数 `unreachable` 已使用 native record，尚未覆盖的 `call`、指针操作和复杂可变参数指令继续走经过校验的 raw LLVM 兼容路径。后续迁移应按“固定 payload ABI、增加负例测试、验证 Stage2/Stage3 固定点”的顺序逐条推进。
 
 ## 六、自举验证协议
 

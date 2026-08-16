@@ -69,17 +69,17 @@ int __c_file_write(const char* path, const char* content) {
     return (int)written;
 }
 
-int __c_file_exists(const char* path) {
+bool __c_file_exists(const char* path) {
     if (path == NULL) {
-        return 0;
+        return false;
     }
 
     FILE* file = fopen(path, "r");
     if (file == NULL) {
-        return 0;
+        return false;
     }
     fclose(file);
-    return 1;
+    return true;
 }
 
 int __c_file_append(const char* path, const char* content) {
@@ -102,12 +102,12 @@ int __c_file_append(const char* path, const char* content) {
     return (int)written;
 }
 
-int __c_file_delete(const char* path) {
+bool __c_file_delete(const char* path) {
     if (path == NULL) {
-        return 0;
+        return false;
     }
 
-    return remove(path) == 0 ? 1 : 0;
+    return !remove(path);
 }
 
 dynarray_i32* __c_file_read_bytes(const char* path) {

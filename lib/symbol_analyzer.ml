@@ -278,6 +278,12 @@ let rec analyze_stmt ctx stmt : symbol_def list =
       let def_ref = Hashtbl.find ctx.definitions_table def_id in
       [!def_ref]
 
+  | SConst const_info ->
+      analyze_expr ctx const_info.const_value;
+      let def_id = add_definition ctx const_info.const_name Variable const_info.const_name_pos in
+      let def_ref = Hashtbl.find ctx.definitions_table def_id in
+      [!def_ref]
+
   | SLetPat (_, value, _) ->
       analyze_expr ctx value;
       []

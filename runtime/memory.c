@@ -213,7 +213,7 @@ static ObjectHeader* get_header(void* object) {
     return (ObjectHeader*)((char*)object - sizeof(ObjectHeader));
 }
 
-static int is_container(ObjectType type) {
+static bool is_container(ObjectType type) {
     return (type == OBJ_DYNARRAY || type == OBJ_DYNARRAY_PTR ||
             type == OBJ_DICT || type == OBJ_TUPLE);
 }
@@ -253,11 +253,11 @@ static ObjectHeader* find_managed_header_locked(const void* object) {
     return NULL;
 }
 
-int gc_is_managed(const void* object) {
-    if (object == NULL) return 0;
+bool gc_is_managed(const void* object) {
+    if (object == NULL) return false;
 
     pthread_mutex_lock(&g_object_list_lock);
-    int is_managed = find_managed_header_locked(object) != NULL;
+    bool is_managed = find_managed_header_locked(object) != NULL;
     pthread_mutex_unlock(&g_object_list_lock);
     return is_managed;
 }

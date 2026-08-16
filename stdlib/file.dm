@@ -56,13 +56,11 @@ def delete_file(path: str) -> Result[bool, str]:
       path - 文件路径
     返回: Result[bool, str] - 成功时返回 Ok(true)，失败时返回 Err(错误信息)
     '''
-    if __c_file_delete(path) == 1:
+    if __c_file_delete(path):
         return Ok(true)
     else:
         return Err("Failed to delete file")
 
 
 def exists_file(path: str) -> bool:
-    return match __c_file_exists(path):
-        1: true
-        _: false
+    return __c_file_exists(path)

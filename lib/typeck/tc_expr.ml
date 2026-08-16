@@ -5,6 +5,26 @@ open Error
 open Tc_utils
 open Tc_generics
 
+let generic_type_arguments function_type substitution =
+  let rec collect seen = function
+    | TyVar name when not (List.mem name seen) -> name :: seen
+    | TyList element_type -> collect seen element_type
+    | TyDict (key_type, value_type) -> collect (collect seen key_type) value_type
+    | TyTuple element_types
+    | TyUnion element_types -> List.fold_left collect seen element_types
+    | TyFunc (parameter_types, return_type) ->
+        collect (List.fold_left collect seen parameter_types) return_type
+    | TyOption element_type -> collect seen element_type
+    | TyResult (ok_type, error_type) -> collect (collect seen ok_type) error_type
+    | _ -> seen
+  in
+  let variables = match function_type with
+    | TyFunc (parameter_types, return_type) ->
+        collect (List.fold_left collect [] parameter_types) return_type
+    | _ -> []
+  in
+  List.rev_map (fun name -> apply_subst substitution (TyVar name)) variables
+
 (* 表达式类型推导 *)
 let rec infer_expr env = function
   | EInt (_, _) -> (TyInt, empty_subst)
@@ -48,11 +68,13 @@ let rec infer_expr env = function
                    report_error err;
                    (TyList elem_t1, s3))
             | TyInt, TyInt -> Some (TyInt, s3)
+            | TyFloat, TyFloat -> Some (TyFloat, s3)
             | TyStr, TyStr -> Some (TyStr, s3)  (* 字符串拼接 *)
             | _, _ -> None)  (* 尝试运算符重载 *)
        | Sub | Mul | Div | Mod ->
            (match t1', t2' with
             | TyInt, TyInt -> Some (TyInt, s3)
+            | TyFloat, TyFloat -> Some (TyFloat, s3)
             | _, _ -> None)  (* 尝试运算符重载 *)
        | Eq | Neq | Lt | Gt | Lte | Gte ->
            (* 比较运算符：先尝试内置 *)
@@ -131,6 +153,7 @@ let rec infer_expr env = function
        | Neg ->
            (match t' with
             | TyInt -> Some (TyInt, s)
+            | TyFloat -> Some (TyFloat, s)
             | _ -> None)  (* 尝试运算符重载 *)
        | Not ->
            (try
@@ -271,11 +294,20 @@ let rec infer_expr env = function
              let (arg_type, arg_subst) = infer_expr env (List.hd args) in
              add_generic_instance func_name [apply_subst arg_subst arg_type] pos;
              (TyNone, arg_subst)
+           end else if func_name = "len" && List.length args = 1 then begin
+             let (arg_type, arg_subst) = infer_expr env (List.hd args) in
+             (match apply_subst arg_subst arg_type with
+              | TyStr | TyBytes | TyList _ | TyDict _ -> (TyInt, arg_subst)
+              | actual_type ->
+                  let err = make_error (TypeError "Invalid len argument") func_pos
+                    (Printf.sprintf "len expects a string, bytes, dict or list, got %s"
+                      (ty_to_string actual_type)) in
+                  report_error err;
+                  (TyUnknown, arg_subst))
            end else begin
              let (func_type, func_subst) = infer_expr env func in
              let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
              let combined_subst = List.fold_left compose_subst func_subst arg_substs in
-             let concrete_arg_types = List.map (apply_subst combined_subst) arg_types in
              let ret_type = fresh_type_var () in
 
              let rec take n lst = match n, lst with
@@ -310,14 +342,17 @@ let rec infer_expr env = function
              in
 
              if use_default_params then begin
-               add_generic_instance func_name concrete_arg_types pos;
+               add_generic_instance func_name [] pos;
                (actual_return_type, combined_subst)
              end else begin
                let expected_func_type = TyFunc (arg_types, ret_type) in
                (try
                   let final_subst = unify (apply_subst combined_subst func_type) expected_func_type in
-                  add_generic_instance func_name concrete_arg_types pos;
-                  (apply_subst final_subst ret_type, compose_subst final_subst combined_subst)
+                  let all_subst = compose_subst final_subst combined_subst in
+                  let type_args = generic_type_arguments
+                    (apply_subst combined_subst func_type) all_subst in
+                  add_generic_instance func_name type_args pos;
+                  (apply_subst all_subst ret_type, all_subst)
               with Failure msg ->
                 let has_prefix s prefix =
                   let len_s = String.length s in
@@ -325,7 +360,7 @@ let rec infer_expr env = function
                   len_s >= len_p && String.sub s 0 len_p = prefix
                 in
                 if has_prefix msg "Occurs check failed" then begin
-                  add_generic_instance func_name concrete_arg_types pos;
+                  add_generic_instance func_name [] pos;
                   (ret_type, combined_subst)
                 end else begin
                   let err = make_error (TypeError msg) pos
@@ -356,7 +391,7 @@ let rec infer_expr env = function
        | TyStr ->
            (try
               let idx_s = unify (apply_subst combined_subst idx_type) TyInt in
-              (TyInt, compose_subst idx_s combined_subst)
+              (TyRune, compose_subst idx_s combined_subst)
             with Failure msg ->
               let err = make_error (TypeError msg) pos
                 (Printf.sprintf "String index must be int: %s" msg) in
@@ -365,7 +400,7 @@ let rec infer_expr env = function
        | TyBytes ->
            (try
               let idx_s = unify (apply_subst combined_subst idx_type) TyInt in
-              (TyInt, compose_subst idx_s combined_subst)
+              (TyByte, compose_subst idx_s combined_subst)
             with Failure msg ->
               let err = make_error (TypeError msg) pos
                 (Printf.sprintf "Bytes index must be int: %s" msg) in
@@ -428,7 +463,7 @@ let rec infer_expr env = function
        | None -> ());
       (match apply_subst !combined_subst arr_type with
        | TyList elem_type -> (TyList elem_type, !combined_subst)
-       | TyStr -> (TyStr, !combined_subst)
+       | TyStr | TyBytes -> (apply_subst !combined_subst arr_type, !combined_subst)
        | _ ->
            let err = make_error (TypeError "Not sliceable") pos
              "Cannot slice non-list/string type" in
@@ -599,8 +634,41 @@ let rec infer_expr env = function
                           let _ = unify expected_type target_type in
                           add_binding var_name target_type env
                         with Failure _ -> env))
-              | PEnumVariant (_, _, pats) ->
-                  List.fold_left (fun e p -> bind_pattern e p (fresh_type_var ())) env pats
+              | PEnumVariant (pattern_enum_name, variant_name, pats) ->
+                  let enum_name = match pattern_enum_name, expected_type with
+                    | "", TyEnum (name, _) -> name
+                    | name, _ -> name
+                  in
+                  let payload_types = match enum_name, variant_name with
+                    | "Option", "Some" ->
+                        (match expected_type with
+                         | TyOption element_type -> [element_type]
+                         | _ -> [])
+                    | "Option", "None" -> []
+                    | "Result", "Ok" ->
+                        (match expected_type with
+                         | TyResult (ok_type, _) -> [ok_type]
+                         | _ -> [])
+                    | "Result", "Err" ->
+                        (match expected_type with
+                         | TyResult (_, error_type) -> [error_type]
+                         | _ -> [])
+                    | _ ->
+                        (match Env.find_enum enum_name env with
+                         | Some enum_def ->
+                             (match List.find_opt (function
+                                | VSimple (name, _) -> name = variant_name
+                                | VTuple (name, _, _) -> name = variant_name
+                              ) enum_def.enum_variants with
+                              | Some (VSimple _) -> []
+                              | Some (VTuple (_, types, _)) -> List.map type_expr_to_ty types
+                              | None -> [])
+                         | None -> [])
+                  in
+                  if List.length payload_types = List.length pats then
+                    List.fold_left2 bind_pattern env pats payload_types
+                  else
+                    env
               | PStruct (struct_name, field_pats) ->
                   (* 结构体解构：如果struct_name为空字符串，从expected_type推断 *)
                   let actual_struct_name =
@@ -719,10 +787,32 @@ let rec infer_expr env = function
          report_error err;
          (TyList TyUnknown, iter_subst))
 
-  | EEnumVariant (enum_name, _variant_name, args, _pos) ->
-      let (_arg_types, _arg_substs) = List.split (List.map (infer_expr env) args) in
-      let combined_subst = List.fold_left compose_subst empty_subst _arg_substs in
-      (TyEnum (enum_name, []), combined_subst)
+  | EEnumVariant (enum_name, variant_name, [], pos) ->
+      (match Env.find_binding enum_name env with
+       | Some (TyStruct (struct_name, _)) ->
+           (match Env.find_struct struct_name env with
+            | Some struct_def ->
+                (match List.assoc_opt variant_name struct_def.struct_fields with
+                 | Some field_type -> field_type, empty_subst
+                 | None ->
+                     let err = make_error (TypeError "Unknown field") pos
+                       (Printf.sprintf "Struct '%s' has no field '%s'" struct_name variant_name) in
+                     report_error err;
+                     TyUnknown, empty_subst)
+            | None -> TyUnknown, empty_subst)
+       | _ ->
+           (match enum_name, variant_name with
+            | "Option", "None" -> TyOption (fresh_type_var ()), empty_subst
+            | _ -> TyEnum (enum_name, []), empty_subst))
+  | EEnumVariant (enum_name, variant_name, args, _pos) ->
+      let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
+      let combined_subst = List.fold_left compose_subst empty_subst arg_substs in
+      let resolved_arg_types = List.map (apply_subst combined_subst) arg_types in
+      (match enum_name, variant_name, resolved_arg_types with
+       | "Option", "Some", [value_type] -> TyOption value_type, combined_subst
+       | "Result", "Ok", [value_type] -> TyResult (value_type, fresh_type_var ()), combined_subst
+       | "Result", "Err", [value_type] -> TyResult (fresh_type_var (), value_type), combined_subst
+       | _ -> TyEnum (enum_name, []), combined_subst)
 
   | EStructLiteral (struct_name, field_inits, pos) ->
       (match Env.find_struct struct_name env with

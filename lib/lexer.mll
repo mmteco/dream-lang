@@ -31,10 +31,41 @@
     byte_offset := !byte_offset + 1;  (* 换行符占 1 字节 *)
     line_start_offset := !byte_offset
 
+  let decode_single_rune value =
+    let length = String.length value in
+    let byte index = Char.code (String.get value index) in
+    let continuation index =
+      index < length && byte index land 0xC0 = 0x80
+    in
+    let codepoint, consumed =
+      if length = 1 then
+        byte 0, 1
+      else if length >= 2 && byte 0 land 0xE0 = 0xC0 && continuation 1 then
+        ((byte 0 land 0x1F) lsl 6) lor (byte 1 land 0x3F), 2
+      else if length >= 3 && byte 0 land 0xF0 = 0xE0 && continuation 1 && continuation 2 then
+        ((byte 0 land 0x0F) lsl 12) lor ((byte 1 land 0x3F) lsl 6) lor (byte 2 land 0x3F), 3
+      else if length >= 4 && byte 0 land 0xF8 = 0xF0 && continuation 1 && continuation 2 && continuation 3 then
+        ((byte 0 land 0x07) lsl 18) lor ((byte 1 land 0x3F) lsl 12) lor
+        ((byte 2 land 0x3F) lsl 6) lor (byte 3 land 0x3F), 4
+      else
+        -1, 0
+    in
+    let is_overlong =
+      (consumed = 2 && codepoint < 0x80) ||
+      (consumed = 3 && codepoint < 0x800) ||
+      (consumed = 4 && codepoint < 0x10000)
+    in
+    if consumed <> length || codepoint < 0 || codepoint > 0x10FFFF ||
+       is_overlong || codepoint >= 0xD800 && codepoint <= 0xDFFF then
+      None
+    else
+      Some codepoint
+
   let keyword_table = Hashtbl.create 42
   let () =
     List.iter (fun (kwd, tok) -> Hashtbl.add keyword_table kwd tok)
       [ ("let", LET);
+        ("lambda", LAMBDA);
         ("def", DEF);
         ("struct", STRUCT);
         ("interface", INTERFACE);
@@ -344,11 +375,10 @@ and read_single_string buf = parse
   | "'" {
       update_pos lexbuf;
       let content = Buffer.contents buf in
-      (* 如果只有一个字符，返回RUNE token，否则返回STRING *)
-      if String.length content = 1 then
-        RUNE (String.get content 0)
-      else
-        STRING content
+      (* 单个 Unicode code point 返回 RUNE，否则保留为字符串 *)
+      match decode_single_rune content with
+      | Some codepoint -> RUNE codepoint
+      | None -> STRING content
     }
   | '\\' 'n' { Buffer.add_char buf '\n'; read_single_string buf lexbuf }
   | '\\' 't' { Buffer.add_char buf '\t'; read_single_string buf lexbuf }

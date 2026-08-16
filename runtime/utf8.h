@@ -1,6 +1,7 @@
 #ifndef UTF8_H
 #define UTF8_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -53,7 +54,7 @@ int utf8_rune_count_prefix(const char* utf8_str, size_t byte_length);
 /**
  * 判断字符串是否只包含 ASCII 字节。
  */
-int utf8_is_ascii(const char* utf8_str);
+bool utf8_is_ascii(const char* utf8_str);
 
 /**
  * 获取以 NUL 结尾字符串的字节长度。

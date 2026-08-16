@@ -32,6 +32,21 @@ enum_t* enum_create_int(int32_t tag, int32_t value) {
     return e;
 }
 
+enum_t* enum_create_float(int32_t tag, double value) {
+    enum_t* e = (enum_t*)gc_alloc(sizeof(enum_t), OBJ_ENUM);
+    if (!e) return NULL;
+    e->tag = tag;
+
+    double* data = (double*)malloc(sizeof(double));
+    if (!data) {
+        gc_release(e);
+        return NULL;
+    }
+    *data = value;
+    e->data = data;
+    return e;
+}
+
 enum_t* enum_create_string(int32_t tag, const char* value) {
     enum_t* e = (enum_t*)gc_alloc(sizeof(enum_t), OBJ_ENUM);
     if (!e) return NULL;
@@ -110,6 +125,11 @@ int32_t enum_get_tag(enum_t* e) {
 int32_t enum_get_int(enum_t* e) {
     if (e == NULL || e->data == NULL) return 0;
     return *(int32_t*)e->data;
+}
+
+double enum_get_float(enum_t* e) {
+    if (e == NULL || e->data == NULL) return 0.0;
+    return *(double*)e->data;
 }
 
 char* enum_get_string(enum_t* e) {

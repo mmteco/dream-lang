@@ -51,7 +51,23 @@ dict_t* dict_create(dict_key_type key_type, dict_val_type val_type, int initial_
     return dict;
 }
 
-static int keys_equal(dict_t* dict, void* k1, void* k2) {
+dict_t* dream_dict_create_int_int(int initial_capacity) {
+    return dict_create(DICT_KEY_INT, DICT_VAL_INT, initial_capacity);
+}
+
+dict_t* dream_dict_create_int_str(int initial_capacity) {
+    return dict_create(DICT_KEY_INT, DICT_VAL_STRING, initial_capacity);
+}
+
+dict_t* dream_dict_create_str_int(int initial_capacity) {
+    return dict_create(DICT_KEY_STRING, DICT_VAL_INT, initial_capacity);
+}
+
+dict_t* dream_dict_create_str_str(int initial_capacity) {
+    return dict_create(DICT_KEY_STRING, DICT_VAL_STRING, initial_capacity);
+}
+
+static bool keys_equal(dict_t* dict, void* k1, void* k2) {
     if (dict->key_type == DICT_KEY_INT) {
         return (intptr_t)k1 == (intptr_t)k2;
     } else {
@@ -89,16 +105,16 @@ static void free_value(dict_t* dict, void* value) {
     }
 }
 
-static int dict_rehash(dict_t* dict, int new_capacity) {
+static bool dict_rehash(dict_t* dict, int new_capacity) {
     if (dict == NULL || new_capacity <= dict->capacity ||
         (size_t)new_capacity > SIZE_MAX / sizeof(dict_entry_t*)) {
-        return 0;
+        return false;
     }
 
     dict_entry_t** new_buckets = (dict_entry_t**)calloc(
         (size_t)new_capacity, sizeof(dict_entry_t*));
     if (new_buckets == NULL) {
-        return 0;
+        return false;
     }
 
     for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
@@ -120,7 +136,7 @@ static int dict_rehash(dict_t* dict, int new_capacity) {
     free(dict->buckets);
     dict->buckets = new_buckets;
     dict->capacity = new_capacity;
-    return 1;
+    return true;
 }
 
 static void dict_set_internal(dict_t* dict, void* key, void* value) {
@@ -183,15 +199,15 @@ static void dict_set_internal(dict_t* dict, void* key, void* value) {
     dict->size++;
 }
 
-static void* dict_get_internal(dict_t* dict, void* key, int* found) {
-    int ignored_found;
+static void* dict_get_internal(dict_t* dict, void* key, bool* found) {
+    bool ignored_found;
     if (found == NULL) {
         found = &ignored_found;
     }
 
     if (dict == NULL || dict->buckets == NULL ||
         (dict->key_type == DICT_KEY_STRING && key == NULL)) {
-        *found = 0;
+        *found = false;
         return NULL;
     }
 
@@ -206,13 +222,13 @@ static void* dict_get_internal(dict_t* dict, void* key, int* found) {
 
     while (entry) {
         if (keys_equal(dict, entry->key, key)) {
-            *found = 1;
+            *found = true;
             return entry->value;
         }
         entry = entry->next;
     }
 
-    *found = 0;
+    *found = false;
     return NULL;
 }
 
@@ -240,50 +256,82 @@ void dict_set_str_ptr(dict_t* dict, const char* key, void* value) {
     dict_set_internal(dict, (void*)key, value);
 }
 
-int dict_get_int_int(dict_t* dict, int key, int* found) {
-    int local_found;
-    int* result_found = found == NULL ? &local_found : found;
+int dict_get_int_int(dict_t* dict, int key, bool* found) {
+    bool local_found;
+    bool* result_found = found == NULL ? &local_found : found;
     void* value = dict_get_internal(dict, (void*)(intptr_t)key, result_found);
     return *result_found ? (int)(intptr_t)value : 0;
 }
 
-char* dict_get_int_str(dict_t* dict, int key, int* found) {
-    int local_found;
-    int* result_found = found == NULL ? &local_found : found;
+char* dict_get_int_str(dict_t* dict, int key, bool* found) {
+    bool local_found;
+    bool* result_found = found == NULL ? &local_found : found;
     void* value = dict_get_internal(dict, (void*)(intptr_t)key, result_found);
     return *result_found ? (char*)value : NULL;
 }
 
-void* dict_get_int_ptr(dict_t* dict, int key, int* found) {
+void* dict_get_int_ptr(dict_t* dict, int key, bool* found) {
     return dict_get_internal(dict, (void*)(intptr_t)key, found);
 }
 
-int dict_get_str_int(dict_t* dict, const char* key, int* found) {
-    int local_found;
-    int* result_found = found == NULL ? &local_found : found;
+int dict_get_str_int(dict_t* dict, const char* key, bool* found) {
+    bool local_found;
+    bool* result_found = found == NULL ? &local_found : found;
     void* value = dict_get_internal(dict, (void*)key, result_found);
     return *result_found ? (int)(intptr_t)value : 0;
 }
 
-char* dict_get_str_str(dict_t* dict, const char* key, int* found) {
-    int local_found;
-    int* result_found = found == NULL ? &local_found : found;
+char* dict_get_str_str(dict_t* dict, const char* key, bool* found) {
+    bool local_found;
+    bool* result_found = found == NULL ? &local_found : found;
     void* value = dict_get_internal(dict, (void*)key, result_found);
     return *result_found ? (char*)value : NULL;
 }
 
-void* dict_get_str_ptr(dict_t* dict, const char* key, int* found) {
+int dream_dict_get_int_int(dict_t* dict, int key) {
+    return dict_get_int_int(dict, key, NULL);
+}
+
+char* dream_dict_get_int_str(dict_t* dict, int key) {
+    return dict_get_int_str(dict, key, NULL);
+}
+
+int dream_dict_get_str_int(dict_t* dict, const char* key) {
+    return dict_get_str_int(dict, key, NULL);
+}
+
+char* dream_dict_get_str_str(dict_t* dict, const char* key) {
+    return dict_get_str_str(dict, key, NULL);
+}
+
+int dream_dict_size_int_int(dict_t* dict) {
+    return dict_size(dict);
+}
+
+int dream_dict_size_int_str(dict_t* dict) {
+    return dict_size(dict);
+}
+
+int dream_dict_size_str_int(dict_t* dict) {
+    return dict_size(dict);
+}
+
+int dream_dict_size_str_str(dict_t* dict) {
+    return dict_size(dict);
+}
+
+void* dict_get_str_ptr(dict_t* dict, const char* key, bool* found) {
     return dict_get_internal(dict, (void*)key, found);
 }
 
-int dict_has_int(dict_t* dict, int key) {
-    int found;
+bool dict_has_int(dict_t* dict, int key) {
+    bool found;
     dict_get_internal(dict, (void*)(intptr_t)key, &found);
     return found;
 }
 
-int dict_has_str(dict_t* dict, const char* key) {
-    int found;
+bool dict_has_str(dict_t* dict, const char* key) {
+    bool found;
     dict_get_internal(dict, (void*)key, &found);
     return found;
 }

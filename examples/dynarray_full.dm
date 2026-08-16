@@ -1,3 +1,4 @@
+# dream-test: smoke
 let numbers = [10, 20, 30]
 
 print(len(numbers))

@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,7 +68,7 @@ static void test_utf8_and_strings(void) {
 static void test_file_io(void) {
     const char* path = "../tmp/runtime_safety_test.bin";
     assert(__c_file_write(path, "") == 0);
-    assert(__c_file_exists(path) == 1);
+    assert(__c_file_exists(path));
 
     char* content = __c_file_read(path);
     assert(content != NULL && strcmp(content, "") == 0);
@@ -81,7 +82,7 @@ static void test_file_io(void) {
 
     free_dynarray_i32(read_bytes);
     free_dynarray_i32(bytes);
-    assert(__c_file_delete(path) == 1);
+    assert(__c_file_delete(path));
 }
 
 static void test_dict_and_tuple(void) {
@@ -93,9 +94,9 @@ static void test_dict_and_tuple(void) {
     assert(dict_size(dict) == 100);
     assert(dict->capacity >= 128);
 
-    int found = 0;
-    assert(dict_get_int_int(dict, 42, &found) == 84 && found == 1);
-    assert(dict_get_int_int(dict, 1000, &found) == 0 && found == 0);
+    bool found = false;
+    assert(dict_get_int_int(dict, 42, &found) == 84 && found);
+    assert(dict_get_int_int(dict, 1000, &found) == 0 && !found);
 
     dynarray_ptr* items = dict_items_i32(dict);
     assert(items != NULL && len_dynarray_ptr(items) == 100);

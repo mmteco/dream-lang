@@ -1,6 +1,7 @@
 #ifndef DREAM_STRING_OPS_H
 #define DREAM_STRING_OPS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "dynarray.h"
 
@@ -15,12 +16,12 @@ int string_compare(const char* s1, const char* s2);
 char* string_upper(const char* str);
 char* string_lower(const char* str);
 char* string_strip(const char* str);
-int string_starts_with(const char* str, const char* prefix);
-int string_ends_with(const char* str, const char* suffix);
+bool string_starts_with(const char* str, const char* prefix);
+bool string_ends_with(const char* str, const char* suffix);
 char* string_replace(const char* str, const char* old, const char* new_str);
-int string_is_digit(char c);
-int string_is_alpha(char c);
-int string_is_whitespace(char c);
+bool string_is_digit(char c);
+bool string_is_alpha(char c);
+bool string_is_whitespace(char c);
 
 // split 和 join 函数
 dynarray_ptr* string_split(const char* str, const char* delimiter);

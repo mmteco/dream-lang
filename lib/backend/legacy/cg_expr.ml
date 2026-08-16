@@ -47,9 +47,9 @@ let rec gen_expr buf ctx = function
   | EBool (b, _) ->
       ((if b then "1" else "0" : llvm_value), I1)
 
-  | ERune (c, _) ->
+  | ERune (codepoint, _) ->
       (* rune 是 unsigned 32-bit Unicode codepoint *)
-      (string_of_int (Char.code c), U32)
+      (string_of_int codepoint, U32)
 
   | EByte (b, _) ->
       (* byte 是 unsigned 8-bit *)
@@ -66,7 +66,9 @@ let rec gen_expr buf ctx = function
       (ptr_temp, Ptr I32)
 
   | EVar (name, _) ->
-      (match find_variable ctx name with
+      (match find_constant ctx name with
+       | Some (ty, value) -> (value, ty)
+       | None -> (match find_variable ctx name with
        | Some (Array _ as ty) ->
            (* 检查是否有重命名 *)
            let actual_name = match find_llvm_name ctx name with
@@ -118,7 +120,7 @@ let rec gen_expr buf ctx = function
              temp (llvm_type_to_string ty) (llvm_type_to_string ty) local;
            (temp, ty)
        | None ->
-           ("0", I32))
+           ("0", I32)))
 
   | EBinOp (e1, op, e2, _) ->
       let (v1, t1) = gen_expr buf ctx e1 in
@@ -523,17 +525,13 @@ let rec gen_expr buf ctx = function
                 let (arg_v, _) = gen_expr buf ctx (List.hd args) in
                 let arg_i8 = fresh_temp () in
                 Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" arg_i8 arg_v;
-                let result_i32 = fresh_temp () in
-                Printf.bprintf buf "  %s = call i32 @string_starts_with(i8* %s, i8* %s)\n" result_i32 str_i8 arg_i8;
-                Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                Printf.bprintf buf "  %s = call i1 @string_starts_with(i8* %s, i8* %s)\n" result str_i8 arg_i8;
                 (result, I1)
             | "ends_with" when List.length args = 1 ->
                 let (arg_v, _) = gen_expr buf ctx (List.hd args) in
                 let arg_i8 = fresh_temp () in
                 Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" arg_i8 arg_v;
-                let result_i32 = fresh_temp () in
-                Printf.bprintf buf "  %s = call i32 @string_ends_with(i8* %s, i8* %s)\n" result_i32 str_i8 arg_i8;
-                Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                Printf.bprintf buf "  %s = call i1 @string_ends_with(i8* %s, i8* %s)\n" result str_i8 arg_i8;
                 (result, I1)
             | "replace" when List.length args = 2 ->
                 let (old_v, _) = gen_expr buf ctx (List.nth args 0) in
@@ -561,9 +559,7 @@ let rec gen_expr buf ctx = function
                 Printf.bprintf buf "  %s = call i32 @string_char_at(i8* %s, i32 %s)\n" rune_temp str_i8 idx_v;
                 let char_temp = fresh_temp () in
                 Printf.bprintf buf "  %s = trunc i32 %s to i8\n" char_temp rune_temp;
-                let result_i32 = fresh_temp () in
-                Printf.bprintf buf "  %s = call i32 @string_is_digit(i8 %s)\n" result_i32 char_temp;
-                Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                Printf.bprintf buf "  %s = call i1 @string_is_digit(i8 %s)\n" result char_temp;
                 (result, I1)
             | "is_alpha" when List.length args = 1 ->
                 let (idx_v, _) = gen_expr buf ctx (List.hd args) in
@@ -572,9 +568,7 @@ let rec gen_expr buf ctx = function
                 Printf.bprintf buf "  %s = call i32 @string_char_at(i8* %s, i32 %s)\n" rune_temp str_i8 idx_v;
                 let char_temp = fresh_temp () in
                 Printf.bprintf buf "  %s = trunc i32 %s to i8\n" char_temp rune_temp;
-                let result_i32 = fresh_temp () in
-                Printf.bprintf buf "  %s = call i32 @string_is_alpha(i8 %s)\n" result_i32 char_temp;
-                Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                Printf.bprintf buf "  %s = call i1 @string_is_alpha(i8 %s)\n" result char_temp;
                 (result, I1)
             | "is_whitespace" when List.length args = 1 ->
                 let (idx_v, _) = gen_expr buf ctx (List.hd args) in
@@ -583,9 +577,7 @@ let rec gen_expr buf ctx = function
                 Printf.bprintf buf "  %s = call i32 @string_char_at(i8* %s, i32 %s)\n" rune_temp str_i8 idx_v;
                 let char_temp = fresh_temp () in
                 Printf.bprintf buf "  %s = trunc i32 %s to i8\n" char_temp rune_temp;
-                let result_i32 = fresh_temp () in
-                Printf.bprintf buf "  %s = call i32 @string_is_whitespace(i8 %s)\n" result_i32 char_temp;
-                Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                Printf.bprintf buf "  %s = call i1 @string_is_whitespace(i8 %s)\n" result char_temp;
                 (result, I1)
             | "substring" when List.length args = 2 ->
                 let (start_v, _) = gen_expr buf ctx (List.nth args 0) in
@@ -944,8 +936,8 @@ let rec gen_expr buf ctx = function
            let path_i8 = fresh_temp () in
            Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = call i32 @__c_file_exists(i8* %s)\n" result path_i8;
-           (result, I32)
+           Printf.bprintf buf "  %s = call i1 @__c_file_exists(i8* %s)\n" result path_i8;
+           (result, I1)
 
        | ("__c_file_append", [path_expr; content_expr]) ->
            let (path_v, _) = gen_expr buf ctx path_expr in
@@ -964,8 +956,8 @@ let rec gen_expr buf ctx = function
            let path_i8 = fresh_temp () in
            Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" path_i8 path_v;
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = call i32 @__c_file_delete(i8* %s)\n" result path_i8;
-           (result, I32)
+           Printf.bprintf buf "  %s = call i1 @__c_file_delete(i8* %s)\n" result path_i8;
+           (result, I1)
 
        | ("__c_file_read_bytes", [path_expr]) ->
            let (path_v, _) = gen_expr buf ctx path_expr in
@@ -1004,6 +996,9 @@ let rec gen_expr buf ctx = function
            Printf.bprintf buf "  %s = call i32 @__c_utf8_rune_at(i8* %s, i32 %s)\n"
              result content_i8 index_v;
            (result, I32)
+
+       | ("__c_rune_to_int", [rune_expr]) ->
+           gen_expr buf ctx rune_expr
 
        | ("__c_utf8_byte_at", [content_expr; index_expr]) ->
            let (content_v, _) = gen_expr buf ctx content_expr in
@@ -1159,19 +1154,13 @@ let rec gen_expr buf ctx = function
 
       (match arr_t with
        | Ptr I32 when (match arr with EVar _ | EString _ -> true | _ -> false) ->
-           (* 字符串索引:返回单字符字符串 str，等价于 substring(idx, idx+1) *)
+           (* 字符串索引按 Unicode code point 返回 rune *)
            let str_i8 = fresh_temp () in
            Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" str_i8 arr_v;
-           (* 计算 end_idx = idx + 1 *)
-           let end_idx = fresh_temp () in
-           Printf.bprintf buf "  %s = add i32 %s, 1\n" end_idx idx_v;
-           (* 调用 string_substring 返回单字符字符串 *)
-           let result_i8 = fresh_temp () in
-           Printf.bprintf buf "  %s = call i8* @string_substring(i8* %s, i32 %s, i32 %s)\n"
-             result_i8 str_i8 idx_v end_idx;
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = bitcast i8* %s to i32*\n" result result_i8;
-           (result, Ptr I32)
+           Printf.bprintf buf "  %s = call i32 @string_char_at(i8* %s, i32 %s)\n"
+             result str_i8 idx_v;
+           (result, U32)
        | Array (_, elem_t) ->
            let ptr_temp = fresh_temp () in
            let result = fresh_temp () in
@@ -1211,24 +1200,24 @@ let rec gen_expr buf ctx = function
            (* 字典索引:调用 dict_get_int_int *)
            let found_ptr = fresh_temp () in
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = alloca i32\n" found_ptr;
-           Printf.bprintf buf "  %s = call i32 @dict_get_int_int(i8* %s, i32 %s, i32* %s)\n"
+           Printf.bprintf buf "  %s = alloca i1\n" found_ptr;
+           Printf.bprintf buf "  %s = call i32 @dict_get_int_int(i8* %s, i32 %s, i1* %s)\n"
              result arr_v idx_v found_ptr;
            (result, I32)
        | DictStrPtr ->
            (* 字符串键字典索引:调用 dict_get_str_int *)
            let found_ptr = fresh_temp () in
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = alloca i32\n" found_ptr;
-           Printf.bprintf buf "  %s = call i32 @dict_get_str_int(i8* %s, i8* %s, i32* %s)\n"
+           Printf.bprintf buf "  %s = alloca i1\n" found_ptr;
+           Printf.bprintf buf "  %s = call i32 @dict_get_str_int(i8* %s, i8* %s, i1* %s)\n"
              result arr_v idx_v found_ptr;
            (result, I32)
        | Ptr I32 ->
            (* 旧的 Ptr I32 类型,默认视为字典 *)
            let found_ptr = fresh_temp () in
            let result = fresh_temp () in
-           Printf.bprintf buf "  %s = alloca i32\n" found_ptr;
-           Printf.bprintf buf "  %s = call i32 @dict_get_int_int(i8* %s, i32 %s, i32* %s)\n"
+           Printf.bprintf buf "  %s = alloca i1\n" found_ptr;
+           Printf.bprintf buf "  %s = call i32 @dict_get_int_int(i8* %s, i32 %s, i1* %s)\n"
              result arr_v idx_v found_ptr;
            (result, I32)
        | _ ->
@@ -1925,17 +1914,13 @@ let rec gen_expr buf ctx = function
                      let (arg_v, _) = gen_expr buf ctx (List.hd args) in
                      let arg_i8 = fresh_temp () in
                      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" arg_i8 arg_v;
-                     let result_i32 = fresh_temp () in
-                     Printf.bprintf buf "  %s = call i32 @string_starts_with(i8* %s, i8* %s)\n" result_i32 str_i8 arg_i8;
-                     Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                     Printf.bprintf buf "  %s = call i1 @string_starts_with(i8* %s, i8* %s)\n" result str_i8 arg_i8;
                      (result, I1)
                  | "ends_with" when List.length args = 1 ->
                      let (arg_v, _) = gen_expr buf ctx (List.hd args) in
                      let arg_i8 = fresh_temp () in
                      Printf.bprintf buf "  %s = bitcast i32* %s to i8*\n" arg_i8 arg_v;
-                     let result_i32 = fresh_temp () in
-                     Printf.bprintf buf "  %s = call i32 @string_ends_with(i8* %s, i8* %s)\n" result_i32 str_i8 arg_i8;
-                     Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                     Printf.bprintf buf "  %s = call i1 @string_ends_with(i8* %s, i8* %s)\n" result str_i8 arg_i8;
                      (result, I1)
                  | "replace" when List.length args = 2 ->
                      let (old_v, _) = gen_expr buf ctx (List.nth args 0) in
@@ -1963,9 +1948,7 @@ let rec gen_expr buf ctx = function
                      Printf.bprintf buf "  %s = call i32 @string_char_at(i8* %s, i32 %s)\n" rune_temp str_i8 idx_v;
                      let char_temp = fresh_temp () in
                      Printf.bprintf buf "  %s = trunc i32 %s to i8\n" char_temp rune_temp;
-                     let result_i32 = fresh_temp () in
-                     Printf.bprintf buf "  %s = call i32 @string_is_digit(i8 %s)\n" result_i32 char_temp;
-                     Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                     Printf.bprintf buf "  %s = call i1 @string_is_digit(i8 %s)\n" result char_temp;
                      (result, I1)
                  | "is_alpha" when List.length args = 1 ->
                      let (idx_v, _) = gen_expr buf ctx (List.hd args) in
@@ -1974,9 +1957,7 @@ let rec gen_expr buf ctx = function
                      Printf.bprintf buf "  %s = call i32 @string_char_at(i8* %s, i32 %s)\n" rune_temp str_i8 idx_v;
                      let char_temp = fresh_temp () in
                      Printf.bprintf buf "  %s = trunc i32 %s to i8\n" char_temp rune_temp;
-                     let result_i32 = fresh_temp () in
-                     Printf.bprintf buf "  %s = call i32 @string_is_alpha(i8 %s)\n" result_i32 char_temp;
-                     Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                     Printf.bprintf buf "  %s = call i1 @string_is_alpha(i8 %s)\n" result char_temp;
                      (result, I1)
                  | "is_whitespace" when List.length args = 1 ->
                      let (idx_v, _) = gen_expr buf ctx (List.hd args) in
@@ -1985,9 +1966,7 @@ let rec gen_expr buf ctx = function
                      Printf.bprintf buf "  %s = call i32 @string_char_at(i8* %s, i32 %s)\n" rune_temp str_i8 idx_v;
                      let char_temp = fresh_temp () in
                      Printf.bprintf buf "  %s = trunc i32 %s to i8\n" char_temp rune_temp;
-                     let result_i32 = fresh_temp () in
-                     Printf.bprintf buf "  %s = call i32 @string_is_whitespace(i8 %s)\n" result_i32 char_temp;
-                     Printf.bprintf buf "  %s = trunc i32 %s to i1\n" result result_i32;
+                     Printf.bprintf buf "  %s = call i1 @string_is_whitespace(i8 %s)\n" result char_temp;
                      (result, I1)
                  | "substring" when List.length args = 2 ->
                      let (start_v, _) = gen_expr buf ctx (List.nth args 0) in

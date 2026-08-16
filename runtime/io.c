@@ -5,6 +5,10 @@ void dream_print_int(int value) {
     printf("%d\n", value);
 }
 
+void dream_print_float(double value) {
+    printf("%g\n", value);
+}
+
 void dream_print_bool(bool value) {
     printf("%s\n", value ? "true" : "false");
 }

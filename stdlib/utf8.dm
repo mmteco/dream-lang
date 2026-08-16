@@ -1,6 +1,9 @@
 # UTF-8 字符串操作标准库
 # 提供基于 rune (Unicode codepoint) 的字符串操作
 
+def ord(r: rune) -> int:
+    return __c_rune_to_int(r)
+
 def rune_at(s: str, index: int) -> rune:
     '''
     获取字符串中第 index 个 rune (Unicode codepoint)

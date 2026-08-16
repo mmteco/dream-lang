@@ -103,11 +103,56 @@ let branch_merge_program =
   } in
   [Ast.SDef definition]
 
+let scalar_switch_function name switch_value first_case_value second_case_value =
+  let entry = {
+    Dir.label = "entry";
+    params = [];
+    instructions = [];
+    terminator = Dir.Switch (
+      switch_value,
+      [
+        (first_case_value, "case", []);
+        (second_case_value, "second_case", []);
+      ],
+      ("default", [])
+    );
+  } in
+  let case_block = {
+    Dir.label = "case";
+    params = [];
+    instructions = [];
+    terminator = Dir.Return (Some (Dir.Int 1));
+  } in
+  let second_case_block = {
+    Dir.label = "second_case";
+    params = [];
+    instructions = [];
+    terminator = Dir.Return (Some (Dir.Int 2));
+  } in
+  let default_block = {
+    Dir.label = "default";
+    params = [];
+    instructions = [];
+    terminator = Dir.Return (Some (Dir.Int 0));
+  } in
+  {
+    Dir.name = name;
+    parameters = [];
+    return_type = Dir.I32;
+    blocks = [entry; case_block; second_case_block; default_block];
+  }
+
 let () =
+  let scalar_switch_functions = [
+    scalar_switch_function "switch_int" (Dir.Int 2) (Dir.Int 1) (Dir.Int 2);
+    scalar_switch_function "switch_bool" (Dir.Bool true) (Dir.Bool false) (Dir.Bool true);
+    scalar_switch_function "switch_float" (Dir.Float 2.5) (Dir.Float 1.5) (Dir.Float 2.5);
+    scalar_switch_function "switch_str" (Dir.String "ready") (Dir.String "failed") (Dir.String "ready");
+  ] in
   let module_ = {
     Dir.name = "dir_test";
     externs = [];
-    functions = [select_function; list_function];
+    functions = [select_function; list_function] @ scalar_switch_functions;
   } in
   let errors = Dir_verify.verify module_ in
   assert_true (errors = []) (String.concat "\n" errors);
@@ -134,6 +179,19 @@ let () =
   } in
   assert_true (contains list_llvm_text "@set_dynarray_i32")
     "LLVM lowering lost list mutation";
+  let switch_llvm_text = Dir_lower_llvm.render {
+    Dir.name = "switch_test";
+    externs = [];
+    functions = scalar_switch_functions;
+  } in
+  assert_true (contains switch_llvm_text "switch i32 2")
+    "integer DIR switch did not use LLVM switch";
+  assert_true (contains switch_llvm_text "icmp eq i1 1, 1")
+    "boolean DIR switch did not lower to an integer comparison";
+  assert_true (contains switch_llvm_text "fcmp oeq double")
+    "float DIR switch did not lower to a floating-point comparison";
+  assert_true (contains switch_llvm_text "call i32 @string_compare")
+    "string DIR switch did not lower to string comparison";
   let merged_module = match Dir_lower.lower_program branch_merge_program with
     | Ok module_ -> module_
     | Error message -> failwith message
@@ -149,4 +207,55 @@ let () =
     "DIR if lowering lost the merged variable";
   assert_true (Dir_verify.verify merged_module = [])
     "DIR if merge failed verification";
+  let invalid_scope_function = {
+    Dir.name = "invalid_scope";
+    parameters = [];
+    return_type = Dir.I32;
+    blocks = [
+      {
+        Dir.label = "entry";
+        params = [];
+        instructions = [Dir.Binop (1, Dir.I32, Dir.Add, Dir.Value 2, Dir.Int 1)];
+        terminator = Dir.Return (Some (Dir.Value 1));
+      };
+      {
+        Dir.label = "later";
+        params = [(2, Dir.I32)];
+        instructions = [];
+        terminator = Dir.Return (Some (Dir.Value 2));
+      }
+    ];
+  } in
+  let invalid_scope_errors = Dir_verify.verify {
+    Dir.name = "invalid_scope";
+    externs = [];
+    functions = [invalid_scope_function];
+  } in
+  assert_true (contains (String.concat "\n" invalid_scope_errors) "undefined value %v2")
+    "DIR verifier accepted a block parameter outside its block";
+  let call_function = {
+    Dir.name = "call_test";
+    parameters = [];
+    return_type = Dir.Unit;
+    blocks = [{
+      Dir.label = "entry";
+      params = [];
+      instructions = [Dir.Call (None, Dir.I32, "runtime.add", [Dir.I32], [Dir.Int 1])];
+      terminator = Dir.Return None;
+    }];
+  } in
+  let call_errors = Dir_verify.verify {
+    Dir.name = "call_test";
+    externs = [{Dir.name = "runtime.add"; parameters = [Dir.I32]; return_type = Dir.I32}];
+    functions = [call_function];
+  } in
+  assert_true (contains (String.concat "\n" call_errors) "non-unit result must be bound")
+    "DIR verifier accepted an unbound call result";
+  let invalid_symbol_errors = Dir_verify.verify {
+    Dir.name = "invalid_symbol";
+    externs = [{Dir.name = "bad-name"; parameters = []; return_type = Dir.Unit}];
+    functions = [];
+  } in
+  assert_true (contains (String.concat "\n" invalid_symbol_errors) "invalid symbol name")
+    "DIR verifier accepted an invalid symbol name";
   print_endline "DIR pipeline test passed"

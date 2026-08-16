@@ -32,6 +32,7 @@ type env = {
   interfaces: interface_def StringMap.t;  (* 接口名 -> 接口定义 *)
   impls: impl_def list;  (* 所有impl块 *)
   structs: struct_def StringMap.t;  (* 结构体名 -> 结构体定义 *)
+  enums: enum_def StringMap.t;  (* 枚举名 -> 枚举定义 *)
   default_params: expr option list StringMap.t;  (* 函数名 -> 默认参数列表 *)
 }
 
@@ -42,6 +43,7 @@ let empty_env = {
   interfaces = StringMap.empty;
   impls = [];
   structs = StringMap.empty;
+  enums = StringMap.empty;
   default_params = StringMap.empty;
 }
 
@@ -52,6 +54,7 @@ let create_child_env parent = {
   interfaces = parent.interfaces;  (* 继承父环境的接口定义 *)
   impls = parent.impls;  (* 继承父环境的impl块 *)
   structs = parent.structs;  (* 继承父环境的结构体定义 *)
+  enums = parent.enums;  (* 继承父环境的枚举定义 *)
   default_params = parent.default_params;  (* 继承父环境的默认参数 *)
 }
 
@@ -112,6 +115,7 @@ let merge_env env1 env2 =
     interfaces = env1.interfaces;
     impls = env1.impls;
     structs = env1.structs;
+    enums = StringMap.union (fun _ v1 _ -> Some v1) env1.enums env2.enums;
     default_params = StringMap.union (fun _ v1 _ -> Some v1) env1.default_params env2.default_params;
   }
 
@@ -148,8 +152,21 @@ let rec find_struct name env =
   match StringMap.find_opt name env.structs with
   | Some struct_def -> Some struct_def
   | None ->
+        match env.parent with
+        | Some parent -> find_struct name parent
+        | None -> None
+
+(* 添加枚举定义到环境。*)
+let add_enum name enum_def env =
+  { env with enums = StringMap.add name enum_def env.enums }
+
+(* 查找枚举定义。*)
+let rec find_enum name env =
+  match StringMap.find_opt name env.enums with
+  | Some enum_def -> Some enum_def
+  | None ->
       match env.parent with
-      | Some parent -> find_struct name parent
+      | Some parent -> find_enum name parent
       | None -> None
 
 (* 检查结构体是否隐式实现了接口 (Duck Typing) *)
@@ -204,9 +221,9 @@ let c_runtime_functions = [
   (* 文件 I/O *)
   ("__c_file_read", TyFunc ([TyStr], TyStr));
   ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
-  ("__c_file_exists", TyFunc ([TyStr], TyInt));
+  ("__c_file_exists", TyFunc ([TyStr], TyBool));
   ("__c_file_append", TyFunc ([TyStr; TyStr], TyInt));
-  ("__c_file_delete", TyFunc ([TyStr], TyInt));
+  ("__c_file_delete", TyFunc ([TyStr], TyBool));
   ("__c_file_read_bytes", TyFunc ([TyStr], TyBytes));
   ("__c_file_write_bytes", TyFunc ([TyStr; TyBytes], TyInt));
   ("__c_file_append_bytes", TyFunc ([TyStr; TyBytes], TyInt));
@@ -216,6 +233,7 @@ let c_runtime_functions = [
   ("__c_utf8_encode_rune", TyFunc ([TyRune], TyBytes));  (* rune -> bytes (1-4 字节) *)
   ("__c_utf8_rune_count", TyFunc ([TyStr], TyInt));  (* str -> rune 数量 *)
   ("__c_utf8_rune_at", TyFunc ([TyStr; TyInt], TyRune));  (* (str, index) -> rune *)
+  ("__c_rune_to_int", TyFunc ([TyRune], TyInt));  (* rune -> int *)
   ("__c_utf8_byte_at", TyFunc ([TyStr; TyInt], TyInt));  (* (str, byte_index) -> byte *)
   ("__c_utf8_byte_offset", TyFunc ([TyStr; TyInt], TyInt));  (* (str, rune_index) -> byte_offset *)
 
@@ -312,6 +330,7 @@ let builtin_env =
   let env = add_binding "dict_values" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "V"))) env in
   let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
   let env = add_binding "join" (TyFunc ([TyList TyStr; TyStr], TyStr)) env in
+  let env = add_binding "string_concat" (TyFunc ([TyStr; TyStr], TyStr)) env in
   let env = add_binding "chr" (TyFunc ([TyInt], TyRune)) env in
   let env = add_binding "ord" (TyFunc ([TyRune], TyInt)) env in
   let env = add_binding "array" (TyFunc ([TyList (TyVar "T")], TyList (TyVar "T"))) env in

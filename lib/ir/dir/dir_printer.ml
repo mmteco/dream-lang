@@ -5,9 +5,11 @@ let ty = ty_to_string
 let operand = function
   | Value value -> Printf.sprintf "%%v%d" value
   | Int value -> string_of_int value
+  | Float value -> string_of_float value
   | Bool true -> "true"
   | Bool false -> "false"
   | String value -> Printf.sprintf "%S" value
+  | FunctionRef name -> "@" ^ name
 
 let binop = function
   | Add -> "add"
@@ -45,6 +47,38 @@ let instruction = function
       ) argument_types arguments in
       Printf.sprintf "call %s @%s(%s)"
         (ty result_type) name (String.concat ", " rendered_arguments)
+  | CallIndirect (Some value, result_type, parameter_types, callee, arguments) ->
+      let rendered_arguments = List.map2 (fun argument_type argument ->
+        ty argument_type ^ " " ^ operand argument
+      ) parameter_types arguments in
+      Printf.sprintf "%%v%d = call_indirect %s %s(%s)"
+        value (ty result_type) (operand callee) (String.concat ", " rendered_arguments)
+  | CallIndirect (None, result_type, parameter_types, callee, arguments) ->
+      let rendered_arguments = List.map2 (fun argument_type argument ->
+        ty argument_type ^ " " ^ operand argument
+      ) parameter_types arguments in
+      Printf.sprintf "call_indirect %s %s(%s)"
+        (ty result_type) (operand callee) (String.concat ", " rendered_arguments)
+  | MakeClosure (value, closure_type, name, capture_types, captures) ->
+      let rendered_captures = List.map2 (fun capture_type capture ->
+        ty capture_type ^ " " ^ operand capture
+      ) capture_types captures in
+      Printf.sprintf "%%v%d = make_closure %s @%s(%s)"
+        value (ty closure_type) name (String.concat ", " rendered_captures)
+  | ClosureGet (value, field_type, environment_type, environment, index) ->
+      Printf.sprintf "%%v%d = closure_get %s %s %s %d"
+        value (ty field_type) (ty (ClosureEnv environment_type))
+        (operand environment) index
+  | EnumCreateMulti (value, enum_type, tag, payload_types, payloads) ->
+      let rendered_payloads = List.map2 (fun payload_type payload ->
+        ty payload_type ^ " " ^ operand payload
+      ) payload_types payloads in
+      Printf.sprintf "%%v%d = enum_create_multi %s %d (%s)"
+        value (ty enum_type) tag (String.concat ", " rendered_payloads)
+  | EnumGetMulti (value, field_type, payload_types, enum_value, tag, index) ->
+      Printf.sprintf "%%v%d = enum_get_multi %s (%s) %s %d %d"
+        value (ty field_type) (String.concat ", " (List.map ty payload_types))
+        (operand enum_value) tag index
   | StringLength (value, string_value) ->
       Printf.sprintf "%%v%d = string_length %s" value (operand string_value)
   | StringCompare (value, left, right) ->
@@ -71,6 +105,24 @@ let instruction = function
   | TupleGet (value, element_type, tuple_value, index) ->
       Printf.sprintf "%%v%d = tuple_get %s %d %s" value
         (ty element_type) index (operand tuple_value)
+  | StructCreate (value, name, fields, values) ->
+      Printf.sprintf "%%v%d = struct_create %s {%s} [%s]" value name
+        (String.concat ", " (List.map (fun (field_name, field_type) ->
+          field_name ^ ": " ^ ty field_type) fields))
+        (String.concat ", " (List.map operand values))
+  | StructGet (value, field_type, struct_value, index) ->
+      Printf.sprintf "%%v%d = struct_get %s %d %s" value
+        (ty field_type) index (operand struct_value)
+  | EnumCreate (value, enum_type, tag, payload_type, payload) ->
+      Printf.sprintf "%%v%d = enum_create %s %d %s %s" value
+        (ty enum_type) tag (ty payload_type) (operand payload)
+  | EnumCreateSimple (value, enum_type, tag) ->
+      Printf.sprintf "%%v%d = enum_create_simple %s %d" value (ty enum_type) tag
+  | EnumTag (value, enum_value) ->
+      Printf.sprintf "%%v%d = enum_tag %s" value (operand enum_value)
+  | EnumGet (value, field_type, enum_value, tag) ->
+      Printf.sprintf "%%v%d = enum_get %s %d %s" value
+        (ty field_type) tag (operand enum_value)
   | ListAppend (collection, value) ->
       Printf.sprintf "list_append %s, %s" (operand collection) (operand value)
   | ListSet (collection, index, value) ->

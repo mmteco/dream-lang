@@ -1,6 +1,7 @@
 #ifndef DREAM_DICT_H
 #define DREAM_DICT_H
 
+#include <stdbool.h>
 #include "dynarray.h"
 
 typedef enum {
@@ -30,6 +31,11 @@ typedef struct {
 
 dict_t* dict_create(dict_key_type key_type, dict_val_type val_type, int initial_capacity);
 
+dict_t* dream_dict_create_int_int(int initial_capacity);
+dict_t* dream_dict_create_int_str(int initial_capacity);
+dict_t* dream_dict_create_str_int(int initial_capacity);
+dict_t* dream_dict_create_str_str(int initial_capacity);
+
 void dict_set_int_int(dict_t* dict, int key, int value);
 void dict_set_int_str(dict_t* dict, int key, const char* value);
 void dict_set_int_ptr(dict_t* dict, int key, void* value);
@@ -37,15 +43,25 @@ void dict_set_str_int(dict_t* dict, const char* key, int value);
 void dict_set_str_str(dict_t* dict, const char* key, const char* value);
 void dict_set_str_ptr(dict_t* dict, const char* key, void* value);
 
-int dict_get_int_int(dict_t* dict, int key, int* found);
-char* dict_get_int_str(dict_t* dict, int key, int* found);
-void* dict_get_int_ptr(dict_t* dict, int key, int* found);
-int dict_get_str_int(dict_t* dict, const char* key, int* found);
-char* dict_get_str_str(dict_t* dict, const char* key, int* found);
-void* dict_get_str_ptr(dict_t* dict, const char* key, int* found);
+int dict_get_int_int(dict_t* dict, int key, bool* found);
+char* dict_get_int_str(dict_t* dict, int key, bool* found);
+void* dict_get_int_ptr(dict_t* dict, int key, bool* found);
+int dict_get_str_int(dict_t* dict, const char* key, bool* found);
+char* dict_get_str_str(dict_t* dict, const char* key, bool* found);
+void* dict_get_str_ptr(dict_t* dict, const char* key, bool* found);
 
-int dict_has_int(dict_t* dict, int key);
-int dict_has_str(dict_t* dict, const char* key);
+int dream_dict_get_int_int(dict_t* dict, int key);
+char* dream_dict_get_int_str(dict_t* dict, int key);
+int dream_dict_get_str_int(dict_t* dict, const char* key);
+char* dream_dict_get_str_str(dict_t* dict, const char* key);
+
+int dream_dict_size_int_int(dict_t* dict);
+int dream_dict_size_int_str(dict_t* dict);
+int dream_dict_size_str_int(dict_t* dict);
+int dream_dict_size_str_str(dict_t* dict);
+
+bool dict_has_int(dict_t* dict, int key);
+bool dict_has_str(dict_t* dict, const char* key);
 
 void dict_remove_int(dict_t* dict, int key);
 void dict_remove_str(dict_t* dict, const char* key);

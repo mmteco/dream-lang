@@ -96,6 +96,8 @@ type context = {
   mutable function_param_types: (string * llvm_type list) list;
   (* 变量对应的结构体类型: 变量名 -> 结构体名 *)
   mutable var_struct_types: (string * string) list;
+  (* 编译期常量: 名称 -> (LLVM 类型, 直接值) *)
+  mutable constants: (string * llvm_type * string) list;
 }
 
 let create_context () = {
@@ -108,6 +110,7 @@ let create_context () = {
   function_signatures = [];
   function_param_types = [];
   var_struct_types = [];
+  constants = [];
 }
 
 let add_variable ctx name ty =
@@ -124,3 +127,11 @@ let find_variable ctx name =
 let find_llvm_name ctx name =
   try Some (List.assoc name ctx.var_renames)
   with Not_found -> None
+
+let add_constant ctx name ty value =
+  ctx.constants <- (name, ty, value) :: ctx.constants
+
+let find_constant ctx name =
+  match List.find_opt (fun (constant_name, _, _) -> constant_name = name) ctx.constants with
+  | Some (_, ty, value) -> Some (ty, value)
+  | None -> None

@@ -7,11 +7,12 @@ type token =
   | INT of int
   | FLOAT of float
   | STRING of string
-  | RUNE of char  (* 32-bit Unicode codepoint *)
+  | RUNE of int   (* 32-bit Unicode codepoint *)
   | BYTE of int   (* 8-bit byte *)
   | BOOL of bool
   | IDENT of string
   | LET
+  | LAMBDA
   | DEF
   | STRUCT
   | INTERFACE
@@ -129,7 +130,7 @@ and expr =
   | EInt of int * position
   | EFloat of float * position
   | EString of string * position
-  | ERune of char * position  (* 32-bit Unicode codepoint *)
+  | ERune of int * position  (* 32-bit Unicode codepoint *)
   | EByte of int * position   (* 8-bit byte *)
   | EBool of bool * position
   | EVar of string * position
@@ -157,7 +158,7 @@ and pattern =
   | PInt of int
   | PFloat of float
   | PString of string
-  | PRune of char  (* 32-bit Unicode codepoint *)
+  | PRune of int  (* 32-bit Unicode codepoint *)
   | PByte of int   (* 8-bit byte *)
   | PBool of bool
   | PVar of string
@@ -217,6 +218,15 @@ and let_stmt = {
   let_pos: position;  (* 整个 let 语句位置 *)
 }
 
+(* 模块级常量详细信息 *)
+and const_stmt = {
+  const_name: string;
+  const_name_pos: position;
+  const_type: type_expr option;
+  const_value: expr;
+  const_pos: position;
+}
+
 (* def 语句详细信息 *)
 and def_stmt = {
   def_name: string;
@@ -259,6 +269,7 @@ and enum_def = {
 and statement =
   | SExpr of expr * position
   | SLet of let_stmt
+  | SConst of const_stmt
   | SLetPat of pattern * expr * position  (* 元组解包: let (a,b) = tuple *)
   | SDef of def_stmt
   | SReturn of expr option * position

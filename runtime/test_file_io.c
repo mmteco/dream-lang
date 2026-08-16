@@ -2,12 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdbool.h>
 
 char* __c_file_read(const char* path);
 int __c_file_write(const char* path, const char* content);
-int __c_file_exists(const char* path);
+bool __c_file_exists(const char* path);
 int __c_file_append(const char* path, const char* content);
-int __c_file_delete(const char* path);
+bool __c_file_delete(const char* path);
 
 void test_file_write_read() {
     printf("Testing file_write and file_read...\n");
@@ -33,13 +34,13 @@ void test_file_exists() {
 
     const char* test_path = "/tmp/dream_test_exists.txt";
 
-    assert(__c_file_exists(test_path) == 0);
+    assert(!__c_file_exists(test_path));
 
     __c_file_write(test_path, "test");
-    assert(__c_file_exists(test_path) == 1);
+    assert(__c_file_exists(test_path));
 
     __c_file_delete(test_path);
-    assert(__c_file_exists(test_path) == 0);
+    assert(!__c_file_exists(test_path));
 
     printf("  ✓ All exists tests passed\n");
 }
@@ -69,14 +70,14 @@ void test_file_delete() {
     const char* test_path = "/tmp/dream_test_delete.txt";
 
     __c_file_write(test_path, "to be deleted");
-    assert(__c_file_exists(test_path) == 1);
+    assert(__c_file_exists(test_path));
 
-    int delete_result = __c_file_delete(test_path);
-    assert(delete_result == 1);
-    assert(__c_file_exists(test_path) == 0);
+    bool delete_result = __c_file_delete(test_path);
+    assert(delete_result);
+    assert(!__c_file_exists(test_path));
 
-    int delete_nonexistent = __c_file_delete(test_path);
-    assert(delete_nonexistent == 0);
+    bool delete_nonexistent = __c_file_delete(test_path);
+    assert(!delete_nonexistent);
 
     printf("  ✓ All delete tests passed\n");
 }

@@ -8,6 +8,14 @@ let gen_expr = Cg_expr.gen_expr
 let gen_pattern_test = Cg_expr.gen_pattern_test
 let gen_pattern_bindings = Cg_expr.gen_pattern_bindings
 let rec gen_statement buf ctx = function
+  | SConst const_info ->
+      gen_statement buf ctx (SLet {
+        let_name = const_info.const_name;
+        let_name_pos = const_info.const_name_pos;
+        let_type = const_info.const_type;
+        let_value = const_info.const_value;
+        let_pos = const_info.const_pos;
+      })
   | SLet let_info ->
       let name = let_info.let_name in
       let type_ann = let_info.let_type in

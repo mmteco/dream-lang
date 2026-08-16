@@ -77,6 +77,8 @@ and fill_default_params_stmt env stmt =
   | SExpr (e, pos) -> SExpr (fill_default_params env e, pos)
   | SLet let_info ->
       SLet { let_info with let_value = fill_default_params env let_info.let_value }
+  | SConst const_info ->
+      SConst { const_info with const_value = fill_default_params env const_info.const_value }
   | SLetPat (pat, value, pos) ->
       SLetPat (pat, fill_default_params env value, pos)
   | SAssign (name, value, pos) ->

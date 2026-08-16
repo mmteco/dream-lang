@@ -9,6 +9,23 @@ let infer_expr = ref (fun _ _ -> (TyUnknown, empty_subst))
 
 let set_infer_expr f = infer_expr := f
 
+let imported_const_type env const_info =
+  match const_info.const_type with
+  | Some type_expression -> type_expr_to_ty type_expression
+  | None ->
+      (match const_info.const_value with
+       | EInt _ -> TyInt
+       | EBool _ -> TyBool
+       | EByte _ -> TyByte
+       | ERune _ -> TyRune
+       | EFloat _ -> TyFloat
+       | EString _ -> TyStr
+       | EVar (name, _) ->
+           (match find_binding name env with
+            | Some ty -> ty
+            | None -> TyUnknown)
+       | _ -> TyUnknown)
+
 (* 语句类型检查 *)
 let rec check_statement env = function
   | SExpr (e, _) ->
@@ -79,6 +96,32 @@ let rec check_statement env = function
                    report_error err;
                    let new_env = add_binding name expected_type env' in
                    (new_env, value_subst))))
+
+  | SConst const_info ->
+      let name = const_info.const_name in
+      let value = const_info.const_value in
+      let pos = const_info.const_name_pos in
+      let (value_type, value_subst) = !infer_expr env value in
+      let resolved_value_type = apply_subst value_subst value_type in
+      let env' = apply_subst_to_env value_subst env in
+      (match const_info.const_type with
+       | None ->
+           let new_env = add_binding name resolved_value_type env' in
+           (lock_binding name new_env, value_subst)
+       | Some type_annotation ->
+           let expected_type = type_expr_to_ty type_annotation in
+           (try
+              let unify_subst = unify resolved_value_type expected_type in
+              let final_subst = compose_subst unify_subst value_subst in
+              let final_type = apply_subst final_subst expected_type in
+              let new_env = add_binding name final_type (apply_subst_to_env final_subst env') in
+              (lock_binding name new_env, final_subst)
+            with Failure msg ->
+              let err = make_error (TypeError msg) pos
+                (Printf.sprintf "Constant type mismatch for '%s': %s" name msg) in
+              report_error err;
+              let new_env = add_binding name expected_type env' in
+              (lock_binding name new_env, value_subst)))
 
   | SLetPat (pat, value, pos) ->
       let (value_type, value_subst) = !infer_expr env value in
@@ -571,6 +614,8 @@ let rec check_statement env = function
                  let func_type = TyFunc (param_types, ret_type) in
                  let default_values = List.map (fun (_, _, default_opt) -> default_opt) def_info.def_params in
                  Env.add_function_with_defaults name func_type default_values acc_env
+             | Module_loader.ExportedConst (_original_name, const_info) ->
+                 add_binding name (imported_const_type acc_env const_info) acc_env
              | Module_loader.ExportedInterface (_original_name, interface_info) ->
                  let iface_def = {
                    Env.iface_name = interface_info.interface_name;
@@ -629,7 +674,7 @@ let rec check_statement env = function
                  add_binding name struct_type acc_env_with_struct
              | Module_loader.ExportedEnum (_original_name, enum_info) ->
                  let enum_type = TyEnum (enum_info.enum_name, []) in
-                 add_binding name enum_type acc_env
+                 add_binding name enum_type (Env.add_enum name enum_info acc_env)
            ) env imports in
            (new_env, empty_subst))
 
@@ -655,6 +700,8 @@ let rec check_statement env = function
                  let func_type = TyFunc (param_types, ret_type) in
                  let default_values = List.map (fun (_, _, default_opt) -> default_opt) def_info.def_params in
                  Env.add_function_with_defaults name func_type default_values acc_env
+             | Module_loader.ExportedConst (_original_name, const_info) ->
+                 add_binding name (imported_const_type acc_env const_info) acc_env
              | Module_loader.ExportedInterface (_original_name, interface_info) ->
                  let iface_def = {
                    Env.iface_name = interface_info.interface_name;
@@ -713,7 +760,7 @@ let rec check_statement env = function
                  add_binding name struct_type acc_env_with_struct
              | Module_loader.ExportedEnum (_original_name, enum_info) ->
                  let enum_type = TyEnum (enum_info.enum_name, []) in
-                 add_binding name enum_type acc_env
+                 add_binding name enum_type (Env.add_enum name enum_info acc_env)
            ) env imports in
            (new_env, empty_subst))
 
@@ -823,7 +870,8 @@ let rec check_statement env = function
   | SEnum enum_info ->
       let name = enum_info.enum_name in
       let enum_type = TyEnum (name, []) in
-      let new_env = add_binding name enum_type env in
+      let new_env = Env.add_enum name enum_info env in
+      let new_env = add_binding name enum_type new_env in
       (new_env, empty_subst)
 
   | SFieldAssign (obj, field, value, pos) ->

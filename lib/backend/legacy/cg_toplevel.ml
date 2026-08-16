@@ -172,12 +172,12 @@ let gen_program program =
   Buffer.add_string buf "declare i8* @string_upper(i8*)\n";
   Buffer.add_string buf "declare i8* @string_lower(i8*)\n";
   Buffer.add_string buf "declare i8* @string_strip(i8*)\n";
-  Buffer.add_string buf "declare i32 @string_starts_with(i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @string_ends_with(i8*, i8*)\n";
+  Buffer.add_string buf "declare i1 @string_starts_with(i8*, i8*)\n";
+  Buffer.add_string buf "declare i1 @string_ends_with(i8*, i8*)\n";
   Buffer.add_string buf "declare i8* @string_replace(i8*, i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @string_is_digit(i8)\n";
-  Buffer.add_string buf "declare i32 @string_is_alpha(i8)\n";
-  Buffer.add_string buf "declare i32 @string_is_whitespace(i8)\n";
+  Buffer.add_string buf "declare i1 @string_is_digit(i8)\n";
+  Buffer.add_string buf "declare i1 @string_is_alpha(i8)\n";
+  Buffer.add_string buf "declare i1 @string_is_whitespace(i8)\n";
   Buffer.add_string buf "declare %dynarray_ptr* @string_split(i8*, i8*)\n";
   Buffer.add_string buf "declare i8* @string_join(%dynarray_ptr*, i8*)\n";
 
@@ -185,9 +185,9 @@ let gen_program program =
   Buffer.add_string buf "; File I/O functions\n";
   Buffer.add_string buf "declare i8* @__c_file_read(i8*)\n";
   Buffer.add_string buf "declare i32 @__c_file_write(i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @__c_file_exists(i8*)\n";
+  Buffer.add_string buf "declare i1 @__c_file_exists(i8*)\n";
   Buffer.add_string buf "declare i32 @__c_file_append(i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @__c_file_delete(i8*)\n";
+  Buffer.add_string buf "declare i1 @__c_file_delete(i8*)\n";
   Buffer.add_string buf "declare { i32, i32, i32* }* @__c_file_read_bytes(i8*)\n";
   Buffer.add_string buf "declare i32 @__c_file_write_bytes(i8*, { i32, i32, i32* }*)\n";
   Buffer.add_string buf "declare i32 @__c_file_append_bytes(i8*, { i32, i32, i32* }*)\n\n";
@@ -198,6 +198,7 @@ let gen_program program =
   Buffer.add_string buf "declare { i32, i32, i8* }* @__c_utf8_encode_rune(i32)\n";
   Buffer.add_string buf "declare i32 @__c_utf8_rune_count(i8*)\n";
   Buffer.add_string buf "declare i32 @__c_utf8_rune_at(i8*, i32)\n";
+  Buffer.add_string buf "declare i32 @__c_rune_to_int(i32)\n";
   Buffer.add_string buf "declare i32 @__c_utf8_byte_at(i8*, i32)\n";
   Buffer.add_string buf "declare i32 @__c_utf8_byte_offset(i8*, i32)\n\n";
 
@@ -219,14 +220,14 @@ let gen_program program =
   Buffer.add_string buf "declare void @dict_set_str_int(i8*, i8*, i32)\n";
   Buffer.add_string buf "declare void @dict_set_str_str(i8*, i8*, i8*)\n";
   Buffer.add_string buf "declare void @dict_set_str_ptr(i8*, i8*, i8*)\n";
-  Buffer.add_string buf "declare i32 @dict_get_int_int(i8*, i32, i32*)\n";
-  Buffer.add_string buf "declare i8* @dict_get_int_str(i8*, i32, i32*)\n";
-  Buffer.add_string buf "declare i8* @dict_get_int_ptr(i8*, i32, i32*)\n";
-  Buffer.add_string buf "declare i32 @dict_get_str_int(i8*, i8*, i32*)\n";
-  Buffer.add_string buf "declare i8* @dict_get_str_str(i8*, i8*, i32*)\n";
-  Buffer.add_string buf "declare i8* @dict_get_str_ptr(i8*, i8*, i32*)\n";
-  Buffer.add_string buf "declare i32 @dict_has_int(i8*, i32)\n";
-  Buffer.add_string buf "declare i32 @dict_has_str(i8*, i8*)\n";
+  Buffer.add_string buf "declare i32 @dict_get_int_int(i8*, i32, i1*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_int_str(i8*, i32, i1*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_int_ptr(i8*, i32, i1*)\n";
+  Buffer.add_string buf "declare i32 @dict_get_str_int(i8*, i8*, i1*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_str_str(i8*, i8*, i1*)\n";
+  Buffer.add_string buf "declare i8* @dict_get_str_ptr(i8*, i8*, i1*)\n";
+  Buffer.add_string buf "declare i1 @dict_has_int(i8*, i32)\n";
+  Buffer.add_string buf "declare i1 @dict_has_str(i8*, i8*)\n";
   Buffer.add_string buf "declare void @dict_remove_int(i8*, i32)\n";
   Buffer.add_string buf "declare void @dict_remove_str(i8*, i8*)\n";
   Buffer.add_string buf "declare i32 @dict_size(i8*)\n";
@@ -324,6 +325,20 @@ let gen_program program =
 
   (* 扫描所有函数定义并注册它们的签名（包括导入的） *)
   let all_programs = program :: !imported_modules in
+  let constant_value = function
+    | Const_eval.Int value -> (I32, string_of_int value)
+    | Const_eval.Bool value -> (I1, if value then "1" else "0")
+    | Const_eval.Byte value -> (U8, string_of_int value)
+    | Const_eval.Rune value -> (U32, string_of_int value)
+    | Const_eval.Float _ -> failwith "Float constants are not supported by the legacy backend"
+    | Const_eval.String _ -> failwith "String constants are not supported by the legacy backend"
+  in
+  List.iter (fun prog ->
+    List.iter (fun (name, value) ->
+      let (constant_type, constant_literal) = constant_value value in
+      add_constant ctx name constant_type constant_literal
+    ) (Const_eval.collect prog)
+  ) all_programs;
   List.iter (fun prog ->
     List.iter (function
       | SDef def_info ->
@@ -677,6 +692,7 @@ let gen_program program =
     Buffer.add_string code_buf "\ndefine i32 @main() {\nentry:\n";
     List.iter (function
       | SDef _ -> ()
+      | SConst _ -> ()
       | stmt -> gen_statement code_buf ctx stmt
     ) program;
     (* TODO: 在返回前释放所有 GC 对象（需要更复杂的生命周期分析）
