@@ -4,7 +4,7 @@
 
 ### 🚧 自举与 DIR 完整化主线
 
-- [x] 稳定当前 bootstrap/compiler.dm 自举切片，并通过 Stage 0 → Stage 1 → Stage 2 回归
+- [x] 稳定当前 bootstrap/compiler.dm 自举切片，并通过 Stage 0 → Stage 1 → Stage 2 → Stage 3 回归
 - [ ] 冻结 bootstrap 语法子集，增加语法边界和行为回归协议
 - [ ] 用 Dream 重写完整 lexer、parser、typechecker 和 DIR compiler
 - [ ] 完成真正的完整编译器自举，而不只验证 bootstrap/compiler.dm 切片

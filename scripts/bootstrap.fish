@@ -4,14 +4,14 @@ set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
 cd "$root_dir"
 
-set compiler _build/default/bin/main.exe
+set stage0_compiler _build/default/bin/main.exe
 set bootstrap_dir bootstrap
 set runtime_dir runtime
 set llvm_flags -Wno-override-module
 set runtime_sources (find "$runtime_dir" -maxdepth 1 -type f -name '*.c' ! -name 'test_*.c' | sort)
 set compiler_source "$bootstrap_dir/compiler.dm"
-set compiler_llvm "$bootstrap_dir/compiler.ll"
-set stage_names stage1 stage2 stage3
+set stage1_llvm "$bootstrap_dir/stage1.ll"
+set stage_names stage2 stage3
 set request_source_file tmp/dream_bootstrap_source
 set request_output_file tmp/dream_bootstrap_output
 
@@ -118,11 +118,15 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_bootstrap_lambda.dm tmp/dream_bootstrap_lambda 42
 end
 
-$compiler build "$compiler_source"
+$stage0_compiler build "$compiler_source" >/dev/null
 or exit 1
-compile_llvm "$bootstrap_dir/compiler" "$compiler_llvm"
+mv "$bootstrap_dir/compiler.ll" "$stage1_llvm"
 or exit 1
-"$bootstrap_dir/compiler"
+mv "$bootstrap_dir/compiler" "$bootstrap_dir/stage1"
+or exit 1
+compile_llvm "$bootstrap_dir/stage1" "$stage1_llvm"
+or exit 1
+"$bootstrap_dir/stage1"
 or exit 1
 fish scripts/verify_llvm.fish
 or exit 1
@@ -132,12 +136,14 @@ for stage_name in $stage_names
     or exit 1
 end
 
-set stage1_output ("$bootstrap_dir/stage1" | string split \n)
-if test (count $stage1_output) -ne 2; or test "$stage1_output[1]" != 48; or test "$stage1_output[2]" != stage2
-    echo '错误: Stage 1 输出不符合预期' >&2
+compile_llvm "$bootstrap_dir/sample_functions" "$bootstrap_dir/sample_functions.ll"
+or exit 1
+set sample_output ("$bootstrap_dir/sample_functions" | string split \n)
+if test (count $sample_output) -ne 2; or test "$sample_output[1]" != 48; or test "$sample_output[2]" != stage2
+    echo '错误: sample_functions 输出不符合预期' >&2
     exit 1
 end
-printf '%s\n' $stage1_output
+printf '%s\n' $sample_output
 
 "$bootstrap_dir/stage2"
 or exit 1

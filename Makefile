@@ -17,7 +17,7 @@ help:
 	@echo "  make runtime-check - 运行 runtime 常规测试和 UBSan 测试"
 	@echo "  make check       - 运行完整构建、测试和自举验证"
 	@echo "  make <example>   - 编译并运行 examples/<example>.dm"
-	@echo "  make bootstrap   - 执行 Stage 0 → Stage 1 自举切片"
+	@echo "  make bootstrap   - 执行 Stage 0 → Stage 1 → Stage 2 → Stage 3 自举验证"
 	@echo "  make bootstrap-build FILE=path/to/file.dm - 使用 Stage 2 bootstrapped 编译器构建"
 	@echo "  make bootstrap-verify - 验证已生成的自举 LLVM 文件"
 	@echo ""
@@ -63,7 +63,7 @@ $(EXAMPLE_TARGETS): build
 
 dynarray: dynarray_full
 
-# 执行自举：Stage 0 使用 DIR 编译编译器，后续阶段继续由生成的编译器完成
+# 执行自举：Stage 0 生成 Stage 1，后续阶段继续编译自身并验证固定点。
 bootstrap: build
 	$(FISH) scripts/bootstrap.fish
 

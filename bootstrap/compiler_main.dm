@@ -90,7 +90,7 @@ def compile_source(source_path: str, output_path: str):
     append_text(output, "; function_count=")
     append_integer(output, len(function_starts))
     append_text(output, "\n")
-    append_text(output, "; Dream Stage 1 LLVM bootstrap output\n")
+    append_text(output, "; Dream LLVM bootstrap output\n")
     append_text(output, "%dynarray_i32 = type { i32, i32, i32* }\n")
     append_text(output, "%dict_t = type opaque\n")
     let literal_index = 0
@@ -166,7 +166,7 @@ def compile_requested_source():
     compile_source(request_source_path, request_output_path)
 
 def main():
-    compile_source("bootstrap/sample_functions.dm", "bootstrap/stage1.ll")
+    compile_source("bootstrap/sample_functions.dm", "bootstrap/sample_functions.ll")
     compile_source("bootstrap/compiler.dm", "bootstrap/stage2.ll")
     compile_source("bootstrap/compiler.dm", "bootstrap/stage3.ll")
     compile_requested_source()

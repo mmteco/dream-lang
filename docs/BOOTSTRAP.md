@@ -3,12 +3,33 @@
 ## 目标
 用 Dream 语言重新实现 Dream 编译器，实现自举（self-hosting）。
 
+## 自举阶段定义
+
+项目采用标准的 Stage 0 → Stage 1 → Stage 2 → Stage 3 编号。编号表示“使用哪个编译器编译下一个编译器”，样例程序不属于自举阶段。
+
+| 阶段 | 编译器 | 输入 | 产物与职责 |
+| --- | --- | --- | --- |
+| Stage 0 | `_build/default/bin/main.exe`（宿主 OCaml 编译器） | `bootstrap/compiler.dm` | 生成并链接 `bootstrap/stage1` |
+| Stage 1 | `bootstrap/stage1`（Stage 0 生成） | `bootstrap/compiler.dm` | 生成 `stage2.ll`、`stage3.ll`，并编译 `sample_functions.ll` 作为样例回归 |
+| Stage 2 | `bootstrap/stage2`（Stage 1 生成） | `bootstrap/compiler.dm` | 再次生成 Stage 2/3，验证自举固定点；也是 `bootstrap-build` 使用的编译器 |
+| Stage 3 | `bootstrap/stage3`（Stage 2 生成） | `bootstrap/compiler.dm` | 再运行一轮，确认输出与 Stage 2 一致 |
+
+执行顺序如下：
+
+```text
+Stage 0: OCaml compiler
+    └─ compiler.dm → stage1.ll → bootstrap/stage1
+        └─ compiler.dm → stage2.ll → bootstrap/stage2
+            └─ compiler.dm → stage3.ll → bootstrap/stage3
+                └─ compiler.dm → stage2.ll / stage3.ll（必须达到固定点）
+```
+
+`bootstrap/sample_functions` 只是由 Stage 1 编译出的功能回归样例，不是 Stage 1 编译器。`compiler.ll` 也不再作为阶段产物保留；Stage 0 生成的编译器统一命名为 `stage1.ll` 和 `stage1`。
+
 ## 当前自举进度
 
-- [x] 直接 LLVM IR 后端的最小 Stage 1 编译器：支持整数、变量、四则运算、`let`、函数声明、参数、`return`、调用和 `print`。
-- [x] Stage 1 已增加字符串字面量、字符串局部变量与 `str` 函数参数、`list[int]` 动态数组参数/局部变量、`append`/`len`、`print_string`、函数调用参数中的四则运算和一层嵌套调用、`while` 循环和 `switch/case/default` 的 LLVM 控制流生成。
-- [x] Stage 0 支持 `elif`、`switch/case/default`；`switch` 当前在语法层降为 `if/elif/else` 链。
-- [x] Stage 0 编译并运行 Stage 1；Stage 1 编译 `bootstrap/compiler.dm` 生成 Stage 2 LLVM IR，并由 Clang 成功链接；样例输出 `48` 和 `stage2`。
+- [x] Stage 1 支持整数、变量、四则运算、`let`、函数声明、参数、`return`、调用、`print`、字符串、列表、循环和 `switch/case/default`。
+- [x] Stage 0 生成并运行 Stage 1；Stage 1 生成并链接 Stage 2 和 Stage 3。
 - [x] Stage 2、Stage 3 可以运行并生成字节一致的 LLVM 固定点。
 - [x] `scripts/bootstrap_build.fish` 可以使用 Stage 2 bootstrapped 编译器构建当前自举语法子集，并由 Clang/runtime 链接为可执行文件。
 - [x] Stage 2 已支持整数列表字面量、列表索引读取和列表元素赋值；`hello.dm`、`factorial.dm`、`dynarray_full.dm` 已纳入 `make bootstrap` 回归。

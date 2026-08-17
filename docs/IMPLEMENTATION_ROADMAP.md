@@ -59,9 +59,9 @@ AST/typed AST（逐步明确 HIR 边界）
 | DIR lowering 与 LLVM 渲染 | `lib/ir/dir/` |
 | 编译入口 | `bin/main.ml` |
 | 运行时 | `runtime/` |
-| 自举切片 | `bootstrap/compiler.dm`、`bootstrap/compiler.ll` |
+| 自举切片 | `bootstrap/compiler.dm`、`bootstrap/stage1.ll` |
 
-仓库已经有一个可工作的直接 LLVM 自举切片：Stage 0 可以生成 Stage 1 和 Stage 2 的 LLVM 文件，Stage 1 的样例可以编译和运行。但 Stage 2 自运行后生成的 LLVM 仍需要单独经过 LLVM 验证；“Stage2 进程正常退出”不能等同于“Stage3 已经完成”。
+仓库已经有一个可工作的直接 LLVM 自举切片：Stage 0 生成 Stage 1，Stage 1 生成 Stage 2 和 Stage 3，Stage 1 还会编译样例程序并运行回归。Stage 2 自运行后生成的 LLVM 仍需要单独经过 LLVM 验证；“Stage2 进程正常退出”不能等同于“Stage3 已经完成”。
 
 当前 DIR 文件已经形成唯一的端到端后端，并已有单元和示例回归测试：
 
@@ -72,7 +72,7 @@ lib/compiler/dir_compiler.ml
 
 它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串/bytes/tuple lowering 和 LLVM lowering；`dream build file.dm` 使用 DIR 后端并生成 `.dir`、`.ll`。DIR 当前已覆盖整数、浮点数、布尔值、字符串、bytes、`list<i32>`、有限字段结构体、单载荷 enum（int/float/bool/str）、i32 tuple、字典（int/str 键值）、列表/字典索引与赋值、列表索引/切片/拼接、bytes 索引/切片、`append`、列表推导式、`if/elif`、while、for、条件/三元表达式、标量/列表/结构体/enum match、match guard、函数调用、`Result` 的同类型 `?` 传播和导入的标准库包装。多载荷 enum、闭包/函数值、动态对象和泛型容器仍需后续 DIR 表示设计，不能假装已经支持。
 
-当前自举 Makefile 已增加 LLVM 预验证：Stage 0 生成 `compiler.ll`、`stage1.ll`、`stage2.ll` 后，必须先通过 `clang -c -o /dev/null -x ir`，失败日志暂存到 `tmp/`。这只能证明 LLVM 文件合法，不能证明 Stage2→Stage3 已闭环。
+当前自举 Makefile 已增加 LLVM 预验证：Stage 0 生成 `stage1.ll`，Stage 1 生成 `stage2.ll` 和 `stage3.ll`，所有文件必须先通过 `clang -c -o /dev/null -x ir`，失败日志暂存到 `tmp/`。这只能证明 LLVM 文件合法，不能证明 Stage2→Stage3 已闭环。
 
 Makefile 只保留任务依赖，具体流程集中在 `scripts/*.fish`：测试脚本自动发现带有
 `# dream-test: smoke` 标记的示例和 `test/*_dir.dm`，bootstrap 脚本共享 runtime 文件集合、LLVM 参数和 Stage 列表；新增同类文件时无需继续扩展长命令。
@@ -289,8 +289,8 @@ DIR verification failed:
 自举时要分别验证：
 
 1. Stage 0 生成的 Stage 1 LLVM；
-2. Stage 0 生成的 Stage 2 LLVM；
-3. Stage 2 运行后生成的 Stage 3 LLVM；
+2. Stage 1 生成的 Stage 2 LLVM；
+3. Stage 1 生成的 Stage 3 LLVM；
 4. Stage 3 运行后生成的下一轮 LLVM。
 
 ### 4.3 确定性输出
@@ -406,7 +406,7 @@ bootstrap/compiler_main.dm
 
 迁移初期先完成了直接 LLVM 自举切片的 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点，再逐步把 `bootstrap/compiler.dm` 接入 DIR。这样可以把自举链路问题与中间表示迁移问题分开验证；当前正式编译器已经只保留 DIR 路径。
 
-当前实现状态已经进入迁移后的稳定化阶段：`make bootstrap` 生成 Stage 0，`bootstrap/compiler.dm` 已经从 `stdlib/dir_bootstrap.dm` 导入 DIR 构建与渲染桥，并完成 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点验证。自举桥采用定长 typed record payload；`ret`、整数算术、`and/or`、整数 `icmp`、`zext i1 -> i32` 和零操作数 `unreachable` 已使用 native record，尚未覆盖的 `call`、指针操作和复杂可变参数指令继续走经过校验的 raw LLVM 兼容路径。后续迁移应按“固定 payload ABI、增加负例测试、验证 Stage2/Stage3 固定点”的顺序逐条推进。
+当前实现状态已经进入迁移后的稳定化阶段：`make bootstrap` 使用 Stage 0 生成 Stage 1，再完成 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点验证。`bootstrap/compiler.dm` 已经从 `stdlib/dir_bootstrap.dm` 导入 DIR 构建与渲染桥。自举桥采用定长 typed record payload；`ret`、整数算术、`and/or`、整数 `icmp`、`zext i1 -> i32` 和零操作数 `unreachable` 已使用 native record，尚未覆盖的 `call`、指针操作和复杂可变参数指令继续走经过校验的 raw LLVM 兼容路径。后续迁移应按“固定 payload ABI、增加负例测试、验证 Stage2/Stage3 固定点”的顺序逐条推进。
 
 ## 六、自举验证协议
 
@@ -414,16 +414,16 @@ bootstrap/compiler_main.dm
 
 ```text
 1. 构建 Stage 0
-2. Stage 0 生成 stage1.dir 和 stage2.dir
-3. verifier 验证 stage1.dir 和 stage2.dir
-4. lowering 生成 stage1.ll 和 stage2.ll
-5. LLVM verifier 验证两个 .ll
-6. 链接 Stage 1 和 Stage 2
-7. Stage 1 编译最小样例并运行
-8. Stage 2 编译 compiler.dm 自身
-9. 验证 Stage 2 生成的 Stage 3 DIR/LLVM
-10. 链接并运行 Stage 3
-11. 比较 Stage 2 与 Stage 3 的规范化 DIR
+2. Stage 0 生成 `stage1.ll`
+3. LLVM verifier 验证 `stage1.ll`
+4. 链接并运行 Stage 1
+5. Stage 1 生成 `stage2.ll`、`stage3.ll` 和样例 LLVM
+6. LLVM verifier 验证 Stage 2/3 的 LLVM
+7. 链接并运行 Stage 2
+8. Stage 2 编译 `compiler.dm` 自身
+9. 链接并运行 Stage 3
+10. 比较 Stage 2 与 Stage 3 的规范化 DIR/LLVM
+11. 使用 Stage 2 构建自举语法子集的回归样例
 ```
 
 规范化比较至少应去除构建路径、时间戳、随机命名和目标机 metadata；不能去除会影响语义的类型、控制流、调用签名或常量内容。
@@ -543,13 +543,14 @@ DIR 引入后应让 CodeGraph 能分析：
 
 ### 自举测试
 
-- Stage 0 生成合法 Stage 1/Stage 2；
-- Stage 2 生成合法 Stage 3；
+- Stage 0 生成合法 Stage 1；
+- Stage 1 生成合法 Stage 2/Stage 3；
+- Stage 2 继续生成合法 Stage 3；
 - Stage 3 可运行；
 - 两轮 DIR 达到固定点；
 - 失败时诊断文件完整保留。
 
-`make bootstrap` 现在会在链接 Stage 1/Stage 2 前自动运行 `make bootstrap-verify`。单独检查已有产物时可运行：
+`make bootstrap` 现在会在链接 Stage 1/Stage 2/Stage 3 前自动运行 LLVM 验证。单独检查已有产物时可运行：
 
 ```text
 make bootstrap-verify
