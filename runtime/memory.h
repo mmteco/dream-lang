@@ -18,6 +18,7 @@ typedef enum {
     OBJ_TUPLE,
     OBJ_UNION,
     OBJ_ENUM,
+    OBJ_INTERFACE,  // 接口值的具体对象装箱（无内部指针，无需清理）
 } ObjectType;
 
 // ============================================================================
@@ -34,6 +35,10 @@ void* gc_alloc_shared(size_t size, ObjectType type);
 
 // 通用分配函数（默认使用局部分配）
 void* gc_alloc(size_t size, ObjectType type);
+
+// 接口值对象装箱与释放（编译器管理引用计数）
+void* dream_interface_alloc(int64_t size);
+void dream_interface_release(void* object);
 
 // ============================================================================
 // 引用计数操作

@@ -72,6 +72,20 @@ let list_function =
     blocks = [entry];
   }
 
+let float_compare_function =
+  let entry = {
+    Dir.label = "entry";
+    params = [];
+    instructions = [Dir.Compare (1, Dir.Lt, Dir.Float 1.5, Dir.Float 2.5)];
+    terminator = Dir.Return (Some (Dir.Value 1));
+  } in
+  {
+    Dir.name = "float_compare";
+    parameters = [];
+    return_type = Dir.Bool;
+    blocks = [entry];
+  }
+
 let branch_merge_program =
   let position = {Ast.line = 1; column = 1} in
   let integer value = Ast.EInt (value, position) in
@@ -151,12 +165,17 @@ let () =
   ] in
   let module_ = {
     Dir.name = "dir_test";
+    globals = [];
     externs = [];
-    functions = [select_function; list_function] @ scalar_switch_functions;
+    functions = [select_function; list_function; float_compare_function] @ scalar_switch_functions;
   } in
   let errors = Dir_verify.verify module_ in
   assert_true (errors = []) (String.concat "\n" errors);
   let dir_text = Dir_printer.render module_ in
+  assert_true (contains dir_text "%v3 = icmp gt i32")
+    "DIR printer lost comparison operand type";
+  assert_true (contains dir_text "%v1 = fcmp lt f64 1.5, 2.5")
+    "DIR printer lost floating-point comparison type";
   assert_true (contains dir_text "branch %v3, left(%v1), right(%v2)")
     "DIR printer lost branch arguments";
   assert_true (contains dir_text "merge(%v6 i32)")
@@ -168,12 +187,14 @@ let () =
     "LLVM lowering did not create phi for block parameter";
   let list_errors = Dir_verify.verify {
     Dir.name = "list_test";
+    globals = [];
     externs = [];
     functions = [list_function];
   } in
   assert_true (list_errors = []) (String.concat "\n" list_errors);
   let list_llvm_text = Dir_lower_llvm.render {
     Dir.name = "list_test";
+    globals = [];
     externs = [];
     functions = [list_function];
   } in
@@ -181,6 +202,7 @@ let () =
     "LLVM lowering lost list mutation";
   let switch_llvm_text = Dir_lower_llvm.render {
     Dir.name = "switch_test";
+    globals = [];
     externs = [];
     functions = scalar_switch_functions;
   } in
@@ -228,6 +250,7 @@ let () =
   } in
   let invalid_scope_errors = Dir_verify.verify {
     Dir.name = "invalid_scope";
+    globals = [];
     externs = [];
     functions = [invalid_scope_function];
   } in
@@ -246,6 +269,7 @@ let () =
   } in
   let call_errors = Dir_verify.verify {
     Dir.name = "call_test";
+    globals = [];
     externs = [{Dir.name = "runtime.add"; parameters = [Dir.I32]; return_type = Dir.I32}];
     functions = [call_function];
   } in
@@ -253,6 +277,7 @@ let () =
     "DIR verifier accepted an unbound call result";
   let invalid_symbol_errors = Dir_verify.verify {
     Dir.name = "invalid_symbol";
+    globals = [];
     externs = [{Dir.name = "bad-name"; parameters = []; return_type = Dir.Unit}];
     functions = [];
   } in

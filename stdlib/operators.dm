@@ -7,28 +7,38 @@
 
 # 加法运算符 +
 # T: 参数类型, R: 返回类型
-interface Add[T, R]:
-    def add(self, other: T) -> R
+interface Add[T]:
+    def add(self, other: T) -> Self
 
 # 减法运算符 -
 # T: 参数类型, R: 返回类型
-interface Sub[T, R]:
-    def sub(self, other: T) -> R
+interface Sub[T]:
+    def sub(self, other: T) -> Self
 
 # 乘法运算符 *
 # T: 参数类型, R: 返回类型
-interface Mul[T, R]:
-    def mul(self, other: T) -> R
+interface Mul[T]:
+    def mul(self, other: T) -> Self
 
 # 除法运算符 /
 # T: 参数类型, R: 返回类型
-interface Div[T, R]:
-    def div(self, other: T) -> R
+interface Div[T]:
+    def div(self, other: T) -> Self
+
+# 整除运算符 //
+# T: 参数类型, R: 返回类型
+interface FloorDiv[T]:
+    def floordiv(self, other: T) -> Self
 
 # 取模运算符 %
 # T: 参数类型, R: 返回类型
-interface Mod[T, R]:
-    def mod(self, other: T) -> R
+interface Mod[T]:
+    def mod(self, other: T) -> Self
+
+# 幂运算符 **
+# T: 参数类型, R: 返回类型
+interface Pow[T]:
+    def pow(self, other: T) -> Self
 
 
 # ===== 比较运算符 =====
@@ -62,9 +72,13 @@ interface Ord[T]:
 # ===== 一元运算符 =====
 
 # 取负运算符 - (一元)
-# 注意：由于当前不支持 Self 类型，返回类型需要在实现时明确指定
-interface Neg[T]:
-    def neg(self) -> T
+# 返回类型 Self 表示实现该接口的具体类型
+interface Neg:
+    def neg(self) -> Self
+
+# 取正运算符 + (一元)
+interface Pos:
+    def pos(self) -> Self
 
 # 取反运算符 not
 # 注意：由于 not 是关键字，方法名使用 not_
@@ -76,30 +90,27 @@ interface Not:
 
 # 按位与 &
 interface BitAnd[T]:
-    def bitand(self, other: T) -> T
+    def bitand(self, other: T) -> Self
 
 # 按位或 |
 interface BitOr[T]:
-    def bitor(self, other: T) -> T
+    def bitor(self, other: T) -> Self
 
 # 按位异或 ^
 interface BitXor[T]:
-    def bitxor(self, other: T) -> T
+    def bitxor(self, other: T) -> Self
 
 # 按位取反 ~
-# 注意：由于当前不支持 Self 类型，返回类型需要在实现时明确指定
-interface BitNot[T]:
-    def bitnot(self) -> T
+interface BitNot:
+    def bitnot(self) -> Self
 
 # 左移 <<
-# 注意：由于当前不支持 Self 类型，返回类型需要在实现时明确指定
 interface Shl[T, U]:
-    def shl(self, n: U) -> T
+    def shl(self, n: U) -> Self
 
 # 右移 >>
-# 注意：由于当前不支持 Self 类型，返回类型需要在实现时明确指定
 interface Shr[T, U]:
-    def shr(self, n: U) -> T
+    def shr(self, n: U) -> Self
 
 
 # ===== 索引运算符 =====

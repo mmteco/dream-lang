@@ -1,3 +1,12 @@
+(* 具体类型名的稳定 tag（FNV-1a 32 位），接口值类型断言与 match type of 共用 *)
+let concrete_type_tag name =
+  let hash = ref 0x811c9dc5l in
+  String.iter (fun character ->
+    hash := Int32.logxor !hash (Int32.of_int (Char.code character));
+    hash := Int32.mul !hash 0x01000193l
+  ) name;
+  Int32.to_int !hash
+
 type ty =
   | Unit
   | Bool
@@ -10,6 +19,8 @@ type ty =
   | Tuple of ty list
   | Struct of string * (string * ty) list
   | Enum of string * (string * ty list) list
+  | Interface of string * (string * ty list * ty) list
+  | Union of ty list
   | ClosureEnv of ty list
   | Func of ty list * ty
 
@@ -29,6 +40,11 @@ type binop =
   | Mul
   | Div
   | Mod
+  | BitAnd
+  | BitOr
+  | BitXor
+  | Shl
+  | Shr
   | And
   | Or
 
@@ -47,6 +63,11 @@ type instruction =
   | CallIndirect of value option * ty * ty list * operand * operand list
   | MakeClosure of value * ty * string * ty list * operand list
   | ClosureGet of value * ty * ty list * operand * int
+  | InterfaceBox of value * ty * operand
+  | MakeInterface of value * ty * ty * operand * string list
+  | InterfaceCall of value option * ty * ty * operand * string * int * ty list * operand list
+  | InterfaceRelease of operand
+  | InterfaceTypeTag of value * operand
   | StringLength of value * operand
   | StringCompare of value * operand * operand
   | StringSlice of value * operand * operand * operand
@@ -67,6 +88,8 @@ type instruction =
   | EnumGetMulti of value * ty * ty list * operand * int * int
   | ListAppend of operand * operand
   | ListSet of operand * operand * operand
+  | GlobalLoad of value * ty * string
+  | GlobalStore of string * operand
 
 type terminator =
   | Jump of string * operand list
@@ -104,6 +127,7 @@ type extern = {
 type module_ = {
   name: string;
   externs: extern list;
+  globals: (string * ty) list;
   functions: function_def list;
 }
 
@@ -128,6 +152,19 @@ let rec equal_ty left right =
       List.for_all2 (fun (left_field, left_type) (right_field, right_type) ->
         left_field = right_field && equal_ty left_type right_type
       ) left_fields right_fields
+  | Union left_elements, Union right_elements ->
+      List.length left_elements = List.length right_elements &&
+      List.for_all2 equal_ty left_elements right_elements
+  | Interface (left_name, left_methods), Interface (right_name, right_methods) ->
+      left_name = right_name &&
+      List.length left_methods = List.length right_methods &&
+      List.for_all2 (fun (left_method, left_parameters, left_return)
+          (right_method, right_parameters, right_return) ->
+        left_method = right_method &&
+        List.length left_parameters = List.length right_parameters &&
+        List.for_all2 equal_ty left_parameters right_parameters &&
+        equal_ty left_return right_return
+      ) left_methods right_methods
   | ClosureEnv left_fields, ClosureEnv right_fields ->
       List.length left_fields = List.length right_fields &&
       List.for_all2 equal_ty left_fields right_fields
@@ -150,6 +187,9 @@ let rec ty_to_string = function
       "(" ^ String.concat ", " (List.map ty_to_string elements) ^ ")"
   | Struct (name, _) -> name
   | Enum (name, _) -> name
+  | Interface (name, _) -> "interface " ^ name
+  | Union elements ->
+      String.concat " | " (List.map ty_to_string elements)
   | ClosureEnv fields ->
       "closure_env{" ^ String.concat ", " (List.map ty_to_string fields) ^ "}"
   | Func (parameters, return_type) ->
@@ -182,13 +222,21 @@ let instruction_result = function
   | EnumGetMulti (value, field_type, _, _, _, _) -> Some (value, field_type)
   | MakeClosure (value, closure_type, _, _, _) -> Some (value, closure_type)
   | ClosureGet (value, field_type, _, _, _) -> Some (value, field_type)
+  | InterfaceBox (value, concrete_type, _) -> Some (value, concrete_type)
+  | MakeInterface (value, interface_type, _, _, _) -> Some (value, interface_type)
+  | InterfaceCall (Some value, result_type, _, _, _, _, _, _) -> Some (value, result_type)
+  | InterfaceTypeTag (value, _) -> Some (value, I32)
   | Compare (value, _, _, _) -> Some (value, Bool)
   | Call (Some value, ty, _, _, _) -> Some (value, ty)
   | CallIndirect (Some value, ty, _, _, _) -> Some (value, ty)
+  | GlobalLoad (value, ty, _) -> Some (value, ty)
   | Call (None, _, _, _, _)
   | CallIndirect (None, _, _, _, _)
+  | InterfaceCall (None, _, _, _, _, _, _, _)
+  | InterfaceRelease _
   | ListAppend _
-  | ListSet _ -> None
+  | ListSet _
+  | GlobalStore _ -> None
 
 let instruction_operands = function
   | Binop (_, _, _, left, right)
@@ -198,6 +246,12 @@ let instruction_operands = function
   | CallIndirect (_, _, _, callee, arguments) -> callee :: arguments
   | MakeClosure (_, _, _, _, captures) -> captures
   | ClosureGet (_, _, _, environment, _) -> [environment]
+  | InterfaceBox (_, _, object_value) -> [object_value]
+  | MakeInterface (_, _, _, object_value, _) -> [object_value]
+  | InterfaceRelease box_value -> [box_value]
+  | InterfaceTypeTag (_, interface_value) -> [interface_value]
+  | InterfaceCall (_, _, _, interface_value, _, _, _, arguments) ->
+      interface_value :: arguments
   | StringLength (_, value)
   | ListLength (_, value) -> [value]
   | StringSlice (_, string_value, start, end_) -> [string_value; start; end_]
@@ -217,6 +271,8 @@ let instruction_operands = function
   | EnumGetMulti (_, _, _, enum_value, _, _) -> [enum_value]
   | ListAppend (collection, value) -> [collection; value]
   | ListSet (collection, index, value) -> [collection; index; value]
+  | GlobalLoad (_, _, _) -> []
+  | GlobalStore (_, value) -> [value]
 
 let terminator_operands = function
   | Jump (_, arguments) -> arguments

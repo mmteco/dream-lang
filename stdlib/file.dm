@@ -8,9 +8,9 @@ def read_file(path: str, as_bytes: bool = false) -> str | bytes:
     返回: 文件内容（string 或 bytes）
     '''
     if as_bytes:
-        return __c_file_read(path)
-    else:
         return __c_file_read_bytes(path)
+    else:
+        return __c_file_read(path)
 
 
 def write_file(path: str, content: str | bytes) -> Result[int, str]:

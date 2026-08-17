@@ -49,40 +49,65 @@ let rec check_statement env = function
            let expected_type = type_expr_to_ty ty_annot in
 
            (match (ty_annot, apply_subst value_subst value_type) with
-            | (TVar interface_name, TyStruct (struct_name, _)) ->
-                (match Env.find_interface interface_name env' with
-                 | Some iface_def ->
+            | (TVar interface_name, concrete_type)
+              when Env.find_interface interface_name env' <> None ->
+                let iface_def = Option.get (Env.find_interface interface_name env') in
+                let interface_type = TyInterface (interface_name, []) in
+                (match concrete_type with
+                 | TyStruct (struct_name, _) ->
                      (match Env.find_struct struct_name env' with
                       | Some struct_def ->
-                          if Env.struct_implements_interface struct_def iface_def then
-                            let new_env = add_binding name expected_type env' in
+                          let has_explicit_impl =
+                            match Env.find_impl_for_type
+                              (TyStruct (struct_name, [])) interface_name env' with
+                            | Some _ -> true
+                            | None -> false
+                          in
+                          if Env.struct_implements_interface struct_def iface_def ||
+                             has_explicit_impl then
+                            let new_env = add_binding name interface_type env' in
                             let locked_env = lock_binding name new_env in
                             (locked_env, value_subst)
                           else
                             let err = make_error (TypeError "Interface not implemented") pos
                               (Printf.sprintf "Struct '%s' does not implement interface '%s'" struct_name interface_name) in
                             report_error err;
-                            let new_env = add_binding name expected_type env' in
+                            let new_env = add_binding name interface_type env' in
                             (new_env, value_subst)
                       | None ->
                           let err = make_error (NameError struct_name) pos
                             (Printf.sprintf "Struct '%s' is not defined" struct_name) in
                           report_error err;
-                          let new_env = add_binding name expected_type env' in
+                          let new_env = add_binding name interface_type env' in
                           (new_env, value_subst))
-                 | None ->
-                     (try
-                        let unify_subst = unify (apply_subst value_subst value_type) expected_type in
-                        let final_subst = compose_subst unify_subst value_subst in
-                        let new_env = add_binding name (apply_subst final_subst expected_type) (apply_subst_to_env final_subst env') in
-                        let locked_env = lock_binding name new_env in
-                        (locked_env, final_subst)
-                      with Failure msg ->
-                        let err = make_error (TypeError msg) pos
-                          (Printf.sprintf "Type annotation mismatch for '%s': %s" name msg) in
-                        report_error err;
-                        let new_env = add_binding name expected_type env' in
-                        (new_env, value_subst)))
+                 | TyEnum (enum_name, _) ->
+                     if Env.find_impl_for_type (TyEnum (enum_name, [])) interface_name env' <> None then
+                       let new_env = add_binding name interface_type env' in
+                       let locked_env = lock_binding name new_env in
+                       (locked_env, value_subst)
+                     else
+                       let err = make_error (TypeError "Interface not implemented") pos
+                         (Printf.sprintf "Enum '%s' does not implement interface '%s'" enum_name interface_name) in
+                       report_error err;
+                       let new_env = add_binding name interface_type env' in
+                       (new_env, value_subst)
+                 | _ ->
+                     let new_env = add_binding name interface_type env' in
+                     let locked_env = lock_binding name new_env in
+                     (locked_env, value_subst))
+            | (TVar interface_name, _) when Env.find_interface interface_name env' = None ->
+                (try
+                   let unify_subst = unify (apply_subst value_subst value_type) expected_type in
+                   let final_subst = compose_subst unify_subst value_subst in
+                   let new_env = add_binding name (apply_subst final_subst expected_type) (apply_subst_to_env final_subst env') in
+                   let locked_env = lock_binding name new_env in
+                   (locked_env, final_subst)
+                 with Failure msg ->
+                   let err = make_error (TypeError msg) pos
+                     (Printf.sprintf "Type annotation mismatch for '%s': %s" name msg) in
+                   report_error err;
+                   let new_env = add_binding name expected_type env' in
+                   (new_env, value_subst))
             | _ ->
                 (try
                    let unify_subst = unify (apply_subst value_subst value_type) expected_type in
@@ -240,7 +265,7 @@ let rec check_statement env = function
       let param_env = List.fold_left
         (fun e (pname, pty_opt, _default) ->
           let pty = match pty_opt with
-            | Some t -> type_expr_to_ty t
+            | Some t -> resolve_type_expr env t
             | None -> fresh_type_var ()
           in
           add_binding pname pty e)
@@ -255,7 +280,7 @@ let rec check_statement env = function
         params
       in
       let ret_type = match ret_opt with
-        | Some t -> type_expr_to_ty t
+        | Some t -> resolve_type_expr env t
         | None -> TyNone
       in
       let func_type = TyFunc (param_types, ret_type) in
@@ -409,19 +434,29 @@ let rec check_statement env = function
            (new_env, empty_subst))
 
   | SImpl (impl_block, pos) ->
-      (* 辅助函数：将类型表达式转换为类型，自动识别结构体 *)
+      (* 辅助函数：将类型表达式转换为类型，自动识别结构体和枚举 *)
       let type_expr_to_ty_with_struct ty_expr =
         match ty_expr with
         | TVar name ->
-            (* 检查是否是已定义的结构体 *)
+            (* 检查是否是已定义的结构体或枚举 *)
             (match Env.find_struct name env with
              | Some _ -> TyStruct (name, [])
-             | None -> type_expr_to_ty ty_expr)
+             | None ->
+                 (match Env.find_enum name env with
+                  | Some _ -> TyEnum (name, [])
+                  | None -> type_expr_to_ty ty_expr))
         | _ -> type_expr_to_ty ty_expr
       in
 
       (* 将 target 转换为类型，如果是结构体名称则转换为 TyStruct *)
       let target_ty = type_expr_to_ty_with_struct impl_block.impl_target in
+
+      (* Self 类型解析为 impl 的目标类型 *)
+      let resolve_self_type ty_expr =
+        match ty_expr with
+        | TSelf -> target_ty
+        | _ -> type_expr_to_ty_with_struct ty_expr
+      in
 
       (match impl_block.impl_interface with
        | None ->
@@ -493,13 +528,13 @@ let rec check_statement env = function
                        match ty_opt with
                        | Some ty ->
                            let substituted_ty = substitute_type_expr type_param_map ty in
-                           type_expr_to_ty_with_struct substituted_ty
+                           resolve_self_type substituted_ty
                        | None -> fresh_type_var ()
                    ) params in
                    let ret_type = match ret_ty_opt with
                      | Some ty ->
                          let substituted_ty = substitute_type_expr type_param_map ty in
-                         type_expr_to_ty_with_struct substituted_ty
+                         resolve_self_type substituted_ty
                      | None -> TyNone
                    in
                    Some (name, TyFunc (param_types, ret_type))
@@ -517,11 +552,11 @@ let rec check_statement env = function
                      target_ty
                    else
                      match ty_opt with
-                     | Some ty -> type_expr_to_ty_with_struct ty
+                     | Some ty -> resolve_self_type ty
                      | None -> fresh_type_var ()
                  ) params in
                  let ret_type = match ret_ty_opt with
-                   | Some ty -> type_expr_to_ty_with_struct ty
+                   | Some ty -> resolve_self_type ty
                    | None -> TyNone
                  in
 
@@ -616,6 +651,14 @@ let rec check_statement env = function
                  Env.add_function_with_defaults name func_type default_values acc_env
              | Module_loader.ExportedConst (_original_name, const_info) ->
                  add_binding name (imported_const_type acc_env const_info) acc_env
+             | Module_loader.ExportedLet (_original_name, let_info) ->
+                 add_binding name (imported_const_type acc_env {
+                   const_name = let_info.let_name;
+                   const_name_pos = let_info.let_pos;
+                   const_type = let_info.let_type;
+                   const_value = let_info.let_value;
+                   const_pos = let_info.let_pos;
+                 }) acc_env
              | Module_loader.ExportedInterface (_original_name, interface_info) ->
                  let iface_def = {
                    Env.iface_name = interface_info.interface_name;
@@ -702,6 +745,14 @@ let rec check_statement env = function
                  Env.add_function_with_defaults name func_type default_values acc_env
              | Module_loader.ExportedConst (_original_name, const_info) ->
                  add_binding name (imported_const_type acc_env const_info) acc_env
+             | Module_loader.ExportedLet (_original_name, let_info) ->
+                 add_binding name (imported_const_type acc_env {
+                   const_name = let_info.let_name;
+                   const_name_pos = let_info.let_pos;
+                   const_type = let_info.let_type;
+                   const_value = let_info.let_value;
+                   const_pos = let_info.let_pos;
+                 }) acc_env
              | Module_loader.ExportedInterface (_original_name, interface_info) ->
                  let iface_def = {
                    Env.iface_name = interface_info.interface_name;

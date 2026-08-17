@@ -41,9 +41,28 @@ let all_type_patterns patterns =
     | _ -> false
   ) patterns
 
+(* match type of 的类型名模式（PString "int" 等）或通配符 *)
+let all_type_name_patterns patterns =
+  List.for_all (fun (pat, _, _) ->
+    match pat with
+    | PString _ -> true
+    | PWildcard -> true
+    | _ -> false
+  ) patterns
+
 (* 从模式中提取类型 *)
 let extract_type_from_pattern = function
   | PType (_, type_expr) -> Some type_expr
+  | PString type_name ->
+      Some (match type_name with
+        | "int" -> TInt
+        | "float" -> TFloat
+        | "str" -> TStr
+        | "bool" -> TBool
+        | "bytes" -> TBytes
+        | "rune" -> TRune
+        | "byte" -> TByte
+        | _ -> TVar type_name)
   | _ -> None
 
 (* 检查类型模式是否覆盖了 Union 类型的所有成员 *)
@@ -101,19 +120,24 @@ let rec is_covered space patterns =
       (match p with
        | PAny -> true
        | PTup pats when List.length spaces = List.length pats ->
-           List.for_all2 (fun s p -> is_covered s [p]) spaces pats
+           if List.for_all2 (fun s p -> is_covered s [p]) spaces pats then true
+           else is_covered space rest
        | _ -> is_covered space rest)
   | PListSpace spaces, p :: rest ->
       (match p with
        | PAny -> true
        | PListSpace patterns when List.length spaces = List.length patterns ->
-           List.for_all2 (fun space pattern -> is_covered space [pattern]) spaces patterns
+           if List.for_all2 (fun space pattern -> is_covered space [pattern]) spaces patterns
+           then true
+           else is_covered space rest
        | _ -> is_covered space rest)
   | PConsSpace (head_space, tail_space), p :: rest ->
       (match p with
        | PAny -> true
        | PConsSpace (head_pattern, tail_pattern) ->
-           is_covered head_space [head_pattern] && is_covered tail_space [tail_pattern]
+           if is_covered head_space [head_pattern] && is_covered tail_space [tail_pattern]
+           then true
+           else is_covered space rest
        | _ -> is_covered space rest)
   | PStructSpace name, p :: rest ->
       (match p with
@@ -124,8 +148,10 @@ let rec is_covered space patterns =
       (match p with
        | PAny -> true
        | PVariant (enum2, var2, args2) when enum1 = enum2 && var1 = var2 ->
-           List.length args1 = List.length args2 &&
-           List.for_all2 (fun s p -> is_covered s [p]) args1 args2
+           if List.length args1 = List.length args2 &&
+              List.for_all2 (fun s p -> is_covered s [p]) args1 args2
+           then true
+           else is_covered space rest
        | _ -> is_covered space rest)
   | POr spaces, patterns ->
       List.for_all (fun s -> is_covered s patterns) spaces
@@ -142,12 +168,24 @@ let generate_enum_space env enum_name =
 let check_exhaustiveness env scrutinee_type patterns pos =
   (* 特殊处理：检查是否是类型模式匹配 Union 类型 *)
   match scrutinee_type with
+  | TyTypeInfo (TyInterface _) ->
+      (* 接口值的具体类型无法静态枚举，由通配符兜底 *)
+      None
   | TyUnion union_types when all_type_patterns patterns ->
       (* 这是 match type of 匹配 Union 类型 *)
       (match check_union_coverage union_types patterns with
        | Some missing_names ->
            Some (pos, missing_names)
        | None -> None)
+  | TyTypeInfo (TyUnion union_types) when all_type_name_patterns patterns ->
+      (* match type of 匹配 Union 类型 *)
+      (match check_union_coverage union_types patterns with
+       | Some missing_names ->
+           Some (pos, missing_names)
+       | None -> None)
+  | TyTypeInfo _ when all_type_name_patterns patterns ->
+      (* match type of 匹配具体类型（非 union），任何类型模式都视为穷尽 *)
+      None
   | _ ->
       (* 常规模式匹配检查 *)
       let pattern_spaces = List.map (fun (pat, _, _) -> pattern_to_space pat) patterns in
@@ -165,6 +203,12 @@ let check_exhaustiveness env scrutinee_type patterns pos =
             POr [PVariant ("Option", "Some", [PAny]); PVariant ("Option", "None", [])]
         | TyTuple tys ->
             PTup (List.map (fun _ -> PAny) tys)
+        | TyStruct _ ->
+            (* struct 模式的字段值穷尽性无法静态证明，由通配符兜底 *)
+            POr []
+        | TyUnion _ ->
+            (* union 匹配在运行时做类型检查，穷尽性无法静态证明 *)
+            POr []
         | _ -> PAny
       in
 
@@ -211,12 +255,20 @@ let check_reachability env scrutinee_type patterns =
           | PAny ->
               (* 通配符：检查之前的模式是否已经穷尽所有情况 *)
               (* 如果已经穷尽，则通配符不可达 *)
-              (match check_exhaustiveness env scrutinee_type acc_patterns_with_metadata {line=0; column=0} with
-               | None -> true  (* 之前的模式已穷尽，通配符不可达 *)
-               | Some _ -> false)  (* 之前的模式未穷尽，通配符可达 *)
+              (match scrutinee_type with
+               | TyUnion _ -> false  (* union 匹配在运行时检查类型，通配符始终可达 *)
+               | TyStruct _ -> false  (* struct 模式字段值无法静态证明，通配符始终可达 *)
+               | TyTypeInfo (TyInterface _) -> false  (* 接口具体类型无法静态枚举，通配符始终可达 *)
+               | _ ->
+                   (match check_exhaustiveness env scrutinee_type acc_patterns_with_metadata {line=0; column=0} with
+                    | None -> true  (* 之前的模式已穷尽，通配符不可达 *)
+                    | Some _ -> false))  (* 之前的模式未穷尽，通配符可达 *)
           | _ ->
-              let acc_pattern_spaces = List.map (fun (p, _, _) -> pattern_to_space p) acc_patterns_with_metadata in
-              is_covered current_space acc_pattern_spaces
+              (match scrutinee_type with
+               | TyUnion _ | TyStruct _ -> false  (* union/struct 模式无法静态判定冗余 *)
+               | _ ->
+                   let acc_pattern_spaces = List.map (fun (p, _, _) -> pattern_to_space p) acc_patterns_with_metadata in
+                   is_covered current_space acc_pattern_spaces)
         in
         let is_reachable = has_guard || not is_fully_covered in
         let unreachable = if is_reachable then [] else [idx] in

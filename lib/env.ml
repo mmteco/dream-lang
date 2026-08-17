@@ -143,6 +143,20 @@ let find_impl_for_type target_type interface_name env =
     is_compatible impl.impl_target_type target_type
   ) env.impls
 
+(* 查找具体类型上的静态 impl 方法。*)
+let rec find_impl_method_for_type target_type method_name env =
+  match List.find_map (fun impl ->
+    match StringMap.find_opt method_name impl.impl_methods with
+    | Some method_type when is_compatible impl.impl_target_type target_type ->
+        Some method_type
+    | _ -> None
+  ) env.impls with
+  | Some method_type -> Some method_type
+  | None ->
+      match env.parent with
+      | Some parent -> find_impl_method_for_type target_type method_name parent
+      | None -> None
+
 (* 添加结构体定义到环境 *)
 let add_struct name struct_def env =
   { env with structs = StringMap.add name struct_def env.structs }
@@ -218,6 +232,10 @@ let find_implicit_interfaces_for_struct struct_name env =
 
 (* C Runtime 函数列表 - 统一管理所有 __c_ 函数 *)
 let c_runtime_functions = [
+  (* 进程参数 *)
+  ("__c_process_arg_count", TyFunc ([], TyInt));
+  ("__c_process_arg", TyFunc ([TyInt], TyStr));
+  ("__c_build_llvm", TyFunc ([TyStr; TyStr], TyInt));
   (* 文件 I/O *)
   ("__c_file_read", TyFunc ([TyStr], TyStr));
   ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
@@ -236,6 +254,8 @@ let c_runtime_functions = [
   ("__c_rune_to_int", TyFunc ([TyRune], TyInt));  (* rune -> int *)
   ("__c_utf8_byte_at", TyFunc ([TyStr; TyInt], TyInt));  (* (str, byte_index) -> byte *)
   ("__c_utf8_byte_offset", TyFunc ([TyStr; TyInt], TyInt));  (* (str, rune_index) -> byte_offset *)
+  ("__c_range_equal", TyFunc ([TyStr; TyInt; TyInt; TyInt; TyInt], TyBool));  (* 范围按 rune 比较 *)
+  ("__c_fnv_hash_range", TyFunc ([TyStr; TyInt; TyInt], TyInt));  (* 范围 FNV-1a 哈希 *)
 
   (* bytes 操作 *)
   ("__c_bytes_length", TyFunc ([TyBytes], TyInt));
@@ -258,7 +278,14 @@ let binop_to_interface_name = function
   | Sub -> Some "Sub"
   | Mul -> Some "Mul"
   | Div -> Some "Div"
+  | FloorDiv -> Some "FloorDiv"
   | Mod -> Some "Mod"
+  | Pow -> Some "Pow"
+  | BitAnd -> Some "BitAnd"
+  | BitOr -> Some "BitOr"
+  | BitXor -> Some "BitXor"
+  | Shl -> Some "Shl"
+  | Shr -> Some "Shr"
   | Eq -> Some "Eq"
   | Neq -> Some "Eq"  (* != 使用 Eq 接口的 neq 方法 *)
   | Lt -> Some "Ord"
@@ -273,7 +300,14 @@ let binop_to_method_name = function
   | Sub -> "sub"
   | Mul -> "mul"
   | Div -> "div"
+  | FloorDiv -> "floordiv"
   | Mod -> "mod"
+  | Pow -> "pow"
+  | BitAnd -> "bitand"
+  | BitOr -> "bitor"
+  | BitXor -> "bitxor"
+  | Shl -> "shl"
+  | Shr -> "shr"
   | Eq -> "eq"
   | Neq -> "neq"
   | Lt -> "lt"
@@ -285,11 +319,15 @@ let binop_to_method_name = function
 (* 一元运算符到接口名的映射 *)
 let unop_to_interface_name = function
   | Neg -> Some "Neg"
+  | Pos -> Some "Pos"
+  | Invert -> Some "BitNot"
   | Not -> Some "Not"
 
 (* 一元运算符到方法名的映射 *)
 let unop_to_method_name = function
   | Neg -> "neg"
+  | Pos -> "pos"
+  | Invert -> "bitnot"
   | Not -> "not_op"
 
 (* 查找二元运算符的接口实现 *)

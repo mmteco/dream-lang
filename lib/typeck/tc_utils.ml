@@ -1,3 +1,4 @@
+open Ast
 open Types
 open Env
 
@@ -51,6 +52,45 @@ let set_current_file file =
 let is_stdlib_file () =
   let file = !current_file in
   String.length file >= 7 && String.sub file 0 7 = "stdlib/"
+
+let rec resolve_type_expr env = function
+  | TInt -> TyInt
+  | TFloat -> TyFloat
+  | TStr -> TyStr
+  | TRune -> TyRune
+  | TByte -> TyByte
+  | TBytes -> TyBytes
+  | TBool -> TyBool
+  | TNone -> TyNone
+  | TVar name ->
+      (match Env.find_struct name env with
+       | Some _ -> TyStruct (name, [])
+       | None ->
+           (match Env.find_enum name env with
+            | Some _ -> TyEnum (name, [])
+            | None ->
+                (match Env.find_interface name env with
+                 | Some _ -> TyInterface (name, [])
+                 | None -> TyVar name)))
+  | TList element_type -> TyList (resolve_type_expr env element_type)
+  | TDict (key_type, value_type) ->
+      TyDict (resolve_type_expr env key_type, resolve_type_expr env value_type)
+  | TTuple element_types ->
+      TyTuple (List.map (resolve_type_expr env) element_types)
+  | TFunc (parameter_types, return_type) ->
+      TyFunc (List.map (resolve_type_expr env) parameter_types,
+        resolve_type_expr env return_type)
+  | TUnion types -> TyUnion (List.map (resolve_type_expr env) types)
+  | TGeneric (name, element_type) ->
+      TyGeneric (name, resolve_type_expr env element_type)
+  | TOption element_type -> TyOption (resolve_type_expr env element_type)
+  | TResult (ok_type, error_type) ->
+      TyResult (resolve_type_expr env ok_type, resolve_type_expr env error_type)
+  | TEnum (name, parameters) ->
+      TyEnum (name, List.map (resolve_type_expr env) parameters)
+  | TStruct (name, parameters) ->
+      TyStruct (name, List.map (resolve_type_expr env) parameters)
+  | TSelf -> TyVar "Self"
 
 (* 将替换应用到环境中，保持多态函数类型不变 *)
 let apply_subst_to_env subst env =

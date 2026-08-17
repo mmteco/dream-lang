@@ -81,6 +81,7 @@ let load_module module_path =
 type exported_symbol =
   | ExportedFunc of string * def_stmt  (* 函数名 * 函数定义 *)
   | ExportedConst of string * const_stmt  (* 常量名 * 常量定义 *)
+  | ExportedLet of string * let_stmt  (* 全局变量名 * 定义 *)
   | ExportedStruct of string * struct_def  (* 结构体名 * 定义 *)
   | ExportedInterface of string * interface_def  (* 接口名 * 定义 *)
   | ExportedEnum of string * enum_def  (* 枚举名 * 定义 *)
@@ -91,6 +92,7 @@ let extract_exports (ast : program) : exported_symbol list =
     match stmt with
     | SDef def_info -> [ExportedFunc (def_info.def_name, def_info)]
     | SConst const_info -> [ExportedConst (const_info.const_name, const_info)]
+    | SLet let_info -> [ExportedLet (let_info.let_name, let_info)]
     | SStruct struct_info -> [ExportedStruct (struct_info.struct_name, struct_info)]
     | SInterface interface_info -> [ExportedInterface (interface_info.interface_name, interface_info)]
     | SEnum enum_info -> [ExportedEnum (enum_info.enum_name, enum_info)]
@@ -102,6 +104,7 @@ let extract_exports (ast : program) : exported_symbol list =
 let get_symbol_name = function
   | ExportedFunc (name, _) -> name
   | ExportedConst (name, _) -> name
+  | ExportedLet (name, _) -> name
   | ExportedStruct (name, _) -> name
   | ExportedInterface (name, _) -> name
   | ExportedEnum (name, _) -> name

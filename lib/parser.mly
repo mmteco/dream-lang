@@ -23,6 +23,7 @@
     | TFunc (params, ret) ->
         "(" ^ String.concat ", " (List.map type_expr_to_string params) ^ ") -> " ^ type_expr_to_string ret
     | TGeneric (name, _) -> name
+    | TSelf -> "Self"
 
   let get_expr_pos = function
     | EInt (_, p) | EFloat (_, p) | EString (_, p) | ERune (_, p) | EByte (_, p) | EBool (_, p)
@@ -50,7 +51,8 @@
 %token IF ELSE ELIF SWITCH MATCH CASE DEFAULT FOR WHILE RETURN
 %token IMPORT FROM AS OF ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
-%token PLUS MINUS TIMES DIV MOD
+%token PLUS MINUS TIMES DIV FLOORDIV MOD POW
+%token AMP CARET TILDE SHL SHR
 %token EQ NEQ LT GT LTE GTE
 %token AND OR NOT
 %token ASSIGN ARROW PIPE UNDERSCORE
@@ -61,14 +63,18 @@
 
 %right QUESTION COLON  (* 三元运算符优先级最低 *)
 %right CONS  (* :: 右结合,用于列表模式匹配 *)
-%left PIPE
 %left OR
 %left AND
-%left EQ NEQ
-%left LT GT LTE GTE
+%left EQ NEQ LT GT LTE GTE
+%left PIPE  (* 位或 |，类型注解中的 union 也复用该 token *)
+%left CARET
+%left AMP
+%left SHL SHR
 %left PLUS MINUS
-%left TIMES DIV MOD
+%left TIMES DIV FLOORDIV MOD
 %right NOT
+%right UMINUS UPLUS TILDE  (* 一元负号/正号/按位取反 *)
+%right POW  (* 幂运算右结合 *)
 %left AS
 %left DOT
 %left LPAREN LBRACKET
@@ -517,6 +523,7 @@ type_expr:
       | "byte" -> TByte
       | "bytes" -> TBytes
       | "bool" -> TBool
+      | "Self" -> TSelf
       | name -> TVar name
     }
   | LBRACKET ty = type_expr RBRACKET { TList ty }
@@ -544,11 +551,18 @@ expr:
   | b = BOOL { EBool (b, make_position $startpos) }
   | name = IDENT { EVar (name, make_position $startpos) }
   | SELF { EVar ("self", make_position $startpos) }
-  | e1 = expr PLUS e2 = expr { EBinOp (e1, Add, e2, { line = 0; column = 0 }) }
-  | e1 = expr MINUS e2 = expr { EBinOp (e1, Sub, e2, { line = 0; column = 0 }) }
+  | e1 = expr POW e2 = expr { EBinOp (e1, Pow, e2, { line = 0; column = 0 }) }
   | e1 = expr TIMES e2 = expr { EBinOp (e1, Mul, e2, { line = 0; column = 0 }) }
   | e1 = expr DIV e2 = expr { EBinOp (e1, Div, e2, { line = 0; column = 0 }) }
+  | e1 = expr FLOORDIV e2 = expr { EBinOp (e1, FloorDiv, e2, { line = 0; column = 0 }) }
   | e1 = expr MOD e2 = expr { EBinOp (e1, Mod, e2, { line = 0; column = 0 }) }
+  | e1 = expr PLUS e2 = expr { EBinOp (e1, Add, e2, { line = 0; column = 0 }) }
+  | e1 = expr MINUS e2 = expr { EBinOp (e1, Sub, e2, { line = 0; column = 0 }) }
+  | e1 = expr SHL e2 = expr { EBinOp (e1, Shl, e2, { line = 0; column = 0 }) }
+  | e1 = expr SHR e2 = expr { EBinOp (e1, Shr, e2, { line = 0; column = 0 }) }
+  | e1 = expr AMP e2 = expr { EBinOp (e1, BitAnd, e2, { line = 0; column = 0 }) }
+  | e1 = expr CARET e2 = expr { EBinOp (e1, BitXor, e2, { line = 0; column = 0 }) }
+  | e1 = expr PIPE e2 = expr { EBinOp (e1, BitOr, e2, { line = 0; column = 0 }) }
   | e1 = expr EQ e2 = expr { EBinOp (e1, Eq, e2, { line = 0; column = 0 }) }
   | e1 = expr NEQ e2 = expr { EBinOp (e1, Neq, e2, { line = 0; column = 0 }) }
   | e1 = expr LT e2 = expr { EBinOp (e1, Lt, e2, { line = 0; column = 0 }) }
@@ -558,7 +572,9 @@ expr:
   | e1 = expr AND e2 = expr { EBinOp (e1, And, e2, { line = 0; column = 0 }) }
   | e1 = expr OR e2 = expr { EBinOp (e1, Or, e2, { line = 0; column = 0 }) }
   | NOT e = expr { EUnOp (Not, e, { line = 0; column = 0 }) }
-  | MINUS e = expr { EUnOp (Neg, e, { line = 0; column = 0 }) }
+  | MINUS e = expr %prec UMINUS { EUnOp (Neg, e, { line = 0; column = 0 }) }
+  | PLUS e = expr %prec UPLUS { EUnOp (Pos, e, { line = 0; column = 0 }) }
+  | TILDE e = expr %prec TILDE { EUnOp (Invert, e, { line = 0; column = 0 }) }
   | func = expr LPAREN args = separated_list(COMMA, expr) RPAREN
       { ECall (func, args, get_expr_pos func) }
   | obj = expr DOT attr = IDENT
@@ -569,7 +585,7 @@ expr:
       { ESlice (arr, start, end_opt, get_expr_pos arr) }
   | LBRACKET elems = separated_list(COMMA, expr) RBRACKET
       { EList (elems, { line = 0; column = 0 }) }
-  | LBRACE pairs = separated_list(COMMA, dict_pair) RBRACE
+  | LBRACE pairs = dict_pair_list RBRACE
       { EDict (pairs, { line = 0; column = 0 }) }
   | LPAREN elems = separated_list(COMMA, expr) RPAREN
       { match elems with
@@ -622,6 +638,11 @@ lambda_param:
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }
+
+dict_pair_list:
+  | NEWLINE* { [] }
+  | NEWLINE* dict_pair NEWLINE* COMMA NEWLINE* dict_pair_list { $2 :: $6 }
+  | NEWLINE* dict_pair NEWLINE* { [$2] }
 
 struct_field_init:
   | name = IDENT COLON value = expr { (name, value) }

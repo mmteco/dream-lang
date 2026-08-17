@@ -125,6 +125,8 @@ let dependency_closed_names module_program selected_names =
 
 let imported_definitions program =
   let definition_names = Hashtbl.create 32 in
+  let type_definition_names = Hashtbl.create 32 in
+  let visited_modules = Hashtbl.create 16 in
   let is_runtime_wrapper name =
     name = "str_to_bytes" || name = "bytes_to_str"
   in
@@ -137,7 +139,12 @@ let imported_definitions program =
       definitions @ [Ast.SDef definition]
     end
   in
-  let add_module definitions module_path selected_names =
+  let rec add_module definitions module_path selected_names =
+    let module_key = String.concat "." module_path in
+    if Hashtbl.mem visited_modules module_key then
+      definitions
+    else begin
+      Hashtbl.add visited_modules module_key ();
     match Module_loader.load_module module_path with
     | Error _ -> definitions
     | Ok (_, module_program) ->
@@ -145,7 +152,7 @@ let imported_definitions program =
           | None -> None
           | Some names -> Some (dependency_closed_names module_program names)
         in
-        List.fold_left (fun definitions statement ->
+        let definitions = List.fold_left (fun definitions statement ->
           match statement with
           | Ast.SDef definition ->
               let is_selected = match selected_name_set with
@@ -159,8 +166,32 @@ let imported_definitions program =
                 Hashtbl.add definition_names const_info.Ast.const_name ();
                 definitions @ [Ast.SConst const_info]
               end
+          | Ast.SLet let_info ->
+              if Hashtbl.mem definition_names let_info.Ast.let_name then definitions
+              else begin
+                Hashtbl.add definition_names let_info.Ast.let_name ();
+                definitions @ [Ast.SLet let_info]
+              end
+          | Ast.SStruct struct_info ->
+              if Hashtbl.mem type_definition_names struct_info.Ast.struct_name then definitions
+              else begin
+                Hashtbl.add type_definition_names struct_info.Ast.struct_name ();
+                definitions @ [Ast.SStruct struct_info]
+              end
+          | Ast.SEnum enum_info ->
+              if Hashtbl.mem type_definition_names enum_info.Ast.enum_name then definitions
+              else begin
+                Hashtbl.add type_definition_names enum_info.Ast.enum_name ();
+                definitions @ [Ast.SEnum enum_info]
+              end
+          | Ast.SImport (dependency_path, _, _) ->
+              add_module definitions dependency_path None
+          | Ast.SFromImport (dependency_name, _, _) ->
+              add_module definitions [dependency_name] None
           | _ -> definitions
-        ) definitions module_program
+        ) definitions module_program in
+        definitions
+    end
   in
   let imported = List.fold_left (fun definitions statement ->
     match statement with

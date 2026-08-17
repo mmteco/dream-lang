@@ -18,7 +18,7 @@ let generate_llvm program =
   let artifact = Dir_compiler.generate program in
   (artifact.llvm_ir, artifact.dir_text)
 
-let compile_to_llvm ?(silent=false) input_file =
+let compile_program_to_ir input_file =
   (* 重置错误计数器 *)
   Error.reset_counters ();
   Typeck.clear_generic_instances ();
@@ -90,6 +90,9 @@ let compile_to_llvm ?(silent=false) input_file =
   Typeck.set_current_file input_file;
   let transformed_ast = Typeck.typecheck full_ast in
 
+  (* 检测函数内未使用变量 *)
+  Unused_vars.detect transformed_ast;
+
   (* 打印错误和警告摘要 *)
   Error.print_summary ();
 
@@ -103,8 +106,12 @@ let compile_to_llvm ?(silent=false) input_file =
 
   (* 执行单态化 *)
   let mono_ast = Monomorphize.monomorphize transformed_ast generic_instances in
+  let mono_ast = Default_args.fill_default_arguments mono_ast in
 
-  let llvm_ir, dir_text = generate_llvm mono_ast in
+  generate_llvm mono_ast
+
+let compile_to_llvm ?(silent=false) input_file =
+  let llvm_ir, dir_text = compile_program_to_ir input_file in
 
   let output_ll = Filename.remove_extension input_file ^ ".ll" in
   write_file output_ll llvm_ir;
@@ -114,6 +121,15 @@ let compile_to_llvm ?(silent=false) input_file =
   if not silent then Printf.printf "Generated LLVM IR: %s\n" output_ll;
   output_ll
 
+let compile_to_dir input_file output_file =
+  let _, dir_text = compile_program_to_ir input_file in
+  match dir_text with
+  | Some text ->
+      write_file output_file text;
+      Printf.printf "Generated DreamIR: %s\n" output_file
+  | None ->
+      failwith "DIR compiler did not produce DreamIR text"
+
 let compile_to_exe output_ll =
   let output_exe = Filename.remove_extension output_ll in
   let runtime_files = [
@@ -121,16 +137,18 @@ let compile_to_exe output_ll =
     "runtime/memory.c";
     "runtime/dynarray.c";
     "runtime/utf8.c";
-    "runtime/bytes.c";
     "runtime/utf8_wrapper.c";
     "runtime/bytes_wrapper.c";
+    "runtime/process.c";
+    "runtime/compiler.c";
     "runtime/str.c";
     "runtime/file.c";
     "runtime/dict.c";
     "runtime/tuple.c";
     "runtime/union.c";
     "runtime/enum.c";
-    "runtime/closure.c"
+    "runtime/closure.c";
+    "runtime/math.c"
   ] in
   let runtime_args = String.concat " " runtime_files in
   let compile_cmd = Printf.sprintf
@@ -271,6 +289,7 @@ let print_usage () =
   Printf.printf "\n";
   Printf.printf "Commands:\n";
   Printf.printf "  build    Compile the source file to executable\n";
+  Printf.printf "  dir      Compile and output canonical DreamIR\n";
   Printf.printf "  run      Compile and run the source file\n";
   Printf.printf "  lsp      Analyze symbols and output JSON for LSP\n";
   Printf.printf "\n";
@@ -305,6 +324,19 @@ let () =
         exit 1
       end;
       build_command input_file
+
+  | "dir" ->
+      let input_file = parse_input_file 2 in
+      if Array.length Sys.argv < 5 || Sys.argv.(3) <> "-o" then begin
+        Printf.eprintf "Error: dir requires -o <output.dir>\n";
+        exit 1
+      end;
+      let output_file = Sys.argv.(4) in
+      if not (Filename.check_suffix input_file ".dm") then begin
+        Printf.eprintf "Error: Input file must have .dm extension\n";
+        exit 1
+      end;
+      compile_to_dir input_file output_file
 
   | "run" ->
       let input_file = parse_input_file 2 in

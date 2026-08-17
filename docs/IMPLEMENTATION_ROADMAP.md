@@ -61,7 +61,7 @@ AST/typed AST（逐步明确 HIR 边界）
 | 运行时 | `runtime/` |
 | 自举切片 | `bootstrap/compiler.dm`、`bootstrap/stage1.ll` |
 
-仓库已经有一个可工作的直接 LLVM 自举切片：Stage 0 生成 Stage 1，Stage 1 生成 Stage 2 和 Stage 3，Stage 1 还会编译样例程序并运行回归。Stage 2 自运行后生成的 LLVM 仍需要单独经过 LLVM 验证；“Stage2 进程正常退出”不能等同于“Stage3 已经完成”。
+仓库已经有一个可工作的固定点自举链：Stage 0 生成 Stage 1，Fish 让 Stage 1 通过通用 `compile` CLI 生成 Stage 2，完整模式下再让 Stage 2 生成 Stage 3，并编译执行 Stage 3 的通用 CLI。Stage 2/3 的每个 LLVM 文件都会单独经过 LLVM 验证，且脚本比较两轮 LLVM 字节和 DIR 输出。
 
 当前 DIR 文件已经形成唯一的端到端后端，并已有单元和示例回归测试：
 
@@ -70,9 +70,9 @@ lib/ir/dir/
 lib/compiler/dir_compiler.ml
 ```
 
-它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串/bytes/tuple lowering 和 LLVM lowering；`dream build file.dm` 使用 DIR 后端并生成 `.dir`、`.ll`。DIR 当前已覆盖整数、浮点数、布尔值、字符串、bytes、`list<i32>`、有限字段结构体、单载荷 enum（int/float/bool/str）、i32 tuple、字典（int/str 键值）、列表/字典索引与赋值、列表索引/切片/拼接、bytes 索引/切片、`append`、列表推导式、`if/elif`、while、for、条件/三元表达式、标量/列表/结构体/enum match、match guard、函数调用、`Result` 的同类型 `?` 传播和导入的标准库包装。多载荷 enum、闭包/函数值、动态对象和泛型容器仍需后续 DIR 表示设计，不能假装已经支持。
+它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串/bytes/tuple lowering 和 LLVM lowering；`dream build file.dm` 使用 DIR 后端并生成 `.dir`、`.ll`。DIR 当前已覆盖整数、浮点数、布尔值、字符串、bytes、`list<i32>`、有限字段结构体、单载荷 enum（int/float/bool/str）、i32 tuple、字典（int/str 键值）、列表/字典索引与赋值、列表索引/切片/拼接、bytes 索引/切片、`append`、列表推导式、`if/elif`、while、for、条件/三元表达式、标量/列表/结构体/enum match、match 语句和表达式、match guard、函数调用、`Result` 的同类型 `?` 传播和导入的标准库包装。多载荷 enum、闭包/函数值、动态对象和泛型容器仍需后续 DIR 表示设计，不能假装已经支持。
 
-当前自举 Makefile 已增加 LLVM 预验证：Stage 0 生成 `stage1.ll`，Stage 1 生成 `stage2.ll` 和 `stage3.ll`，所有文件必须先通过 `clang -c -o /dev/null -x ir`，失败日志暂存到 `tmp/`。这只能证明 LLVM 文件合法，不能证明 Stage2→Stage3 已闭环。
+当前自举 Makefile 已增加 LLVM 预验证：Stage 0 生成 `stage1.ll`，Fish 让 Stage 1 生成 `stage2.ll`，完整模式下让 Stage 2 生成 `stage3.ll`，所有文件必须先通过 `clang -c -o /dev/null -x ir`，失败日志暂存到 `tmp/`。Stage 1/2/3 和宿主 OCaml 的 `dir input.dm -o output.dir` 统一输出正式 DreamIR 文本；typed record 只承担内部 DIR 序列化 ABI，不暴露第二种 `dir` 输出格式。完整 bootstrap 还比较 Stage2/Stage3 的 DIR 文本和 `build` 输出。宿主端使用 `Dir_printer`，DM 端使用 `dir_render_formal_source`，LLVM 分支会转为正式 `jump`/`branch`，暂未能表达的低层指令以正式 `native llvm` 记录保留原始信息。主编译路径明确分为 DIR records 构造、DIR verifier/renderer 和 LLVM 输出。
 
 Makefile 只保留任务依赖，具体流程集中在 `scripts/*.fish`：测试脚本自动发现带有
 `# dream-test: smoke` 标记的示例和 `test/*_dir.dm`，bootstrap 脚本共享 runtime 文件集合、LLVM 参数和 Stage 列表；新增同类文件时无需继续扩展长命令。
@@ -406,7 +406,7 @@ bootstrap/compiler_main.dm
 
 迁移初期先完成了直接 LLVM 自举切片的 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点，再逐步把 `bootstrap/compiler.dm` 接入 DIR。这样可以把自举链路问题与中间表示迁移问题分开验证；当前正式编译器已经只保留 DIR 路径。
 
-当前实现状态已经进入迁移后的稳定化阶段：`make bootstrap` 使用 Stage 0 生成 Stage 1，再完成 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点验证。`bootstrap/compiler.dm` 已经从 `stdlib/dir_bootstrap.dm` 导入 DIR 构建与渲染桥。自举桥采用定长 typed record payload；`ret`、整数算术、`and/or`、整数 `icmp`、`zext i1 -> i32` 和零操作数 `unreachable` 已使用 native record，尚未覆盖的 `call`、指针操作和复杂可变参数指令继续走经过校验的 raw LLVM 兼容路径。后续迁移应按“固定 payload ABI、增加负例测试、验证 Stage2/Stage3 固定点”的顺序逐条推进。
+当前实现状态已经进入迁移后的稳定化阶段：默认 `make bootstrap` 使用 Stage 0 生成 Stage 1，再由 Fish 通过通用 `compile` CLI 生成并验证 Stage 2；`make bootstrap STAGE3=1` 继续让 Stage 2 生成 Stage 3，并编译执行 Stage 3 的通用 CLI。`bootstrap/compiler.dm` 先生成 HIR declaration records，再由 `compiler_dir.dm` 生成并验证 DM 侧 DIR 内存记录，并使用 DM DIR function records 驱动函数 lowering，随后导入 `stdlib/dir_bootstrap.dm` 的 DIR record builder、verifier 和 renderer。自举桥采用定长 typed record payload；Stage2/Stage3 已达到固定点。Stage 1/2/3 提供 `build input.dm -o output` 可执行文件构建 CLI、`compile input.dm -o output.ll` LLVM 输出 CLI 和 `dir input.dm -o output.dir` 正式 DreamIR 文本输出；完整模式还比较 Stage3 与前序阶段的 DIR/CLI 回归结果。Stage 编排完全由 Fish 负责，DM 编译器保持通用。DM runtime linker 动态扫描 `runtime/` C 源文件，成功链接后删除中间 LLVM 文件。DM Stage 2/3 现在能处理整数和浮点结构体、枚举载荷及 guard、字符串/布尔载荷、函数值、lambda、字符串/布尔/浮点/列表基础捕获、bytes 基础序列操作、列表推导式切片/过滤、列表拼接、三元表达式及登记的 DIR 示例；`lang_full_dream.dm` 和 `quicksort.dm` 已通过 Stage2/Stage3 build/run，并与宿主运行结果一致。复杂动态对象和完整运行时类型检查仍是后续语言扩展。`compiler_dir.dm` 的语义构造已统一使用 `DmDirRecord` 结构体字面量，`dm_dir_append_record` 直接读取 `record.field`，只有这一处将结构体字段写入 `list[int]` 固定 ABI。`list[DmDirRecord]` 暂不接入，因为当前 Stage 2/runtime 的列表存储是 `dynarray_i32`，需要先定义通用 boxed/generic list 元素布局。宿主和 DM 的 `dir` CLI 现在都使用同一正式 DreamIR 文本外形；LLVM 分支已转换为正式 `jump`/`branch`，尚未能在正式指令中表达的低层信息以正式 `native llvm` 记录保留。后续迁移应按“统一文本格式、逐步替换 native llvm、验证 Stage2/Stage3 固定点”的顺序推进。
 
 ## 六、自举验证协议
 
@@ -482,7 +482,7 @@ output size
 → token dump
 → AST dump
 → typed AST dump
-→ DIR dump
+→ formal DreamIR dump
 → verifier error
 → LLVM dump
 → clang error
@@ -580,4 +580,4 @@ DreamIR 阶段完成的标志不是“新增了几个类型”，而是同时满
 7. Stage 2 能生成合法的下一轮 DIR 和 LLVM；
 8. Stage 3 可以运行并达到固定点。
 
-在达到第 8 条之前，项目状态只能描述为“DIR 迁移中，尚未完成真正自举”。
+第 8 条已经满足：当前项目可以描述为“完成编译器自举固定点”；这不等同于所有未来语言特性都已迁移到自举编译器。

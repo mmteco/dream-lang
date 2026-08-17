@@ -6,6 +6,7 @@
 #include <stdatomic.h>
 #include <pthread.h>
 #include <assert.h>
+#include "memory.h"
 #include "union.h"
 #include "utf8.h"
 #include "dict.h"
@@ -22,17 +23,7 @@
 // 5. 完整的并发支持：原子操作 + 互斥锁
 // ============================================================================
 
-// 对象类型标记
-typedef enum {
-    OBJ_DYNARRAY,
-    OBJ_DYNARRAY_PTR,
-    OBJ_STRING,
-    OBJ_DICT,
-    OBJ_TUPLE,
-    OBJ_UNION,
-    OBJ_ENUM,
-} ObjectType;
-
+// 对象类型标记(定义于 memory.h)
 // 对象作用域
 typedef enum {
     SCOPE_LOCAL,   // 局部对象（80-90%）- 单线程独占
@@ -57,6 +48,7 @@ typedef struct ObjectHeader {
 
     // 链表指针
     struct ObjectHeader* next;       // 全局对象链表
+    struct ObjectHeader* hash_next;  // 地址哈希桶链
     struct ObjectHeader* gc_next;    // 容器对象双向链表
     struct ObjectHeader* gc_prev;
 } ObjectHeader;
@@ -64,6 +56,14 @@ typedef struct ObjectHeader {
 // 全局对象链表头（用于所有对象）
 static ObjectHeader* g_object_list = NULL;
 static pthread_mutex_t g_object_list_lock = PTHREAD_MUTEX_INITIALIZER;
+
+// 对象地址哈希索引：加速 gc_is_managed 查找（替代线性链表扫描）
+#define OBJECT_HASH_BUCKETS 65536
+static ObjectHeader* g_object_hash[OBJECT_HASH_BUCKETS] = {0};
+
+static size_t object_hash_index(const void* object) {
+    return (((uintptr_t)object) >> 4) % OBJECT_HASH_BUCKETS;
+}
 
 // 容器对象链表头（用于循环引用检测）
 static ObjectHeader g_container_list_head = {
@@ -246,7 +246,8 @@ static void remove_from_container_list(ObjectHeader* header) {
 }
 
 static ObjectHeader* find_managed_header_locked(const void* object) {
-    for (ObjectHeader* header = g_object_list; header != NULL; header = header->next) {
+    size_t bucket = object_hash_index(object);
+    for (ObjectHeader* header = g_object_hash[bucket]; header != NULL; header = header->hash_next) {
         void* managed_object = (void*)((char*)header + sizeof(ObjectHeader));
         if (managed_object == object) return header;
     }
@@ -303,10 +304,12 @@ void* gc_alloc_local(size_t size, ObjectType type) {
     header->gc_next = NULL;
     header->gc_prev = NULL;
 
-    // 加入全局对象链表
+    // 加入全局对象链表与地址哈希索引
     pthread_mutex_lock(&g_object_list_lock);
     header->next = g_object_list;
     g_object_list = header;
+    header->hash_next = g_object_hash[object_hash_index(memory + sizeof(ObjectHeader))];
+    g_object_hash[object_hash_index(memory + sizeof(ObjectHeader))] = header;
     pthread_mutex_unlock(&g_object_list_lock);
 
     // 容器对象加入容器链表
@@ -351,10 +354,12 @@ void* gc_alloc_shared(size_t size, ObjectType type) {
     header->gc_next = NULL;
     header->gc_prev = NULL;
 
-    // 加入全局对象链表
+    // 加入全局对象链表与地址哈希索引
     pthread_mutex_lock(&g_object_list_lock);
     header->next = g_object_list;
     g_object_list = header;
+    header->hash_next = g_object_hash[object_hash_index(memory + sizeof(ObjectHeader))];
+    g_object_hash[object_hash_index(memory + sizeof(ObjectHeader))] = header;
     pthread_mutex_unlock(&g_object_list_lock);
 
     // 容器对象加入容器链表
@@ -379,6 +384,19 @@ void* gc_alloc_shared(size_t size, ObjectType type) {
 // 通用分配函数（默认使用局部分配）
 void* gc_alloc(size_t size, ObjectType type) {
     return gc_alloc_local(size, type);
+}
+
+// ============================================================================
+// 接口值对象装箱（引用计数管理，由编译器在函数返回前释放未逃逸对象）
+// ============================================================================
+
+void* dream_interface_alloc(int64_t size) {
+    if (size < 0) return NULL;
+    return gc_alloc((size_t)size, OBJ_INTERFACE);
+}
+
+void dream_interface_release(void* object) {
+    gc_release(object);
 }
 
 // ============================================================================
@@ -421,7 +439,7 @@ void gc_release(void* object) {
             remove_from_container_list(header);
         }
 
-        // 从全局链表移除
+        // 从全局链表与地址哈希索引移除
         pthread_mutex_lock(&g_object_list_lock);
         ObjectHeader** current = &g_object_list;
         while (*current != NULL) {
@@ -430,6 +448,14 @@ void gc_release(void* object) {
                 break;
             }
             current = &((*current)->next);
+        }
+        ObjectHeader** hash_current = &g_object_hash[object_hash_index(object)];
+        while (*hash_current != NULL) {
+            if (*hash_current == header) {
+                *hash_current = header->hash_next;
+                break;
+            }
+            hash_current = &((*hash_current)->hash_next);
         }
         pthread_mutex_unlock(&g_object_list_lock);
 
@@ -648,7 +674,7 @@ void gc_detect_cycles() {
             obj->gc_prev->gc_next = obj->gc_next;
             obj->gc_next->gc_prev = obj->gc_prev;
 
-            // 从全局链表移除
+            // 从全局链表与地址哈希索引移除
             pthread_mutex_lock(&g_object_list_lock);
             ObjectHeader** current = &g_object_list;
             while (*current != NULL) {
@@ -657,6 +683,14 @@ void gc_detect_cycles() {
                     break;
                 }
                 current = &((*current)->next);
+            }
+            ObjectHeader** hash_current = &g_object_hash[object_hash_index((char*)obj + sizeof(ObjectHeader))];
+            while (*hash_current != NULL) {
+                if (*hash_current == obj) {
+                    *hash_current = obj->hash_next;
+                    break;
+                }
+                hash_current = &((*hash_current)->hash_next);
             }
             pthread_mutex_unlock(&g_object_list_lock);
 
@@ -827,5 +861,6 @@ void gc_cleanup() {
     }
 
     g_object_list = NULL;
+    memset(g_object_hash, 0, sizeof(g_object_hash));
     pthread_mutex_unlock(&g_object_list_lock);
 }

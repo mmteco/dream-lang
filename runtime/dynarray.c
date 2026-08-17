@@ -2,8 +2,20 @@
 #include <string.h>
 #include <stdio.h>
 #include <limits.h>
+#include <execinfo.h>
 #include "dynarray.h"
 #include "memory.h"
+
+static void debug_out_of_bounds(int index, int length) {
+    fprintf(stderr, "Error: index %d out of bounds [0, %d)\n", index, length);
+    void* frames[12];
+    int frame_count = backtrace(frames, 12);
+    char** symbols = backtrace_symbols(frames, frame_count);
+    for (int i = 1; i < frame_count; i++) {
+        fprintf(stderr, "  at %s\n", symbols[i]);
+    }
+    free(symbols);
+}
 
 // 创建新的动态数组（使用 GC 分配）
 dynarray_i32* create_dynarray_i32(int initial_capacity) {
@@ -108,6 +120,19 @@ void append_i32(dynarray_i32* arr, int value) {
     arr->length++;
 }
 
+void append_f64(dynarray_i32* arr, double value) {
+    uint64_t bits = 0;
+    memcpy(&bits, &value, sizeof(bits));
+    append_i32(arr, (int)(bits & UINT32_MAX));
+    append_i32(arr, (int)(bits >> 32));
+}
+
+void append_pointer(dynarray_i32* arr, const void* value) {
+    uintptr_t bits = (uintptr_t)value;
+    append_i32(arr, (int)(bits & UINT32_MAX));
+    append_i32(arr, (int)(bits >> 32));
+}
+
 // 获取数组元素
 int get_dynarray_i32(dynarray_i32* arr, int index) {
     if (arr == NULL) {
@@ -116,11 +141,26 @@ int get_dynarray_i32(dynarray_i32* arr, int index) {
     }
 
     if (index < 0 || index >= arr->length) {
-        fprintf(stderr, "Error: index %d out of bounds [0, %d)\n", index, arr->length);
+        debug_out_of_bounds(index, arr->length);
         return 0;
     }
 
     return arr->data[index];
+}
+
+double get_f64(dynarray_i32* arr, int index) {
+    uint64_t low = (uint32_t)get_dynarray_i32(arr, index);
+    uint64_t high = (uint32_t)get_dynarray_i32(arr, index + 1);
+    uint64_t bits = low | (high << 32);
+    double value = 0.0;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+const void* get_pointer(dynarray_i32* arr, int index) {
+    uintptr_t low = (uint32_t)get_dynarray_i32(arr, index);
+    uintptr_t high = (uint32_t)get_dynarray_i32(arr, index + 1);
+    return (const void*)(low | (high << 32));
 }
 
 // 设置数组元素
@@ -131,7 +171,7 @@ void set_dynarray_i32(dynarray_i32* arr, int index, int value) {
     }
 
     if (index < 0 || index >= arr->length) {
-        fprintf(stderr, "Error: index %d out of bounds [0, %d)\n", index, arr->length);
+        debug_out_of_bounds(index, arr->length);
         return;
     }
 
@@ -314,4 +354,62 @@ intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index) {
 
 int len_dynarray_ptr(dynarray_ptr* arr) {
     return arr ? arr->length : 0;
+}
+
+// 数组切片（创建新数组）
+dynarray_ptr* slice_dynarray_ptr(dynarray_ptr* arr, int start, int end) {
+    if (arr == NULL) return NULL;
+
+    if (start < 0) start = 0;
+    if (start > arr->length) start = arr->length;
+    if (end < 0) end = 0;
+    if (end > arr->length) end = arr->length;
+    if (start > end) start = end;
+    if (start >= end) {
+        return create_dynarray_ptr(0);
+    }
+
+    int slice_len = end - start;
+    dynarray_ptr* result = create_dynarray_ptr(slice_len);
+    if (result == NULL) return NULL;
+
+    if (arr->data != NULL) {
+        memcpy(result->data, arr->data + start, slice_len * sizeof(intptr_t));
+        result->length = slice_len;
+        for (int i = 0; i < slice_len; i++) {
+            gc_retain_if_managed((void*)result->data[i]);
+        }
+    }
+
+    return result;
+}
+
+// 连接两个数组（创建新数组）
+dynarray_ptr* concat_dynarray_ptr(dynarray_ptr* arr1, dynarray_ptr* arr2) {
+    if (arr1 == NULL || arr2 == NULL) return NULL;
+
+    if (arr1->length > INT_MAX - arr2->length) {
+        return NULL;
+    }
+
+    int total_len = arr1->length + arr2->length;
+    dynarray_ptr* result = create_dynarray_ptr(total_len);
+    if (result == NULL) return NULL;
+
+    if (arr1->length > 0 && arr1->data != NULL) {
+        memcpy(result->data, arr1->data, arr1->length * sizeof(intptr_t));
+        for (int i = 0; i < arr1->length; i++) {
+            gc_retain_if_managed((void*)result->data[i]);
+        }
+    }
+
+    if (arr2->length > 0 && arr2->data != NULL) {
+        memcpy(result->data + arr1->length, arr2->data, arr2->length * sizeof(intptr_t));
+        for (int i = 0; i < arr2->length; i++) {
+            gc_retain_if_managed((void*)result->data[i + arr1->length]);
+        }
+    }
+
+    result->length = total_len;
+    return result;
 }

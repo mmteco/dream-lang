@@ -2,7 +2,8 @@
 
 (library
  (name dream_lib)
- (modules ast error types env const_eval lexer parser exhaustiveness monomorphize
+ (modules ast error types env const_eval lexer parser exhaustiveness monomorphize default_args
+          unused_vars
           dir dir_verify dir_printer dir_lower_llvm dir_lower
           dir_compiler
           symbol_analyzer module_loader

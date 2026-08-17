@@ -98,3 +98,28 @@ dynarray_ptr* dict_items(dict_t* dict) {
 
     return items;
 }
+
+// 与 dict_items 相同，但元素为通用元组表示（dynarray_ptr 的 intptr_t 数组），供编译器 list[tuple] 使用
+dynarray_ptr* dict_items_tuples(dict_t* dict) {
+    if (dict == NULL) return NULL;
+
+    dynarray_ptr* items = create_dynarray_ptr(dict->size);
+    if (items == NULL) return NULL;
+
+    for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
+        dict_entry_t* entry = dict->buckets[bucket_index];
+        while (entry != NULL) {
+            dynarray_ptr* pair = create_dynarray_ptr(2);
+            if (pair == NULL) {
+                free_dynarray_ptr(items);
+                return NULL;
+            }
+            append_ptr(pair, (intptr_t)entry->key);
+            append_ptr(pair, (intptr_t)entry->value);
+            append_ptr(items, (intptr_t)pair);
+            entry = entry->next;
+        }
+    }
+
+    return items;
+}

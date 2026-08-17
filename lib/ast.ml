@@ -50,7 +50,14 @@ type token =
   | MINUS
   | TIMES
   | DIV
+  | FLOORDIV
   | MOD
+  | POW
+  | AMP
+  | CARET
+  | TILDE
+  | SHL
+  | SHR
   | EQ
   | NEQ
   | LT
@@ -86,7 +93,14 @@ type binop =
   | Sub
   | Mul
   | Div
+  | FloorDiv
   | Mod
+  | Pow
+  | BitAnd
+  | BitOr
+  | BitXor
+  | Shl
+  | Shr
   | Eq
   | Neq
   | Lt
@@ -98,6 +112,8 @@ type binop =
 
 type unop =
   | Neg
+  | Pos
+  | Invert
   | Not
 
 type type_expr =
@@ -120,6 +136,7 @@ type type_expr =
   | TResult of type_expr * type_expr
   | TEnum of string * type_expr list
   | TStruct of string * type_expr list
+  | TSelf  (* 接口/impl 方法中的自身类型，解析为实现该接口的具体类型 *)
 
 (* Match 分支体：可以是单个表达式或语句块 *)
 type match_body =

@@ -9,6 +9,7 @@
   let byte_offset = ref 0        (* 累计字节偏移 *)
   let line_start_offset = ref 0  (* 当前行开始的字节偏移 *)
   let indent_stack = ref [0]
+  let bracket_depth = ref 0
 
   let get_pos () = { line = !line_num; column = !col_num }
 
@@ -198,11 +199,23 @@ rule token = parse
       let end_pos = make_lexing_pos () in
       (MINUS, start_pos, end_pos)
     }
+  | "**" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (POW, start_pos, end_pos)
+    }
   | '*' {
       let start_pos = make_lexing_pos () in
       update_pos lexbuf;
       let end_pos = make_lexing_pos () in
       (TIMES, start_pos, end_pos)
+    }
+  | "//" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (FLOORDIV, start_pos, end_pos)
     }
   | '/' {
       let start_pos = make_lexing_pos () in
@@ -216,6 +229,24 @@ rule token = parse
       let end_pos = make_lexing_pos () in
       (MOD, start_pos, end_pos)
     }
+  | '&' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (AMP, start_pos, end_pos)
+    }
+  | '^' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (CARET, start_pos, end_pos)
+    }
+  | '~' {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (TILDE, start_pos, end_pos)
+    }
   | "==" {
       let start_pos = make_lexing_pos () in
       update_pos lexbuf;
@@ -228,11 +259,23 @@ rule token = parse
       let end_pos = make_lexing_pos () in
       (NEQ, start_pos, end_pos)
     }
+  | "<<" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (SHL, start_pos, end_pos)
+    }
   | "<=" {
       let start_pos = make_lexing_pos () in
       update_pos lexbuf;
       let end_pos = make_lexing_pos () in
       (LTE, start_pos, end_pos)
+    }
+  | ">>" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (SHR, start_pos, end_pos)
     }
   | ">=" {
       let start_pos = make_lexing_pos () in
@@ -481,6 +524,16 @@ and read_byte_literal = parse
       (dedents, true)
     end else ([], false)
 
+  (* 括号深度跟踪：括号内换行不产生 INDENT/DEDENT *)
+  let update_bracket_depth tok =
+    match tok with
+    | LPAREN | LBRACKET | LBRACE ->
+        bracket_depth := !bracket_depth + 1
+    | RPAREN | RBRACKET | RBRACE ->
+        if !bracket_depth > 0 then
+          bracket_depth := !bracket_depth - 1
+    | _ -> ()
+
   (* 返回带位置信息的 token 列表: (token, start_pos, end_pos) list *)
   let tokenize_string_with_pos source =
     line_num := 1;
@@ -488,6 +541,7 @@ and read_byte_literal = parse
     byte_offset := 0;
     line_start_offset := 0;
     indent_stack := [0];
+    bracket_depth := 0;
     let lexbuf = Lexing.from_string source in
     let rec next_tokens acc at_line_start =
       if at_line_start then begin
@@ -517,6 +571,11 @@ and read_byte_literal = parse
               List.rev (final_with_pos @ acc)
             end else
               next_tokens ((tok, start_pos, end_pos) :: acc) true
+        | _ when !bracket_depth > 0 ->
+            (* 括号内行首：缩进不产生 INDENT/DEDENT *)
+            let (tok, start_pos, end_pos) = token lexbuf in
+            update_bracket_depth tok;
+            next_tokens ((tok, start_pos, end_pos) :: acc) (tok = NEWLINE)
         | _ ->
             let pos = make_lexing_pos () in
             let (indent_tokens, has_dedent) = handle_indent indent_level in
@@ -524,9 +583,11 @@ and read_byte_literal = parse
             let tokens_with_pos = List.map (fun t -> (t, pos, pos)) tokens_to_add in
             let acc_with_indents = List.fold_right (fun t a -> t :: a) tokens_with_pos acc in
             let (tok, start_pos, end_pos) = token lexbuf in
+            update_bracket_depth tok;
             next_tokens ((tok, start_pos, end_pos) :: acc_with_indents) (tok = NEWLINE)
       end else begin
         let (tok, start_pos, end_pos) = token lexbuf in
+        update_bracket_depth tok;
         if tok = EOF then begin
           let (final_dedents, _) = handle_indent 0 in
           let eof_pos = make_lexing_pos () in

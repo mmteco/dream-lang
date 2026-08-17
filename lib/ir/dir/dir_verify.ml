@@ -23,6 +23,17 @@ let verify module_ =
       in
       check 1
   in
+  let ty_compatible left right =
+    match left, right with
+    | Union left_members, Union right_members ->
+        List.exists (fun member ->
+          List.exists (equal_ty member) right_members
+        ) left_members
+    | Dict (_, _), Dict (_, _) -> true
+    | List (Tuple _), List (Tuple _) -> true
+    | List _, List _ -> true
+    | _ -> equal_ty left right
+  in
   let function_signatures = Hashtbl.create 16 in
   let add_signature name parameters return_type =
     if not (is_symbol_name name) then
@@ -60,7 +71,7 @@ let verify module_ =
          | _ -> add_error (Printf.sprintf "%s: expected %s" context (ty_to_string expected_type)))
     | Value value ->
         (match Hashtbl.find_opt value_types value with
-         | Some actual_type when equal_ty actual_type expected_type -> ()
+         | Some actual_type when ty_compatible actual_type expected_type -> ()
          | Some actual_type ->
              add_error (Printf.sprintf "%s: expected %s, got %s"
                context (ty_to_string expected_type) (ty_to_string actual_type))
@@ -79,6 +90,16 @@ let verify module_ =
     | Value value -> Hashtbl.find_opt value_types value
   in
 
+  let list_element_type value_types operand context =
+    match operand_type value_types operand with
+    | Some (List element_type) -> Some element_type
+    | Some actual_type ->
+        add_error (Printf.sprintf "%s: expected list, got %s"
+          context (ty_to_string actual_type));
+        None
+    | None -> None
+  in
+
   let is_switch_type = function
     | I32 | F64 | Bool | Str -> true
     | _ -> false
@@ -90,7 +111,7 @@ let verify module_ =
     | Some (parameter_types, declared_return_type) ->
         if not (is_symbol_name name) then
           add_error ("call " ^ name ^ ": invalid symbol name");
-        if not (equal_ty result_type declared_return_type) then
+        if not (ty_compatible result_type declared_return_type) then
           add_error (Printf.sprintf "call %s: result type %s does not match declaration %s"
             name (ty_to_string result_type) (ty_to_string declared_return_type));
         (match result_value, declared_return_type with
@@ -106,7 +127,7 @@ let verify module_ =
             name (List.length arguments) (List.length argument_types))
         else
           List.iter (fun ((expected_type, declared_type), argument) ->
-            if not (equal_ty expected_type declared_type) then
+            if not (ty_compatible expected_type declared_type) then
               add_error (Printf.sprintf "call %s: argument type %s does not match declaration %s"
                 name (ty_to_string declared_type) (ty_to_string expected_type));
             verify_operand value_types argument expected_type ("call " ^ name)
@@ -116,7 +137,8 @@ let verify module_ =
              if Hashtbl.mem value_types value then
                add_error (Printf.sprintf "duplicate value %%v%d" value)
              else
-               Hashtbl.add value_types value declared_return_type
+               (* 注册指令实际返回类型（泛型调用如 dict_items_tuples 与声明类型不同） *)
+               Hashtbl.add value_types value result_type
          | None -> ())
   in
 
@@ -232,7 +254,86 @@ let verify module_ =
          if Hashtbl.mem value_types value then
            add_error (Printf.sprintf "duplicate value %%v%d" value)
          else
-          Hashtbl.add value_types value field_type
+           Hashtbl.add value_types value field_type
+     | InterfaceBox (value, concrete_type, object_value) ->
+         verify_operand value_types object_value concrete_type "interface_box object";
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value concrete_type
+     | InterfaceRelease box_value ->
+         (match box_value with
+          | Value value_id ->
+              if not (Hashtbl.mem value_types value_id) then
+                add_error (Printf.sprintf "interface_release uses an undefined value %%v%d" value_id)
+          | _ -> add_error "interface_release requires an SSA box value")
+     | InterfaceTypeTag (value, interface_value) ->
+         (match interface_value with
+          | Value interface_id ->
+              if not (Hashtbl.mem value_types interface_id) then
+                add_error (Printf.sprintf
+                  "interface_type_tag uses an undefined value %%v%d" interface_id)
+          | _ -> add_error "interface_type_tag requires an SSA interface value");
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value I32
+     | MakeInterface (value, interface_type, concrete_type, object_value, method_names) ->
+         verify_operand value_types object_value concrete_type "make_interface object";
+         (match interface_type with
+          | Interface (_, methods) ->
+              if List.length methods <> List.length method_names then
+                add_error "make_interface method count does not match interface";
+              if List.length methods = List.length method_names then
+                List.iter2 (fun (_, parameter_types, return_type) function_name ->
+                  match Hashtbl.find_opt function_signatures function_name with
+                  | None -> add_error (Printf.sprintf
+                      "make_interface target %s is undefined" function_name)
+                  | Some (declared_parameters, declared_return) ->
+                      let expected_parameters = concrete_type :: parameter_types in
+                      if List.length declared_parameters <> List.length expected_parameters ||
+                         not (List.for_all2 equal_ty declared_parameters expected_parameters) ||
+                         not (equal_ty declared_return return_type) then
+                        add_error (Printf.sprintf
+                          "make_interface target %s has an incompatible signature"
+                          function_name)
+                ) methods method_names
+          | _ -> add_error "make_interface result must be an interface type");
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value interface_type
+     | InterfaceCall (result_value, result_type, interface_type, interface_value,
+                      method_name, method_index, parameter_types, arguments) ->
+         verify_operand value_types interface_value interface_type "interface_call receiver";
+         (match interface_type with
+          | Interface (_, methods) ->
+              if method_index < 0 || method_index >= List.length methods then
+                add_error "interface_call method index is out of bounds"
+              else
+                let (expected_name, expected_parameters, expected_return) =
+                  List.nth methods method_index in
+                if expected_name <> method_name then
+                  add_error "interface_call method name does not match index";
+                if not (equal_ty expected_return result_type) then
+                  add_error "interface_call result type does not match method";
+                if List.length expected_parameters <> List.length parameter_types ||
+                   not (List.for_all2 equal_ty expected_parameters parameter_types) then
+                  add_error "interface_call parameter types do not match method"
+          | _ -> add_error "interface_call receiver must be an interface type");
+         if List.length parameter_types <> List.length arguments then
+           add_error "interface_call argument count does not match method";
+         if List.length parameter_types = List.length arguments then
+           List.iter2 (fun parameter_type argument ->
+             verify_operand value_types argument parameter_type "interface_call argument"
+           ) parameter_types arguments;
+         (match result_value with
+          | Some value ->
+              if Hashtbl.mem value_types value then
+                add_error (Printf.sprintf "duplicate value %%v%d" value)
+              else
+                Hashtbl.add value_types value result_type
+          | None -> ())
      | StringLength (value, string_value) ->
          verify_operand value_types string_value Str "string_length";
          if Hashtbl.mem value_types value then
@@ -255,50 +356,57 @@ let verify module_ =
          else
            Hashtbl.add value_types value Str
      | ListLength (value, collection) ->
-         verify_operand value_types collection (List I32) "list_length";
-         if Hashtbl.mem value_types value then
-           add_error (Printf.sprintf "duplicate value %%v%d" value)
-         else
-           Hashtbl.add value_types value I32
+         (match list_element_type value_types collection "list_length" with
+          | Some _ ->
+              if Hashtbl.mem value_types value then
+                add_error (Printf.sprintf "duplicate value %%v%d" value)
+              else
+                Hashtbl.add value_types value I32
+          | None -> ())
      | ListGet (value, collection, index) ->
-         verify_operand value_types collection (List I32) "list_get collection";
          verify_operand value_types index I32 "list_get index";
-         if Hashtbl.mem value_types value then
-           add_error (Printf.sprintf "duplicate value %%v%d" value)
-         else
-           Hashtbl.add value_types value I32
+         (match list_element_type value_types collection "list_get collection" with
+          | Some element_type ->
+              if Hashtbl.mem value_types value then
+                add_error (Printf.sprintf "duplicate value %%v%d" value)
+              else
+                Hashtbl.add value_types value element_type
+          | None -> ())
      | ListCreate (value, element_type, values) ->
-         if not (equal_ty element_type I32) then
-           add_error "list_create currently supports only i32 elements";
-         List.iter (fun item ->
-           verify_operand value_types item element_type "list_create element"
-         ) values;
+         (match element_type with
+          | I32 | Str | Tuple _ ->
+              List.iter (fun item ->
+                verify_operand value_types item element_type "list_create element"
+              ) values
+          | _ -> add_error "list_create supports only i32, str and tuple elements");
          if Hashtbl.mem value_types value then
            add_error (Printf.sprintf "duplicate value %%v%d" value)
          else
            Hashtbl.add value_types value (List element_type)
      | ListSlice (value, collection, start, end_) ->
-         verify_operand value_types collection (List I32) "list_slice collection";
          verify_operand value_types start I32 "list_slice start";
          verify_operand value_types end_ I32 "list_slice end";
-         if Hashtbl.mem value_types value then
-           add_error (Printf.sprintf "duplicate value %%v%d" value)
-         else
-           Hashtbl.add value_types value (List I32)
+         (match list_element_type value_types collection "list_slice collection" with
+          | Some element_type ->
+              if Hashtbl.mem value_types value then
+                add_error (Printf.sprintf "duplicate value %%v%d" value)
+              else
+                Hashtbl.add value_types value (List element_type)
+          | None -> ())
      | ListConcat (value, left, right) ->
-         verify_operand value_types left (List I32) "list_concat left";
-         verify_operand value_types right (List I32) "list_concat right";
-         if Hashtbl.mem value_types value then
-           add_error (Printf.sprintf "duplicate value %%v%d" value)
-         else
-           Hashtbl.add value_types value (List I32)
+         (match list_element_type value_types left "list_concat left",
+                list_element_type value_types right "list_concat right" with
+          | Some element_type, Some _ ->
+              if Hashtbl.mem value_types value then
+                add_error (Printf.sprintf "duplicate value %%v%d" value)
+              else
+                Hashtbl.add value_types value (List element_type)
+          | _ -> ())
      | TupleCreate (value, element_types, values) ->
          if List.length element_types <> List.length values then
            add_error "tuple_create element count does not match type count";
          if List.length element_types = List.length values then
            List.iter2 (fun element_type item ->
-             if not (equal_ty element_type I32) then
-               add_error "tuple_create currently supports only i32 elements";
              verify_operand value_types item element_type "tuple_create element"
            ) element_types values;
          if Hashtbl.mem value_types value then
@@ -447,7 +555,18 @@ let verify module_ =
      | ListSet (collection, index, value) ->
          verify_operand value_types collection (List I32) "list_set collection";
          verify_operand value_types index I32 "list_set index";
-         verify_operand value_types value I32 "list_set value");
+         verify_operand value_types value I32 "list_set value"
+     | GlobalLoad (value, result_type, _) ->
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value result_type
+     | GlobalStore (_, value) ->
+         (match operand_type value_types value with
+          | Some actual_type ->
+              verify_operand value_types value actual_type "global_store value"
+          | None ->
+              add_error "global_store value has no type"));
     ()
   in
 

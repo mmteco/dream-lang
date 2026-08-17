@@ -17,6 +17,11 @@ let binop = function
   | Mul -> "mul"
   | Div -> "div"
   | Mod -> "mod"
+  | BitAnd -> "bitand"
+  | BitOr -> "bitor"
+  | BitXor -> "bitxor"
+  | Shl -> "shl"
+  | Shr -> "shr"
   | And -> "and"
   | Or -> "or"
 
@@ -28,13 +33,24 @@ let cmp = function
   | Le -> "le"
   | Ge -> "ge"
 
-let instruction = function
+let operand_type value_types = function
+  | Value value -> (try Hashtbl.find value_types value with Not_found -> "unknown")
+  | Int _ -> "i32"
+  | Float _ -> "f64"
+  | Bool _ -> "bool"
+  | String _ -> "str"
+  | FunctionRef _ -> "function"
+
+let instruction value_types = function
   | Binop (value, result_type, operation, left, right) ->
       Printf.sprintf "%%v%d = %s %s %s, %s"
         value (binop operation) (ty result_type) (operand left) (operand right)
   | Compare (value, operation, left, right) ->
-      Printf.sprintf "%%v%d = icmp %s %s, %s"
-        value (cmp operation) (operand left) (operand right)
+      let comparison_type = operand_type value_types left in
+      let comparison_instruction = if comparison_type = "f64" then "fcmp" else "icmp" in
+      Printf.sprintf "%%v%d = %s %s %s %s, %s"
+        value comparison_instruction (cmp operation) comparison_type
+        (operand left) (operand right)
   | Call (Some value, result_type, name, argument_types, arguments) ->
       let rendered_arguments = List.map2 (fun argument_type argument ->
         ty argument_type ^ " " ^ operand argument
@@ -69,6 +85,33 @@ let instruction = function
       Printf.sprintf "%%v%d = closure_get %s %s %s %d"
         value (ty field_type) (ty (ClosureEnv environment_type))
         (operand environment) index
+  | InterfaceBox (value, concrete_type, object_value) ->
+      Printf.sprintf "%%v%d = interface_box %s %s" value (ty concrete_type)
+        (operand object_value)
+  | InterfaceRelease box_value ->
+      Printf.sprintf "interface_release %s" (operand box_value)
+  | InterfaceTypeTag (value, interface_value) ->
+      Printf.sprintf "%%v%d = interface_type_tag %s" value (operand interface_value)
+  | MakeInterface (value, interface_type, concrete_type, object_value, method_names) ->
+      Printf.sprintf "%%v%d = make_interface %s %s %s {%s}"
+        value (ty interface_type) (ty concrete_type) (operand object_value)
+        (String.concat ", " (List.map (fun name -> "@" ^ name) method_names))
+  | InterfaceCall (Some value, result_type, interface_type, interface_value,
+                   method_name, method_index, parameter_types, arguments) ->
+      let rendered_arguments = List.map2 (fun argument_type argument ->
+        ty argument_type ^ " " ^ operand argument
+      ) parameter_types arguments in
+      Printf.sprintf "%%v%d = interface_call %s %s %s @%s %d(%s)"
+        value (ty result_type) (ty interface_type) (operand interface_value)
+        method_name method_index (String.concat ", " rendered_arguments)
+  | InterfaceCall (None, result_type, interface_type, interface_value,
+                   method_name, method_index, parameter_types, arguments) ->
+      let rendered_arguments = List.map2 (fun argument_type argument ->
+        ty argument_type ^ " " ^ operand argument
+      ) parameter_types arguments in
+      Printf.sprintf "interface_call %s %s %s @%s %d(%s)"
+        (ty result_type) (ty interface_type) (operand interface_value)
+        method_name method_index (String.concat ", " rendered_arguments)
   | EnumCreateMulti (value, enum_type, tag, payload_types, payloads) ->
       let rendered_payloads = List.map2 (fun payload_type payload ->
         ty payload_type ^ " " ^ operand payload
@@ -128,6 +171,10 @@ let instruction = function
   | ListSet (collection, index, value) ->
       Printf.sprintf "list_set %s, %s, %s" (operand collection)
         (operand index) (operand value)
+  | GlobalLoad (value, result_type, name) ->
+      Printf.sprintf "%%v%d = global_load %s @%s" value (ty result_type) name
+  | GlobalStore (name, value) ->
+      Printf.sprintf "global_store @%s, %s" name (operand value)
 
 let terminator = function
   | Jump (label, arguments) ->
@@ -155,6 +202,19 @@ let render_function (function_def : Dir.function_def) =
     Printf.sprintf "%%v%d %s" parameter.value (ty parameter.ty)
   ) function_def.parameters in
   let buffer = Buffer.create 512 in
+  let value_types = Hashtbl.create 32 in
+  List.iter (fun parameter -> Hashtbl.replace value_types parameter.value (ty parameter.ty))
+    function_def.parameters;
+  List.iter (fun block ->
+    List.iter (fun (value, parameter_type) ->
+      Hashtbl.replace value_types value (ty parameter_type)
+    ) block.params;
+    List.iter (fun item ->
+      match instruction_result item with
+      | Some (value, result_type) -> Hashtbl.replace value_types value (ty result_type)
+      | None -> ()
+    ) block.instructions
+  ) function_def.blocks;
   Printf.bprintf buffer "func @%s(%s) -> %s {\n"
     function_def.name (String.concat ", " parameters) (ty function_def.return_type);
   List.iter (fun block ->
@@ -162,7 +222,7 @@ let render_function (function_def : Dir.function_def) =
       Printf.sprintf "%%v%d %s" value (ty parameter_type)
     ) block.params in
     Printf.bprintf buffer "  %s(%s):\n" block.label (String.concat ", " parameters);
-    List.iter (fun item -> Printf.bprintf buffer "    %s\n" (instruction item)) block.instructions;
+    List.iter (fun item -> Printf.bprintf buffer "    %s\n" (instruction value_types item)) block.instructions;
     Printf.bprintf buffer "    %s\n" (terminator block.terminator)
   ) function_def.blocks;
   Buffer.add_string buffer "}\n";

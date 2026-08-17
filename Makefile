@@ -2,6 +2,7 @@ EXAMPLE_SOURCES := $(wildcard examples/*.dm)
 EXAMPLE_TARGETS := $(patsubst examples/%.dm,%,$(EXAMPLE_SOURCES))
 FISH ?= fish
 RUNTIME_DIR ?= runtime
+STAGE3 ?= 0
 
 .PHONY: build clean run test examples runtime-check check bootstrap bootstrap-verify bootstrap-build compile dynarray help $(EXAMPLE_TARGETS)
 
@@ -17,7 +18,8 @@ help:
 	@echo "  make runtime-check - 运行 runtime 常规测试和 UBSan 测试"
 	@echo "  make check       - 运行完整构建、测试和自举验证"
 	@echo "  make <example>   - 编译并运行 examples/<example>.dm"
-	@echo "  make bootstrap   - 执行 Stage 0 → Stage 1 → Stage 2 → Stage 3 自举验证"
+	@echo "  make bootstrap   - 快速执行 Stage 0 → Stage 1 → Stage 2 验证"
+	@echo "  make bootstrap STAGE3=1 - 执行 Stage 2 → Stage 3 固定点验证"
 	@echo "  make bootstrap-build FILE=path/to/file.dm - 使用 Stage 2 bootstrapped 编译器构建"
 	@echo "  make bootstrap-verify - 验证已生成的自举 LLVM 文件"
 	@echo ""
@@ -65,7 +67,7 @@ dynarray: dynarray_full
 
 # 执行自举：Stage 0 生成 Stage 1，后续阶段继续编译自身并验证固定点。
 bootstrap: build
-	$(FISH) scripts/bootstrap.fish
+	$(FISH) scripts/bootstrap.fish $(if $(filter 0 false no,$(STAGE3)),--skip-stage3,)
 
 # 验证自举各阶段生成的 LLVM 文本，并保留失败上下文。
 bootstrap-verify:

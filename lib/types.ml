@@ -44,6 +44,7 @@ let rec type_expr_to_ty = function
   | TResult (ok, err) -> TyResult (type_expr_to_ty ok, type_expr_to_ty err)
   | TEnum (name, params) -> TyEnum (name, List.map type_expr_to_ty params)
   | TStruct (name, params) -> TyStruct (name, List.map type_expr_to_ty params)
+  | TSelf -> TyVar "Self"
 
 let rec ty_to_string = function
   | TyInt -> "int"
@@ -133,6 +134,24 @@ let rec unify t1 t2 =
       let s1 = unify k1 k2 in
       let s2 = unify (apply_subst s1 v1) (apply_subst s1 v2) in
       compose_subst s2 s1
+  | (TyEnum (n1, p1), TyEnum (n2, p2)) when n1 = n2 ->
+      if List.length p1 <> List.length p2 then
+        failwith (Printf.sprintf "Enum %s type parameter count mismatch" n1)
+      else
+        List.fold_left2
+          (fun subst t1 t2 ->
+            let s = unify (apply_subst subst t1) (apply_subst subst t2) in
+            compose_subst s subst)
+          empty_subst p1 p2
+  | (TyInterface (n1, p1), TyInterface (n2, p2)) when n1 = n2 ->
+      if List.length p1 <> List.length p2 then
+        failwith (Printf.sprintf "Interface %s type parameter count mismatch" n1)
+      else
+        List.fold_left2
+          (fun subst t1 t2 ->
+            let s = unify (apply_subst subst t1) (apply_subst subst t2) in
+            compose_subst s subst)
+          empty_subst p1 p2
   | (TyTuple ts1, TyTuple ts2) when List.length ts1 = List.length ts2 ->
       List.fold_left2
         (fun subst t1 t2 ->

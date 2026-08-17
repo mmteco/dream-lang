@@ -301,6 +301,13 @@ let config = {"host": "localhost", "port": "8080"}
 # 混合类型
 let data: dict[int, str] = {1: "one", 2: "two"}
 
+# 多行字面量（键/值可为常量引用）
+let keywords = {
+    "let": 1,
+    "def": 2,
+    "return": 3,
+}
+
 # 字典操作
 let age = ages["Alice"]         # 读取
 ages["Charlie"] = 35            # 写入
@@ -312,6 +319,22 @@ let items = dict_items(ages)    # 获取键值对列表
 for (k, v) in dict_items(ages):
     print(k)
     print(v)
+```
+
+#### 全局 let ✅
+```python
+# 模块顶层声明，main 入口执行一次初始化；函数内可读可赋值
+let answer = 42
+let config = {"host": "localhost", "port": "80"}
+
+def increment() -> int:
+    counter = counter + 1      # 更新全局（无需 global 关键字）
+    return counter
+
+# 函数内 let 可重新赋值；同名局部变量遮蔽全局
+def f() -> int:
+    let answer = 7
+    return answer
 ```
 
 ### 函数类型

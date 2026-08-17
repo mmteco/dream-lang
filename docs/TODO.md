@@ -5,13 +5,24 @@
 ### 🚧 自举与 DIR 完整化主线
 
 - [x] 稳定当前 bootstrap/compiler.dm 自举切片，并通过 Stage 0 → Stage 1 → Stage 2 → Stage 3 回归
+- [x] DM 编译器主链改为与 OCaml 版本一致的流水线：发射器直接构建结构化 DIR records → DIR verifier → DIR LLVM lowering → LLVM IR（移除 LLVM 文本反解析）
+- [x] 新管线（AST 节点池 → lower 顶向下遍历 → 结构化 DIR records → LLVM）实现完整自举：stage1 编译 compiler.dm → stage2 → stage3，三级编译器均能编译运行程序（hello 输出验证）
+  - [x] 默认管线切换：`DEBUG` 与否均走新管线（旧 HIR/DM_DIR/emit 保留但不再执行，待 P5 清理）
+  - [x] switch/case/default lowering（lower_stmt_switch + lower_switch_comparison）
+  - [x] 全局 let 定义段与 main 入口表达式初始化（含 dict 字面量）
+  - [x] struct 字面量扩容（15+ 字段）、dict 字面量扩容（20 对）与 key/value 类型分派
+  - [x] 循环内 alloca 提升修复（append_hoisted_function 提升到函数头，兼容新旧管线布局）
+  - [x] list[str] 类型支持（get_pointer + 槽偏移）、tuple 解包指针元素（返回类型注解解析）
+  - [x] ord 身份函数、字符串索引/比较、bool 与 int 混合比较
+  - [x] 性能优化：`__c_range_equal`（范围 memcmp 比较）、struct 声明哈希定位、`__c_fnv_hash_range` 预收集；lower 8.1s → 2.7s（约 3 倍提速）
 - [ ] 冻结 bootstrap 语法子集，增加语法边界和行为回归协议
 - [ ] 用 Dream 重写完整 lexer、parser、typechecker 和 DIR compiler
 - [ ] 完成真正的完整编译器自举，而不只验证 bootstrap/compiler.dm 切片
 - [ ] 设计并实现函数类型和函数值
-  - [ ] 确定 lambda 语法和函数类型标注语法
-  - [ ] 无捕获 lambda 的函数提升和间接调用
-  - [ ] 闭包捕获环境和闭包 runtime ABI
+  - [x] 确定 lambda 语法和函数类型标注语法
+  - [x] 无捕获 lambda 的函数提升和间接调用
+  - [x] 基础闭包捕获环境和闭包 runtime ABI
+  - [ ] 可变共享捕获和完整闭包生命周期规则
 - [ ] 完善泛型和单态化
   - [ ] 泛型容器（list、dict、tuple、struct、enum）
   - [ ] 高阶泛型函数和泛型约束
@@ -20,9 +31,13 @@
   - [ ] Option/Result 的完整类型参数传播
   - [ ] 可转换错误类型的 `?` 错误传播
 - [ ] 完成动态对象和接口派发
+  - [x] 结构体方法的静态 DIR lowering 与直接调用
   - [ ] 动态对象表示和生命周期规则
   - [ ] interface/impl 的 DIR lowering
-  - [ ] vtable 和动态方法调用
+    - [x] 具体结构体上的静态 impl 方法 lowering
+    - [x] 宿主 DIR interface value、vtable 和间接调用 ABI
+    - [x] Stage2/Stage3 interface value、vtable 和间接调用
+  - [x] vtable 和动态方法调用（当前为无状态接口对象 ABI）
 - [ ] 补齐标准库实现，移除 `pass` 占位模块
 - [ ] 完整自举验收
   - [ ] Stage 2 → Stage 3 使用完整 Dream 编译器
@@ -57,9 +72,10 @@
 - [x] Enum 类型
 - [x] Union 类型
 - [ ] Lambda 表达式
-  - [ ] 语法解析
-  - [ ] 闭包捕获
-  - [ ] 代码生成
+  - [x] 语法解析
+  - [x] 基础闭包捕获
+  - [x] 代码生成
+  - [ ] 可变共享捕获
 
 #### P3 - 面向对象
 
@@ -228,6 +244,7 @@
 - [ ] 减少不必要的数组复制
 - [ ] 优化列表推导式的内存分配
 - [ ] 启用 LLVM 优化 pass (-O2, -O3)
+- [x] bootstrap 编译器性能优化（source_type_is_interface 预收集声明表：emit 38s → 11.3s；lex 魔法数字常量）
 
 ### 长期
 - [ ] 实现写时复制 (COW)

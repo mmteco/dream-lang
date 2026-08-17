@@ -24,7 +24,11 @@ void retain_dynarray_i32(dynarray_i32* arr);
 
 // 基本操作
 void append_i32(dynarray_i32* arr, int value);
+void append_f64(dynarray_i32* arr, double value);
+void append_pointer(dynarray_i32* arr, const void* value);
 int get_dynarray_i32(dynarray_i32* arr, int index);
+double get_f64(dynarray_i32* arr, int index);
+const void* get_pointer(dynarray_i32* arr, int index);
 void set_dynarray_i32(dynarray_i32* arr, int index, int value);
 int len_dynarray_i32(dynarray_i32* arr);
 int capacity_dynarray_i32(dynarray_i32* arr);
@@ -45,5 +49,7 @@ void free_dynarray_ptr(dynarray_ptr* arr);
 void append_ptr(dynarray_ptr* arr, intptr_t value);
 intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index);
 int len_dynarray_ptr(dynarray_ptr* arr);
+dynarray_ptr* slice_dynarray_ptr(dynarray_ptr* arr, int start, int end);
+dynarray_ptr* concat_dynarray_ptr(dynarray_ptr* arr1, dynarray_ptr* arr2);
 
 #endif // DREAM_DYNARRAY_H

@@ -25,6 +25,43 @@ let generic_type_arguments function_type substitution =
   in
   List.rev_map (fun name -> apply_subst substitution (TyVar name)) variables
 
+let find_method_type env struct_name method_name struct_def =
+  match Env.StringMap.find_opt method_name struct_def.struct_methods with
+  | Some method_type -> Some method_type
+  | None -> Env.find_impl_method_for_type (TyStruct (struct_name, [])) method_name env
+
+let find_interface_method_type env interface_name method_name =
+  match Env.find_interface interface_name env with
+  | None -> None
+  | Some interface_def ->
+      List.find_map (function
+        | IMethod (name, _, params, return_type, _, _) when name = method_name ->
+            let parameter_types = List.filter_map (fun (parameter_name, type_opt, _) ->
+              if parameter_name = "self" then None
+              else Some (match type_opt with
+                | Some type_expr -> type_expr_to_ty type_expr
+                | None -> fresh_type_var ())) params in
+            let result_type = match return_type with
+              | Some type_expr -> type_expr_to_ty type_expr
+              | None -> TyNone
+            in
+            Some (TyFunc (parameter_types, result_type))
+        | _ -> None
+      ) interface_def.iface_members
+
+(* 字符串内置方法类型表，EAttr 与 EEnumVariant 共用 *)
+let string_method_type method_name =
+  match method_name with
+  | "length" -> Some (TyFunc ([], TyInt))
+  | "upper" | "lower" | "strip" -> Some (TyFunc ([], TyStr))
+  | "find" -> Some (TyFunc ([TyStr], TyInt))
+  | "starts_with" | "ends_with" -> Some (TyFunc ([TyStr], TyBool))
+  | "replace" -> Some (TyFunc ([TyStr; TyStr], TyStr))
+  | "split" -> Some (TyFunc ([TyStr], TyList TyStr))
+  | "join" -> Some (TyFunc ([TyList TyStr], TyStr))
+  | "is_digit" | "is_alpha" | "is_whitespace" -> Some (TyFunc ([TyInt], TyBool))
+  | _ -> None
+
 (* 表达式类型推导 *)
 let rec infer_expr env = function
   | EInt (_, _) -> (TyInt, empty_subst)
@@ -75,6 +112,15 @@ let rec infer_expr env = function
            (match t1', t2' with
             | TyInt, TyInt -> Some (TyInt, s3)
             | TyFloat, TyFloat -> Some (TyFloat, s3)
+            | _, _ -> None)  (* 尝试运算符重载 *)
+       | FloorDiv | Pow ->
+           (match t1', t2' with
+            | TyInt, TyInt -> Some (TyInt, s3)
+            | TyFloat, TyFloat -> Some (TyFloat, s3)
+            | _, _ -> None)  (* 尝试运算符重载 *)
+       | BitAnd | BitOr | BitXor | Shl | Shr ->
+           (match t1', t2' with
+            | TyInt, TyInt -> Some (TyInt, s3)
             | _, _ -> None)  (* 尝试运算符重载 *)
        | Eq | Neq | Lt | Gt | Lte | Gte ->
            (* 比较运算符：先尝试内置 *)
@@ -137,7 +183,9 @@ let rec infer_expr env = function
                 let err = make_error (TypeError "Operator not supported") pos
                   (Printf.sprintf "Operator %s not supported for types %s and %s"
                     (match op with
-                     | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | Mod -> "%"
+                     | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | FloorDiv -> "//"
+                     | Mod -> "%" | Pow -> "**"
+                     | BitAnd -> "&" | BitOr -> "|" | BitXor -> "^" | Shl -> "<<" | Shr -> ">>"
                      | Eq -> "==" | Neq -> "!=" | Lt -> "<" | Gt -> ">"
                      | Lte -> "<=" | Gte -> ">=" | And -> "and" | Or -> "or")
                     (ty_to_string t1') (ty_to_string t2')) in
@@ -154,6 +202,15 @@ let rec infer_expr env = function
            (match t' with
             | TyInt -> Some (TyInt, s)
             | TyFloat -> Some (TyFloat, s)
+            | _ -> None)  (* 尝试运算符重载 *)
+       | Pos ->
+           (match t' with
+            | TyInt -> Some (TyInt, s)
+            | TyFloat -> Some (TyFloat, s)
+            | _ -> None)  (* 尝试运算符重载 *)
+       | Invert ->
+           (match t' with
+            | TyInt -> Some (TyInt, s)
             | _ -> None)  (* 尝试运算符重载 *)
        | Not ->
            (try
@@ -198,7 +255,8 @@ let rec infer_expr env = function
                 (* 没有找到接口实现，报告错误 *)
                 let err = make_error (TypeError "Operator not supported") pos
                   (Printf.sprintf "Unary operator %s not supported for type %s"
-                    (match op with Neg -> "-" | Not -> "not")
+                    (match op with
+                     | Neg -> "-" | Pos -> "+" | Invert -> "~" | Not -> "not")
                     (ty_to_string t')) in
                 report_error err;
                 (TyUnknown, s)))
@@ -245,7 +303,8 @@ let rec infer_expr env = function
 
   | ECall (func, args, pos) ->
       (match func with
-       | EAttr (_obj, attr, _) ->
+       | EAttr (_obj, attr, _)
+       | EStructAccess (_obj, attr, _) ->
            let (attr_type, attr_subst) = infer_expr env func in
            let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
            let combined_subst = List.fold_left compose_subst attr_subst arg_substs in
@@ -474,15 +533,9 @@ let rec infer_expr env = function
       let (obj_type, obj_subst) = infer_expr env obj in
       (match apply_subst obj_subst obj_type with
        | TyStr ->
-           (match attr with
-            | "length" -> (TyFunc ([], TyInt), obj_subst)
-            | "upper" | "lower" | "strip" -> (TyFunc ([], TyStr), obj_subst)
-            | "find" -> (TyFunc ([TyStr], TyInt), obj_subst)
-            | "starts_with" | "ends_with" -> (TyFunc ([TyStr], TyBool), obj_subst)
-            | "replace" -> (TyFunc ([TyStr; TyStr], TyStr), obj_subst)
-            | "split" -> (TyFunc ([TyStr], TyList TyStr), obj_subst)
-            | "is_digit" | "is_alpha" | "is_whitespace" -> (TyFunc ([TyInt], TyBool), obj_subst)
-            | _ ->
+           (match string_method_type attr with
+            | Some method_type -> (method_type, obj_subst)
+            | None ->
                 let err = make_error (TypeError "Unknown string method") pos
                   (Printf.sprintf "String type has no method '%s'" attr) in
                 report_error err;
@@ -499,7 +552,7 @@ let rec infer_expr env = function
                  | Some field_type ->
                      (field_type, obj_subst)
                  | None ->
-                     (match Env.StringMap.find_opt attr struct_def.struct_methods with
+                     (match find_method_type env struct_name attr struct_def with
                       | Some method_type ->
                           (method_type, obj_subst)
                       | None ->
@@ -541,6 +594,15 @@ let rec infer_expr env = function
                                  (Printf.sprintf "Field or method '%s' is ambiguous (found in embedded structs: %s)" attr struct_names) in
                                report_error err;
                                (TyUnknown, obj_subst)))))
+       | TyInterface (interface_name, _) ->
+           (match find_interface_method_type env interface_name attr with
+            | Some method_type -> (method_type, obj_subst)
+            | None ->
+                let err = make_error (TypeError "Unknown interface method") pos
+                  (Printf.sprintf "Interface '%s' has no method '%s'"
+                    interface_name attr) in
+                report_error err;
+                (TyUnknown, obj_subst))
        | _ ->
            let err = make_error (TypeError "Attributes not implemented") pos
              "Attribute access not yet implemented for this type" in
@@ -778,7 +840,8 @@ let rec infer_expr env = function
       let elem_type = fresh_type_var () in
       (try
          let list_subst = unify (apply_subst iter_subst iter_type) (TyList elem_type) in
-         let env' = add_binding var elem_type (apply_subst_to_env list_subst env) in
+         let env' = add_binding var (apply_subst list_subst elem_type)
+             (apply_subst_to_env list_subst env) in
          let (result_elem_type, elem_subst) = infer_expr env' elem in
          (TyList result_elem_type, compose_subst elem_subst (compose_subst list_subst iter_subst))
        with Failure msg ->
@@ -795,11 +858,26 @@ let rec infer_expr env = function
                 (match List.assoc_opt variant_name struct_def.struct_fields with
                  | Some field_type -> field_type, empty_subst
                  | None ->
-                     let err = make_error (TypeError "Unknown field") pos
-                       (Printf.sprintf "Struct '%s' has no field '%s'" struct_name variant_name) in
-                     report_error err;
-                     TyUnknown, empty_subst)
+                     (match find_method_type env struct_name variant_name struct_def with
+                      | Some (TyFunc ([], return_type)) -> return_type, empty_subst
+                      | Some method_type -> method_type, empty_subst
+                      | None ->
+                          let err = make_error (TypeError "Unknown field or method") pos
+                            (Printf.sprintf "Struct '%s' has no field or method '%s'"
+                              struct_name variant_name) in
+                          report_error err;
+                          TyUnknown, empty_subst))
             | None -> TyUnknown, empty_subst)
+       | Some TyStr ->
+           (match string_method_type variant_name with
+            | Some (TyFunc ([], return_type)) -> return_type, empty_subst
+            | Some method_type -> method_type, empty_subst
+            | None -> TyEnum (enum_name, []), empty_subst)
+       | Some (TyInterface (interface_name, _)) ->
+           (match find_interface_method_type env interface_name variant_name with
+            | Some (TyFunc ([], return_type)) -> return_type, empty_subst
+            | Some method_type -> method_type, empty_subst
+            | None -> TyEnum (enum_name, []), empty_subst)
        | _ ->
            (match enum_name, variant_name with
             | "Option", "None" -> TyOption (fresh_type_var ()), empty_subst
@@ -808,11 +886,77 @@ let rec infer_expr env = function
       let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
       let combined_subst = List.fold_left compose_subst empty_subst arg_substs in
       let resolved_arg_types = List.map (apply_subst combined_subst) arg_types in
-      (match enum_name, variant_name, resolved_arg_types with
-       | "Option", "Some", [value_type] -> TyOption value_type, combined_subst
-       | "Result", "Ok", [value_type] -> TyResult (value_type, fresh_type_var ()), combined_subst
-       | "Result", "Err", [value_type] -> TyResult (fresh_type_var (), value_type), combined_subst
-       | _ -> TyEnum (enum_name, []), combined_subst)
+      (match Env.find_binding enum_name env with
+       | Some (TyStruct (struct_name, _)) ->
+           (match Env.find_struct struct_name env with
+            | Some struct_def ->
+                (match find_method_type env struct_name variant_name struct_def with
+                 | Some (TyFunc (parameter_types, return_type)) ->
+                     (match parameter_types with
+                      | _ :: expected_arguments
+                        when List.length expected_arguments = List.length resolved_arg_types ->
+                          List.iter2 (fun expected actual ->
+                            try ignore (unify expected actual)
+                            with Failure msg ->
+                              let err = make_error (TypeError msg) _pos
+                                "Method argument type mismatch" in
+                              report_error err
+                          ) expected_arguments resolved_arg_types;
+                          return_type, combined_subst
+                      | _ ->
+                          let err = make_error (TypeError "Argument count mismatch") _pos
+                            (Printf.sprintf "Method '%s' argument count does not match"
+                              variant_name) in
+                          report_error err;
+                          TyUnknown, combined_subst)
+                 | _ -> TyUnknown, combined_subst)
+            | None -> TyUnknown, combined_subst)
+       | Some (TyInterface (interface_name, _)) ->
+           (match find_interface_method_type env interface_name variant_name with
+            | Some (TyFunc (expected_argument_types, return_type))
+              when List.length expected_argument_types = List.length resolved_arg_types ->
+                List.iter2 (fun expected actual ->
+                  try ignore (unify expected actual)
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) _pos
+                      "Interface method argument type mismatch" in
+                    report_error err
+                ) expected_argument_types resolved_arg_types;
+                return_type, combined_subst
+            | Some (TyFunc (expected_argument_types, _)) ->
+                let err = make_error (TypeError "Argument count mismatch") _pos
+                  (Printf.sprintf "Interface method '%s' expects %d arguments but got %d"
+                    variant_name (List.length expected_argument_types)
+                    (List.length resolved_arg_types)) in
+                report_error err;
+                TyUnknown, combined_subst
+            | _ -> TyUnknown, combined_subst)
+       | Some TyStr ->
+           (match string_method_type variant_name with
+            | Some (TyFunc (expected_argument_types, return_type))
+              when List.length expected_argument_types = List.length resolved_arg_types ->
+                List.iter2 (fun expected actual ->
+                  try ignore (unify expected actual)
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) _pos
+                      "String method argument type mismatch" in
+                    report_error err
+                ) expected_argument_types resolved_arg_types;
+                return_type, combined_subst
+            | Some (TyFunc (expected_argument_types, _)) ->
+                let err = make_error (TypeError "Argument count mismatch") _pos
+                  (Printf.sprintf "String method '%s' expects %d arguments but got %d"
+                    variant_name (List.length expected_argument_types)
+                    (List.length resolved_arg_types)) in
+                report_error err;
+                TyUnknown, combined_subst
+            | _ -> TyUnknown, combined_subst)
+       | _ ->
+           (match enum_name, variant_name, resolved_arg_types with
+            | "Option", "Some", [value_type] -> TyOption value_type, combined_subst
+            | "Result", "Ok", [value_type] -> TyResult (value_type, fresh_type_var ()), combined_subst
+            | "Result", "Err", [value_type] -> TyResult (fresh_type_var (), value_type), combined_subst
+            | _ -> TyEnum (enum_name, []), combined_subst))
 
   | EStructLiteral (struct_name, field_inits, pos) ->
       (match Env.find_struct struct_name env with
@@ -878,13 +1022,17 @@ let rec infer_expr env = function
                 (TyUnknown, obj_subst)
             | Some struct_def ->
                 (match List.assoc_opt field struct_def.struct_fields with
-                 | None ->
-                     let err = make_error (TypeError "Unknown field") pos
-                       (Printf.sprintf "Struct '%s' has no field '%s'" struct_name field) in
-                     report_error err;
-                     (TyUnknown, obj_subst)
                  | Some field_type ->
-                     (field_type, obj_subst)))
+                     (field_type, obj_subst)
+                 | None ->
+                     (match find_method_type env struct_name field struct_def with
+                      | Some method_type -> (method_type, obj_subst)
+                      | None ->
+                          let err = make_error (TypeError "Unknown field or method") pos
+                            (Printf.sprintf "Struct '%s' has no field or method '%s'"
+                              struct_name field) in
+                          report_error err;
+                          (TyUnknown, obj_subst))))
        | _ ->
            let err = make_error (TypeError "Not a struct") pos
              "Cannot access field of non-struct type" in

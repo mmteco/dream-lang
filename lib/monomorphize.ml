@@ -390,6 +390,11 @@ let rec rewrite_statement generic_instances generic_funcs stmt =
         List.map (rewrite_statement generic_instances generic_funcs) body,
         pos
       )
+  | SDef def_info ->
+      SDef {
+        def_info with
+        def_body = List.map (rewrite_statement generic_instances generic_funcs) def_info.def_body
+      }
   | _ -> stmt
 
 (* 主单态化函数 *)

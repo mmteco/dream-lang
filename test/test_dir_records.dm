@@ -1,6 +1,6 @@
 # dream-test: dir
 from bootstrap_io import text_length
-from dir_bootstrap import dir_lower_buffer, dir_split_lines, dir_validate_lines, dir_render_lines, dir_line_kind, dir_line_is_label, dir_line_has_prefix, dir_line_contains, dir_skip_spaces, dir_find_assignment, dir_instruction_kind, dir_instruction_type, dir_instruction_operand_count, dir_instruction_operand_mask, dir_operand_count_is_valid, dir_record_kind, dir_record_kind_is_valid, dir_append_code_range, dir_append_record, dir_build_records, dir_render_records, dir_render_native_record, dir_native_type, dir_native_operand, dir_native_symbol, dir_render_native_operand, dir_native_operand_payload_length, dir_native_record_payload_length, dir_native_operand_mask_is_valid, dir_native_operand_mask_is_valid_range, dir_append_native_return_if_supported, dir_append_native_call_if_simple, dir_append_native_call_if_supported, dir_append_native_binary_if_supported, dir_append_native_compare_if_supported, dir_append_native_zext_if_supported, dir_append_native_unreachable_if_supported, dir_append_native_operation, dir_append_native_compare, dir_append_native_zext, dir_append_native_unreachable, dir_append_native_ret, dir_append_native_br, dir_append_native_record, dir_append_native_operand, dir_append_native_symbol_operand, dir_append_native_symbol_operand_range, dir_append_text, dir_append_integer, dir_parse_temporary_index, dir_parse_tail_integer, dir_parse_native_operand, dir_parse_native_type, dir_is_native_binary_instruction, dir_is_native_compare_instruction, dir_is_native_unary_instruction, dir_native_compare_predicate
+from dir_bootstrap import dir_lower_records_buffer, dir_split_lines, dir_validate_lines, dir_line_kind, dir_line_is_label, dir_line_has_prefix, dir_line_contains, dir_skip_spaces, dir_find_assignment, dir_instruction_kind, dir_instruction_type, dir_instruction_operand_count, dir_instruction_operand_mask, dir_operand_count_is_valid, dir_record_kind, dir_record_kind_is_valid, dir_append_code_range, dir_append_record, dir_build_records, dir_build_source_records, dir_render_records, dir_dump_records, dir_render_native_record, dir_native_type, dir_native_operand, dir_native_symbol, dir_render_native_operand, dir_native_operand_payload_length, dir_native_record_payload_length, dir_native_operand_mask_is_valid, dir_native_operand_mask_is_valid_range, dir_append_native_return_if_supported, dir_append_native_call_if_simple, dir_append_native_call_if_supported, dir_append_native_binary_if_supported, dir_append_native_compare_if_supported, dir_append_native_zext_if_supported, dir_append_native_unreachable_if_supported, dir_append_native_operation, dir_append_native_compare, dir_append_native_zext, dir_append_native_unreachable, dir_append_native_ret, dir_append_native_br, dir_append_native_record, dir_append_native_operand, dir_append_native_symbol_operand, dir_append_native_symbol_operand_range, dir_append_text, dir_append_integer, dir_parse_temporary_index, dir_parse_tail_integer, dir_parse_native_operand, dir_parse_native_type, dir_is_native_binary_instruction, dir_is_native_compare_instruction, dir_is_native_unary_instruction, dir_native_compare_predicate
 
 def append_source_text(output: list[int], source: str):
     let index = 0
@@ -27,6 +27,8 @@ def main():
     append(valid_records, 0)
     let valid_output = []
     print(dir_render_records(valid_records, valid_output))
+    let valid_dump = []
+    print(dir_dump_records(valid_records, valid_dump))
 
     let invalid_records = []
     append(invalid_records, DIR_TAG_INSTRUCTION_BASE + DIR_OPCODE_RET)
@@ -110,6 +112,20 @@ def main():
     let native_compare_output = []
     print(dir_render_records(native_compare_records, native_compare_output))
 
+    let native_float_compare_source = []
+    append_source_text(native_float_compare_source, "%t4 = fcmp olt double %t1, %t2")
+    let native_float_compare_records = []
+    print(dir_append_native_compare_if_supported(native_float_compare_records, native_float_compare_source, 0, len(native_float_compare_source), DIR_TYPE_BOOL))
+    let native_float_compare_output = []
+    print(dir_render_records(native_float_compare_records, native_float_compare_output))
+
+    let native_float_add_source = []
+    append_source_text(native_float_add_source, "%t5 = fadd double %t1, %t2")
+    let native_float_add_records = []
+    print(dir_append_native_binary_if_supported(native_float_add_records, native_float_add_source, 0, len(native_float_add_source), DIR_OPCODE_ADD, DIR_TYPE_F64))
+    let native_float_add_output = []
+    print(dir_render_records(native_float_add_records, native_float_add_output))
+
     let native_zext_source = []
     append_source_text(native_zext_source, "%t4 = zext i1 %t3 to i32")
     let native_zext_records = []
@@ -141,4 +157,4 @@ def main():
     let native_unreachable_module_source = []
     append_source_text(native_unreachable_module_source, "define void @main() {\nentry:\n  unreachable\n}\n")
     let native_unreachable_module_output = []
-    print(dir_lower_buffer(native_unreachable_module_source, native_unreachable_module_output))
+    print(dir_lower_records_buffer(native_unreachable_module_source, native_unreachable_module_output))
