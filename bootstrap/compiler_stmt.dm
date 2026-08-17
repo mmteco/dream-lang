@@ -13,7 +13,7 @@ def parse_assignment(source: str, kinds: list[int], starts: list[int], ends: lis
             assignment_operator_index = list_index_end + 1
     let assignment_expression_index = assignment_operator_index + 1
     let assignment_variable_index = find_variable(source, assignment_name_start, assignment_name_end, variable_starts, variable_ends)
-    if assignment_variable_index >= 0 and is_dictionary_value_type(variable_types[assignment_variable_index]) and is_list_element_assignment:
+    if variable_is_dictionary(variable_types, assignment_variable_index) and is_list_element_assignment:
         let dictionary_temporary = temporary_counter + 1
         append_text(output, "%t")
         append_integer(output, dictionary_temporary)

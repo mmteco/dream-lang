@@ -359,6 +359,21 @@ def is_known_list_variable(source: str, name_start: int, name_end: int) -> bool:
         return true
     return false
 
+def variable_type_at(variable_types: list[int], variable_index: int) -> int:
+    if variable_index < 0 or variable_index >= len(variable_types):
+        return VALUE_TYPE_INT
+    return variable_types[variable_index]
+
+def variable_is_function_value(variable_types: list[int], variable_index: int) -> bool:
+    if variable_index < 0 or variable_index >= len(variable_types):
+        return false
+    return is_function_value_type(variable_types[variable_index])
+
+def variable_is_dictionary(variable_types: list[int], variable_index: int) -> bool:
+    if variable_index < 0 or variable_index >= len(variable_types):
+        return false
+    return is_dictionary_value_type(variable_types[variable_index])
+
 def parse_slice_endpoint(source: str, kinds: list[int], starts: list[int], ends: list[int], index: int, output: list[int], variable_starts: list[int], variable_ends: list[int], variable_types: list[int], temporary_counter: int) -> (int, int, int, int):
     if token_kind(kinds, index) == TOKEN_INTEGER:
         let value = parse_integer(source, token_start(starts, index), token_end(ends, index))
@@ -1018,11 +1033,14 @@ def parse_argument_atom(source: str, kinds: list[int], starts: list[int], ends: 
         if variable_types[variable_index] == VALUE_TYPE_LIST:
             is_list_variable = true
     if is_list_variable:
+        let list_variable_type = VALUE_TYPE_LIST
+        if variable_index >= 0:
+            list_variable_type = variable_types[variable_index]
         let list_variable_temporary = temporary_counter + 1
         append_text(output, "%t")
         append_integer(output, list_variable_temporary)
         append_text(output, " = load %dynarray_i32*, %dynarray_i32** ")
-        append_variable_reference(output, source[token_start(starts, index):token_end(ends, index)], variable_types[variable_index])
+        append_variable_reference(output, source[token_start(starts, index):token_end(ends, index)], list_variable_type)
         append_text(output, "\n")
         if token_kind(kinds, index + 1) == TOKEN_OPEN_BRACKET:
             let (index_next_index, index_is_temporary, index_value, index_next_counter) = parse_index_atom(source, kinds, starts, ends, index + 2, output, variable_starts, variable_ends, variable_types, list_variable_temporary)
@@ -1036,7 +1054,7 @@ def parse_argument_atom(source: str, kinds: list[int], starts: list[int], ends: 
             append_text(output, ")\n")
             return (index_next_index + 1, 1, element_temporary, element_temporary)
         return (index + 1, VALUE_TYPE_LIST, list_variable_temporary, list_variable_temporary)
-    if variable_index >= 0 and is_dictionary_value_type(variable_types[variable_index]):
+    if variable_is_dictionary(variable_types, variable_index):
         let dictionary_temporary = temporary_counter + 1
         append_text(output, "%t")
         append_integer(output, dictionary_temporary)
@@ -1068,7 +1086,7 @@ def parse_argument_atom(source: str, kinds: list[int], starts: list[int], ends: 
                 return (key_next_index + 1, VALUE_TYPE_STRING, dictionary_result_temporary, dictionary_result_temporary)
             return (key_next_index + 1, VALUE_TYPE_INT, dictionary_result_temporary, dictionary_result_temporary)
         return (index + 1, variable_types[variable_index], dictionary_temporary, dictionary_temporary)
-    if variable_index >= 0 and variable_types[variable_index] == VALUE_TYPE_BOOL:
+    if variable_type_at(variable_types, variable_index) == VALUE_TYPE_BOOL:
         let bool_load_temporary = temporary_counter + 1
         append_text(output, "%t")
         append_integer(output, bool_load_temporary)
@@ -1592,7 +1610,7 @@ def parse_primary(source: str, kinds: list[int], starts: list[int], ends: list[i
             let call_name_end = name_end
             let is_lambda_call = false
             let lambda_token_index = 0
-            if qualified_name_variable_index >= 0 and is_function_value_type(variable_types[qualified_name_variable_index]):
+            if variable_is_function_value(variable_types, qualified_name_variable_index):
                 if is_lambda_value_type(variable_types[qualified_name_variable_index]):
                     is_lambda_call = true
                     lambda_token_index = lambda_value_index(variable_types[qualified_name_variable_index])
@@ -1726,7 +1744,7 @@ def parse_primary(source: str, kinds: list[int], starts: list[int], ends: list[i
             if function_index >= 0:
                 let function_value_type = VALUE_TYPE_FUNCTION_BASE + function_index
                 return (index + 1, function_value_type, function_index, temporary_counter)
-        if variable_index >= 0 and is_function_value_type(variable_types[variable_index]):
+        if variable_is_function_value(variable_types, variable_index):
             return (index + 1, variable_types[variable_index], function_value_index(variable_types[variable_index]), temporary_counter)
         if variable_index >= 0:
             if variable_types[variable_index] == VALUE_TYPE_STRING:
@@ -1761,7 +1779,7 @@ def parse_primary(source: str, kinds: list[int], starts: list[int], ends: list[i
                     append_text(output, ")\n")
                     return (slice_end_index + 1, 2, slice_temporary, slice_temporary)
                 return (index + 1, VALUE_TYPE_STRING, string_variable_temporary, string_variable_temporary)
-        if variable_index >= 0 and is_dictionary_value_type(variable_types[variable_index]):
+        if variable_is_dictionary(variable_types, variable_index):
             let dictionary_temporary = temporary_counter + 1
             append_text(output, "%t")
             append_integer(output, dictionary_temporary)
@@ -1793,7 +1811,7 @@ def parse_primary(source: str, kinds: list[int], starts: list[int], ends: list[i
                     return (key_next_index + 1, VALUE_TYPE_STRING, dictionary_result_temporary, dictionary_result_temporary)
                 return (key_next_index + 1, VALUE_TYPE_INT, dictionary_result_temporary, dictionary_result_temporary)
             return (index + 1, variable_types[variable_index], dictionary_temporary, dictionary_temporary)
-        if variable_index >= 0 and variable_types[variable_index] == VALUE_TYPE_FLOAT:
+        if variable_type_at(variable_types, variable_index) == VALUE_TYPE_FLOAT:
             let loaded_primary_float_temporary = temporary_counter + 1
             append_text(output, "%t")
             append_integer(output, loaded_primary_float_temporary)
@@ -1830,11 +1848,14 @@ def parse_primary(source: str, kinds: list[int], starts: list[int], ends: list[i
         if is_known_list_variable(source, name_start, name_end):
             is_list_variable = true
         if is_list_variable:
+            let list_variable_type = VALUE_TYPE_LIST
+            if variable_index >= 0:
+                list_variable_type = variable_types[variable_index]
             let list_variable_temporary = temporary_counter + 1
             append_text(output, "%t")
             append_integer(output, list_variable_temporary)
             append_text(output, " = load %dynarray_i32*, %dynarray_i32** ")
-            append_variable_reference(output, source[name_start:name_end], variable_types[variable_index])
+            append_variable_reference(output, source[name_start:name_end], list_variable_type)
             append_text(output, "\n")
             if token_kind(kinds, index + 1) == TOKEN_OPEN_BRACKET:
                 let (index_next_index, index_is_temporary, index_value, index_next_counter) = parse_index_atom(source, kinds, starts, ends, index + 2, output, variable_starts, variable_ends, variable_types, list_variable_temporary)
@@ -1848,7 +1869,7 @@ def parse_primary(source: str, kinds: list[int], starts: list[int], ends: list[i
                 append_text(output, ")\n")
                 return (index_next_index + 1, 1, element_temporary, element_temporary)
             return (index + 1, 3, list_variable_temporary, list_variable_temporary)
-        if variable_index >= 0 and variable_types[variable_index] == VALUE_TYPE_BOOL:
+        if variable_type_at(variable_types, variable_index) == VALUE_TYPE_BOOL:
             let bool_load_temporary = temporary_counter + 1
             append_text(output, "%t")
             append_integer(output, bool_load_temporary)
@@ -1860,7 +1881,10 @@ def parse_primary(source: str, kinds: list[int], starts: list[int], ends: list[i
         append_text(output, "%t")
         append_integer(output, next_temporary)
         append_text(output, " = load i32, i32* ")
-        append_variable_reference(output, source[name_start:name_end], variable_types[variable_index])
+        let result_variable_type = VALUE_TYPE_INT
+        if variable_index >= 0:
+            result_variable_type = variable_types[variable_index]
+        append_variable_reference(output, source[name_start:name_end], result_variable_type)
         append_text(output, "\n")
         return (index + 1, 1, next_temporary, next_temporary)
     return (index + 1, 0, 0, temporary_counter)
