@@ -98,15 +98,15 @@ static void test_dict_and_tuple(void) {
     assert(dict_get_int_int(dict, 42, &found) == 84 && found);
     assert(dict_get_int_int(dict, 1000, &found) == 0 && !found);
 
-    dynarray_ptr* items = dict_items_i32(dict);
+    dynarray_ptr* items = dict_items(dict);
     assert(items != NULL && len_dynarray_ptr(items) == 100);
     for (int index = 0; index < len_dynarray_ptr(items); index++) {
-        tuple2_i32* pair = (tuple2_i32*)get_dynarray_ptr(items, index);
+        tuple2_ptr* pair = (tuple2_ptr*)get_dynarray_ptr(items, index);
         assert(pair != NULL);
         if (index == 0) {
-            assert(tuple2_i32_get(pair, 0) >= 0);
+            assert((int)tuple2_ptr_get(pair, 0) >= 0);
         }
-        tuple2_i32_free(pair);
+        tuple2_ptr_free(pair);
     }
     free_dynarray_ptr(items);
 

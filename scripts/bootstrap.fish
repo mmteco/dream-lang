@@ -118,7 +118,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_bootstrap_lambda.dm tmp/dream_bootstrap_lambda 42
 end
 
-$compiler build --backend=dir "$compiler_source"
+$compiler build "$compiler_source"
 or exit 1
 compile_llvm "$bootstrap_dir/compiler" "$compiler_llvm"
 or exit 1

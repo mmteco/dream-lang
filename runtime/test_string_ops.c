@@ -6,7 +6,7 @@
 #include "str.h"
 #include "utf8.h"
 
-// 声明 runtime.c 中的字符串函数
+// 声明 str.c 中的字符串函数
 int string_length(const char* str);
 uint32_t string_char_at(const char* str, int index);
 char* string_concat(const char* s1, const char* s2);

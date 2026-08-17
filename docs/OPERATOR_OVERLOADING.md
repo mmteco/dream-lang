@@ -235,7 +235,7 @@ impl Mul[Matrix] for Matrix:
 3. **类型推导**
    - 返回类型为接口方法的返回类型
 
-#### 步骤 2：代码生成阶段（lib/backend/legacy/cg_expr.ml）
+#### 步骤 2：DIR lowering 阶段（lib/ir/dir/dir_lower.ml）
 
 1. **运算符脱糖**
    - `a + b` → `a.add(b)`
@@ -353,7 +353,7 @@ let lookup_impl env target_type interface_name param_type =
 
 ### 4.5 代码生成器修改点
 
-#### 文件：lib/backend/legacy/cg_expr.ml
+#### 文件：lib/ir/dir/dir_lower.ml
 
 ```ocaml
 | EBinOp (left, op, right, pos) ->
@@ -476,7 +476,7 @@ def sum[T: Add[T]](items: [T], zero: T) -> T:
 
 - [ ] 在 tc_expr.ml 中实现运算符重载检查
 - [ ] 在 env.ml 中实现 impl 查找
-- [ ] 在 cg_expr.ml 中实现运算符脱糖
+- [ ] 在 dir_lower.ml 中实现运算符脱糖
 - [ ] 测试基本的自定义类型运算符
 
 ### 阶段 3：标准库支持

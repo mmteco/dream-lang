@@ -1,4 +1,4 @@
-# dream-test: legacy
+# dream-test: dir
 const CONST_BASE: int = 42
 const CONST_ANSWER = CONST_BASE
 

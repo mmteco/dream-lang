@@ -742,7 +742,7 @@ let v4 = v1 + "hello"   # 调用 str 分支
 **实现状态**：
 - ✅ 运算符到接口的映射（env.ml）
 - ✅ 类型检查器支持（tc_expr.ml）
-- ✅ 代码生成器（cg_expr.ml, cg_toplevel.ml）
+- ✅ DIR lowering 和 LLVM renderer（dir_lower.ml, dir_lower_llvm.ml）
 - ✅ Union 运行时支持结构体类型（union.c）
 - ✅ 自动装箱/拆箱（box_to_union, gen_pattern_bindings）
 

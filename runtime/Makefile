@@ -39,7 +39,6 @@ clean:
 memory.o: memory.c memory.h union.h utf8.h
 dynarray.o: dynarray.c dynarray.h memory.h
 utf8.o: utf8.c utf8.h
-runtime.o: runtime.c
 union.o: union.c union.h memory.h
 test_memory.o: test_memory.c memory.h dynarray.h
 test_union.o: test_union.c union.h

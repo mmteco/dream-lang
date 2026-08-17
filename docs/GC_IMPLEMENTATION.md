@@ -266,7 +266,7 @@ Dream GC 管理系统成功实现了一个**生产级别**的内存管理解决�
 ## 下一步
 
 ### 编译器集成
-1. 在 `llvmgen.ml` 中添加逃逸分析
+1. 在 DIR lowering 阶段添加逃逸分析
 2. 生成 `gc_alloc_local` 或 `gc_alloc_shared` 调用
 3. 实现 async/await 时使用对象提升机制
 

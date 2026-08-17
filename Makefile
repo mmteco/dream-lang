@@ -11,7 +11,7 @@ help:
 	@echo ""
 	@echo "  make build       - 构建编译器"
 	@echo "  make clean       - 清理构建产物"
-	@echo "  make test        - 运行 smoke、legacy 和 DIR 回归测试"
+	@echo "  make test        - 运行 smoke 和 DIR 回归测试"
 	@echo "  make examples    - 编译标记为 smoke 的示例程序"
 	@echo "  make runtime     - 构建运行时库"
 	@echo "  make runtime-check - 运行 runtime 常规测试和 UBSan 测试"
@@ -85,7 +85,7 @@ compile: build
 		echo "错误: 请指定文件路径，例如: make compile FILE=examples/hello.dm"; \
 		exit 1; \
 	fi
-	$(FISH) scripts/dream.fish build "$(FILE)" "$(BACKEND)"
+	$(FISH) scripts/dream.fish build "$(FILE)"
 
 # 编译并运行自定义文件 (使用方法: make run FILE=path/to/file.dm)
 run: build
@@ -93,4 +93,4 @@ run: build
 		echo "错误: 请指定文件路径，例如: make run FILE=examples/hello.dm"; \
 		exit 1; \
 	fi
-	$(FISH) scripts/dream.fish run "$(FILE)" "$(BACKEND)"
+	$(FISH) scripts/dream.fish run "$(FILE)"

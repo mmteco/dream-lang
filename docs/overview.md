@@ -124,16 +124,14 @@ identity(42)       # 生成 identity_int 版本
 identity("hello")  # 生成 identity_str 版本
 ```
 
-#### 3.7 LLVM IR 代码生成
+#### 3.7 DreamIR 到 LLVM IR
 ```
-lib/backend/legacy/ → Llvmgen 模块
-- llvmgen.ml      # 主入口和程序级代码生成
-- cg_expr.ml      # 表达式代码生成
-- cg_stmt.ml      # 语句代码生成
-- cg_toplevel.ml  # 顶层定义代码生成
-- cg_types.ml     # 类型映射
-- cg_utils.ml     # 工具函数
-- cg_shared.ml    # 共享上下文和数据结构
+lib/ir/dir/ → DreamIR 模块
+- dir.ml             # 类型化 CFG/SSA 数据结构
+- dir_lower.ml      # 类型检查后的 AST 到 DIR
+- dir_verify.ml     # DIR 验证
+- dir_printer.ml    # .dir 调试输出
+- dir_lower_llvm.ml # DIR 到 LLVM
 ```
 
 **类型映射**：
@@ -152,16 +150,11 @@ lib/backend/legacy/ → Llvmgen 模块
 
 #### 3.8 DreamIR 后端
 ```
-lib/ir/dir/ → Dir 模块
-lib/compiler/compiler_backend.ml → legacy/DIR 后端选择
-- dir.ml             # 类型化 CFG/SSA 数据结构
-- dir_lower.ml      # 类型检查后的 AST 到 DIR
-- dir_verify.ml     # DIR 验证
-- dir_printer.ml    # .dir 调试输出
-- dir_lower_llvm.ml # DIR 到 LLVM
+lib/compiler/dir_compiler.ml → DreamIR 编译入口
+lib/ir/dir/ → DreamIR 模块
 ```
 
-通过 `--backend=dir` 选择 DreamIR；legacy 后端仍是默认后端，用于保持现有自举基线。
+DreamIR 是正式编译器唯一的后端。编译器先生成结构化 DIR，经验证后再渲染为 LLVM。
 
 **输出**：
 - 生成 `.ll` 文件（LLVM IR 文本格式）
@@ -174,7 +167,7 @@ lib/compiler/compiler_backend.ml → legacy/DIR 后端选择
 ```bash
 clang -o output_exe \
     output.ll \
-    runtime/runtime.c \
+    runtime/io.c \
     runtime/memory.c \
     runtime/dynarray.c \
     runtime/utf8.c \
@@ -191,7 +184,7 @@ clang -o output_exe \
 ```
 
 **Runtime 模块**：
-- `runtime.c` - 运行时初始化和公共函数
+- `io.c` - 标准输出函数
 - `memory.c` - 内存管理（引用计数 + 分代 GC）
 - `dynarray.c` - 动态数组实现
 - `utf8.c` / `str.c` - UTF-8 字符串处理
@@ -252,14 +245,12 @@ dream/
 │   │   └── tc_utils.ml
 │   │
 │   ├── ir/             # 中间表示
-│   │   └── dir/        # DreamIR
-│   ├── compiler/       # 编译管线和后端选择
-│   │   └── compiler_backend.ml
-│   └── backend/        # 后端实现
-│       └── legacy/     # 旧版直接 LLVM 生成
+│   │   └── dir/        # DreamIR 和 LLVM lowering
+│   └── compiler/       # 编译管线
+│       └── dir_compiler.ml
 │
 ├── runtime/           # C 运行时库
-│   ├── runtime.c      # 运行时初始化
+│   ├── io.c            # 标准输出
 │   ├── memory.c       # GC 内存管理
 │   ├── dynarray.c     # 动态数组
 │   ├── str.c          # 字符串操作
@@ -323,8 +314,8 @@ dream/
          │
          ▼
 ┌─────────────────┐
-│  Legacy LLVM    │  lib/backend/legacy/
-│  代码生成       │  .ll 文件
+│  DreamIR + LLVM │  lib/ir/dir/
+│  lowering       │  .ll 文件
 └────────┬────────┘
          │
          ▼

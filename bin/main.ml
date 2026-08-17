@@ -1,6 +1,6 @@
 open Dream_lib
 
-open Compiler_backend
+open Dir_compiler
 
 let read_file filename =
   let ic = open_in filename in
@@ -14,11 +14,11 @@ let write_file filename content =
   output_string oc content;
   close_out oc
 
-let generate_llvm backend program =
-  let artifact = Compiler_backend.generate backend program in
+let generate_llvm program =
+  let artifact = Dir_compiler.generate program in
   (artifact.llvm_ir, artifact.dir_text)
 
-let compile_to_llvm ?(silent=false) ?(backend=Dir) input_file =
+let compile_to_llvm ?(silent=false) input_file =
   (* 重置错误计数器 *)
   Error.reset_counters ();
   Typeck.clear_generic_instances ();
@@ -104,7 +104,7 @@ let compile_to_llvm ?(silent=false) ?(backend=Dir) input_file =
   (* 执行单态化 *)
   let mono_ast = Monomorphize.monomorphize transformed_ast generic_instances in
 
-  let llvm_ir, dir_text = generate_llvm backend mono_ast in
+  let llvm_ir, dir_text = generate_llvm mono_ast in
 
   let output_ll = Filename.remove_extension input_file ^ ".ll" in
   write_file output_ll llvm_ir;
@@ -117,7 +117,6 @@ let compile_to_llvm ?(silent=false) ?(backend=Dir) input_file =
 let compile_to_exe output_ll =
   let output_exe = Filename.remove_extension output_ll in
   let runtime_files = [
-    "runtime/runtime.c";
     "runtime/io.c";
     "runtime/memory.c";
     "runtime/dynarray.c";
@@ -145,9 +144,9 @@ let compile_to_exe output_ll =
     exit 1
   end
 
-let build_command ?(backend=Dir) input_file =
+let build_command input_file =
   try
-    let output_ll = compile_to_llvm ~backend input_file in
+    let output_ll = compile_to_llvm input_file in
     let output_exe = compile_to_exe output_ll in
     Printf.printf "Build complete: %s\n" output_exe
   with
@@ -161,7 +160,7 @@ let build_command ?(backend=Dir) input_file =
       Printf.eprintf "Error: %s\n" msg;
       exit 1
 
-let run_command ?(backend=Dir) input_file =
+let run_command input_file =
   try
     (* 获取用户主目录 *)
     let home = try Sys.getenv "HOME" with Not_found -> "." in
@@ -182,7 +181,7 @@ let run_command ?(backend=Dir) input_file =
     (try Unix.mkdir bin_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
 
     (* 生成编译 - 先编译到临时位置 *)
-    let temp_ll = compile_to_llvm ~silent:true ~backend input_file in
+    let temp_ll = compile_to_llvm ~silent:true input_file in
     let temp_exe = compile_to_exe temp_ll in
 
     (* 移动文件到 .dream 目录 *)
@@ -267,8 +266,8 @@ let lsp_command input_file =
       exit 1
 
 let print_usage () =
-  Printf.printf "Usage: dream <command> [--backend=legacy|dir] <input.dm>\n";
-  Printf.printf "Default backend: dir (use --backend=legacy for the legacy backend)\n";
+  Printf.printf "Usage: dream <command> <input.dm>\n";
+  Printf.printf "Pipeline: DreamIR -> LLVM\n";
   Printf.printf "\n";
   Printf.printf "Commands:\n";
   Printf.printf "  build    Compile the source file to executable\n";
@@ -277,7 +276,7 @@ let print_usage () =
   Printf.printf "\n";
   Printf.printf "Examples:\n";
   Printf.printf "  dream build examples/test.dm\n";
-  Printf.printf "  dream build --backend=dir examples/factorial.dm\n";
+  Printf.printf "  dream build examples/factorial.dm\n";
   Printf.printf "  dream run examples/test.dm\n";
   Printf.printf "  dream lsp examples/test.dm\n"
 
@@ -289,54 +288,31 @@ let () =
 
   let command = Sys.argv.(1) in
 
-  let parse_backend_and_input first_argument =
+  let parse_input_file first_argument =
     if Array.length Sys.argv <= first_argument then begin
       Printf.eprintf "Error: Missing input file\n\n";
       print_usage ();
       exit 1
     end;
-    let backend, input_index =
-      let argument = Sys.argv.(first_argument) in
-      let prefix = "--backend=" in
-      if String.length argument >= String.length prefix &&
-         String.sub argument 0 (String.length prefix) = prefix then
-        let backend_name = String.sub argument (String.length prefix)
-          (String.length argument - String.length prefix) in
-        let backend = match backend_name with
-          | "legacy" -> Legacy
-          | "dir" -> Dir
-          | _ ->
-              Printf.eprintf "Error: Unknown backend '%s'\n" backend_name;
-              exit 1
-        in
-        (backend, first_argument + 1)
-      else
-        (Dir, first_argument)
-    in
-    if Array.length Sys.argv <= input_index then begin
-      Printf.eprintf "Error: Missing input file\n\n";
-      print_usage ();
-      exit 1
-    end;
-    (backend, Sys.argv.(input_index))
+    Sys.argv.(first_argument)
   in
 
   match command with
   | "build" ->
-      let backend, input_file = parse_backend_and_input 2 in
+      let input_file = parse_input_file 2 in
       if not (Filename.check_suffix input_file ".dm") then begin
         Printf.eprintf "Error: Input file must have .dm extension\n";
         exit 1
       end;
-      build_command ~backend input_file
+      build_command input_file
 
   | "run" ->
-      let backend, input_file = parse_backend_and_input 2 in
+      let input_file = parse_input_file 2 in
       if not (Filename.check_suffix input_file ".dm") then begin
         Printf.eprintf "Error: Input file must have .dm extension\n";
         exit 1
       end;
-      run_command ~backend input_file
+      run_command input_file
 
   | "lsp" ->
       if Array.length Sys.argv < 3 then begin

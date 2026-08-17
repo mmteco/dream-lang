@@ -20,7 +20,7 @@
 - [x] DreamIR 的结构化 `Switch` 已支持 `int`、`float`、`bool`、`str`；整数使用 LLVM 原生 `switch`，其余标量渲染为比较链，并由 verifier 检查 case 类型一致性。
 - [x] Stage 2 已支持整数 `match`、通配符和整数载荷 enum 的基础表达式分支；`test_bootstrap_match.dm` 回归输出 `100`。
 - [x] Stage 2 已复用 `[tag, payload]` 表示支持用户 enum 和 `Some/None`、`Ok/Err` 的基础 `match`；`test_bootstrap_match_enum.dm` 与 `test_bootstrap_match_builtin.dm` 已纳入自举回归。
-- [ ] 完整语言编译器仍未完成自举；bootstrap 已迁移基础 float 字面量、参数、返回值和 switch，但浮点算术、函数值、lambda、bytes 及完整类型推导仍未完成，`language_tour.dm` 等 DIR 高级语法仍需宿主 `dream --backend=dir`。
+- [ ] 完整语言编译器仍未完成自举；bootstrap 已迁移基础 float 字面量、参数、返回值、switch、命名函数值和无捕获 lambda，但 bytes、捕获变量及完整类型推导仍未完成，`language_tour.dm` 等高级语法仍需宿主 `dream`。
 
 ### 使用 bootstrapped 编译器
 

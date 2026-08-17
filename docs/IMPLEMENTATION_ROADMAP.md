@@ -56,22 +56,21 @@ AST/typed AST（逐步明确 HIR 边界）
 | 语法分析 | `lib/parser.mly`、`lib/ast.ml` |
 | 类型检查 | `lib/typeck/`、`lib/types.ml` |
 | 泛型单态化 | `lib/monomorphize.ml` |
-| legacy LLVM 生成 | `lib/backend/legacy/` |
+| DIR lowering 与 LLVM 渲染 | `lib/ir/dir/` |
 | 编译入口 | `bin/main.ml` |
 | 运行时 | `runtime/` |
 | 自举切片 | `bootstrap/compiler.dm`、`bootstrap/compiler.ll` |
 
 仓库已经有一个可工作的直接 LLVM 自举切片：Stage 0 可以生成 Stage 1 和 Stage 2 的 LLVM 文件，Stage 1 的样例可以编译和运行。但 Stage 2 自运行后生成的 LLVM 仍需要单独经过 LLVM 验证；“Stage2 进程正常退出”不能等同于“Stage3 已经完成”。
 
-当前新增的 DIR 文件已经形成可选的端到端后端，并已有单元和示例回归测试：
+当前 DIR 文件已经形成唯一的端到端后端，并已有单元和示例回归测试：
 
 ```text
 lib/ir/dir/
-lib/compiler/compiler_backend.ml
+lib/compiler/dir_compiler.ml
 ```
 
-它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串/bytes/tuple lowering 和 LLVM lowering；通过
-`dream build file.dm` 默认使用 DIR 后端并生成 `.dir`、`.ll`，也可以通过 `--backend=legacy` 显式选择旧后端。DIR 当前已覆盖整数、浮点数、布尔值、字符串、bytes、`list<i32>`、有限字段结构体、单载荷 enum（int/float/bool/str）、i32 tuple、字典（int/str 键值）、列表/字典索引与赋值、列表索引/切片/拼接、bytes 索引/切片、`append`、列表推导式、`if/elif`、while、for、条件/三元表达式、标量/列表/结构体/enum match、match guard、函数调用、`Result` 的同类型 `?` 传播和导入的标准库包装。多载荷 enum、闭包/函数值、动态对象和泛型容器仍需后续 DIR 表示设计，不能假装已经支持。
+它们提供类型化 CFG/SSA 的数据结构、验证器、文本打印器、列表/字符串/bytes/tuple lowering 和 LLVM lowering；`dream build file.dm` 使用 DIR 后端并生成 `.dir`、`.ll`。DIR 当前已覆盖整数、浮点数、布尔值、字符串、bytes、`list<i32>`、有限字段结构体、单载荷 enum（int/float/bool/str）、i32 tuple、字典（int/str 键值）、列表/字典索引与赋值、列表索引/切片/拼接、bytes 索引/切片、`append`、列表推导式、`if/elif`、while、for、条件/三元表达式、标量/列表/结构体/enum match、match guard、函数调用、`Result` 的同类型 `?` 传播和导入的标准库包装。多载荷 enum、闭包/函数值、动态对象和泛型容器仍需后续 DIR 表示设计，不能假装已经支持。
 
 当前自举 Makefile 已增加 LLVM 预验证：Stage 0 生成 `compiler.ll`、`stage1.ll`、`stage2.ll` 后，必须先通过 `clang -c -o /dev/null -x ir`，失败日志暂存到 `tmp/`。这只能证明 LLVM 文件合法，不能证明 Stage2→Stage3 已闭环。
 
@@ -245,7 +244,7 @@ call i8* @string_substring(i8* ..., i32 ..., i32 ...)
 call i32 @get_dynarray_i32(%dynarray_i32* ..., i32 ...)
 ```
 
-所有 runtime 函数签名必须只有一个来源，不能在 `cg_expr.ml`、DIR lowering 和 bootstrap 编译器中分别维护字符串常量。
+所有 runtime 函数签名必须只有一个来源，不能在 `dir_lower.ml`、LLVM renderer 和 bootstrap 编译器中分别维护字符串常量。
 
 ## 四、必须先完成的工程基础
 
@@ -309,15 +308,13 @@ DIR 和 LLVM 生成都必须满足：
 
 ## 五、正式迁移顺序
 
-### 阶段 0：保持旧后端可用
+### 阶段 0：固定 DIR 正式后端
 
-保留当前：
+正式编译器统一使用：
 
-```ocaml
-Llvmgen.gen_program mono_ast
+```text
+mono_ast → Dir_lower → Dir_verify → Dir_lower_llvm
 ```
-
-旧后端作为回退路径和行为基准。DIR 已成为默认 `build` 后端；旧后端通过 `--backend=legacy` 显式选择。
 
 退出条件：
 
@@ -375,18 +372,17 @@ builder 负责 value ID 和 block 名，lowering 只读取已经完成的 DIR。
 
 ### 阶段 4：接入正式编译入口
 
-推荐增加明确的后端选择：
+正式编译入口保持单一 DIR 路径：
 
 ```text
-dream build file.dm              # 默认 DIR backend
-dream build --backend=legacy file.dm
+dream build file.dm              # DIR 编译管线
 dream emit-dir file.dm
 dream emit-llvm file.dm
 ```
 
-迁移初期默认仍可以使用旧后端，但 CI 必须同时跑两个后端并比较运行结果。
+`.dir` 用于调试和验证，`.ll` 用于链接生成可执行文件。
 
-### 阶段 5：自举 DIR backend
+### 阶段 5：自举 DIR 编译管线
 
 自举编译器必须实现：
 
@@ -408,9 +404,9 @@ bootstrap/compiler_main.dm
 
 先用 OCaml 编译器把这些文件编译成 Stage 1，再由 Stage 1 编译自身生成 Stage 2。只有当 Stage 2 能生成合法的下一轮 DIR 和 LLVM，才算完成真正自举。
 
-迁移初期先完成了直接 LLVM 后端的 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点，再逐步迁移 `bootstrap/compiler.dm`。这是因为 DIR 迁移同时会改变编译器内部表示、控制流 lowering 和自举产物；先固定行为基线，才能把迁移失败准确归因到 DIR，而不是自举链路本身。迁移期间继续保留 legacy 后端作为差分基准，直到 Stage 2/Stage 3 的规范化 DIR 和运行结果一致。
+迁移初期先完成了直接 LLVM 自举切片的 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点，再逐步把 `bootstrap/compiler.dm` 接入 DIR。这样可以把自举链路问题与中间表示迁移问题分开验证；当前正式编译器已经只保留 DIR 路径。
 
-当前实现状态已经进入迁移后的稳定化阶段：`make bootstrap` 默认通过 `--backend=dir` 生成 Stage 0，`bootstrap/compiler.dm` 已经从 `stdlib/dir_bootstrap.dm` 导入 DIR 构建与渲染桥，并完成 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点验证。自举桥采用定长 typed record payload；`ret`、整数算术、`and/or`、整数 `icmp`、`zext i1 -> i32` 和零操作数 `unreachable` 已使用 native record，尚未覆盖的 `call`、指针操作和复杂可变参数指令继续走经过校验的 raw LLVM 兼容路径。后续迁移应按“固定 payload ABI、增加负例测试、验证 Stage2/Stage3 固定点”的顺序逐条推进。
+当前实现状态已经进入迁移后的稳定化阶段：`make bootstrap` 生成 Stage 0，`bootstrap/compiler.dm` 已经从 `stdlib/dir_bootstrap.dm` 导入 DIR 构建与渲染桥，并完成 Stage 0 → Stage 1 → Stage 2 → Stage 3 固定点验证。自举桥采用定长 typed record payload；`ret`、整数算术、`and/or`、整数 `icmp`、`zext i1 -> i32` 和零操作数 `unreachable` 已使用 native record，尚未覆盖的 `call`、指针操作和复杂可变参数指令继续走经过校验的 raw LLVM 兼容路径。后续迁移应按“固定 payload ABI、增加负例测试、验证 Stage2/Stage3 固定点”的顺序逐条推进。
 
 ## 六、自举验证协议
 
@@ -534,7 +530,7 @@ DIR 引入后应让 CodeGraph 能分析：
 
 - AST → DIR 的每个语法构造；
 - 类型错误不会生成 DIR；
-- legacy backend 和 DIR backend 结果一致。
+- DIR lowering 和 LLVM renderer 在覆盖范围内行为一致。
 
 ### 端到端测试
 
@@ -578,8 +574,8 @@ DreamIR 阶段完成的标志不是“新增了几个类型”，而是同时满
 2. DIR verifier 能在 LLVM 前报告错误；
 3. DIR lowering 生成 LLVM 并通过 LLVM verifier；
 4. 现有 examples 和 runtime 测试无回归；
-5. legacy backend 和 DIR backend 在覆盖范围内行为一致；
-6. Stage 1 能编译 DIR backend；
+5. DIR lowering 和 LLVM renderer 在覆盖范围内行为一致；
+6. Stage 1 能编译 DIR 管线；
 7. Stage 2 能生成合法的下一轮 DIR 和 LLVM；
 8. Stage 3 可以运行并达到固定点。
 
