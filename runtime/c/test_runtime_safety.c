@@ -66,7 +66,7 @@ static void test_utf8_and_strings(void) {
 }
 
 static void test_file_io(void) {
-    const char* path = "../tmp/runtime_safety_test.bin";
+    const char* path = "../../tmp/runtime_safety_test.bin";
     assert(__c_file_write(path, "") == 0);
     assert(__c_file_exists(path));
 

@@ -9,7 +9,7 @@ set command_name $argv[1]
 set source_file $argv[2]
 set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
-set compiler "$root_dir/_build/default/bin/main.exe"
+set compiler "$root_dir/ocaml/_build/default/bin/main.exe"
 
 if not test -x "$compiler"
     echo '错误: 编译器不存在，请先执行 dune build' >&2

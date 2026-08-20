@@ -1,9 +1,9 @@
 def module_path(module_name: str) -> str:
     switch module_name:
         case "bootstrap_io":
-            return "stdlib/bootstrap_io.dm"
+            return "runtime/stdlib/bootstrap_io.dm"
         case "dir_bootstrap":
-            return "stdlib/dir_bootstrap.dm"
+            return "runtime/stdlib/dir_bootstrap.dm"
         case "compiler_lex":
             return "bootstrap/compiler_lex.dm"
         case "compiler_dir":
@@ -20,7 +20,7 @@ def module_path(module_name: str) -> str:
             return "bootstrap/compiler_stmt.dm"
         case "compiler_main":
             return "bootstrap/compiler_main.dm"
-    let with_prefix = string_concat("stdlib/", module_name)
+    let with_prefix = string_concat("runtime/stdlib/", module_name)
     return string_concat(with_prefix, ".dm")
 
 def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
@@ -236,6 +236,12 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
             append_text(lower_invalid_output, "; DIR validation failed\n")
             dir_dump_records(lower_records, lower_invalid_output)
             write_text_codes(output_path, lower_invalid_output)
+            return
+        if output_mode == COMPILE_OUTPUT_DIR_SOURCE:
+            let formal_dir = []
+            if not dir_render_formal_records(lower_records, formal_dir):
+                append_text(formal_dir, "; formal DreamIR rendering failed\n")
+            write_text_codes(output_path, formal_dir)
             return
         let lower_llvm_output = []
         if not dir_render_records(lower_records, lower_llvm_output):

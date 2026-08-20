@@ -24,6 +24,7 @@ let tok_to_string = function
   | Parser.SWITCH -> "SWITCH"
   | Parser.FOR -> "FOR"
   | Parser.WHILE -> "WHILE"
+  | Parser.BREAK -> "BREAK"
   | Parser.RETURN -> "RETURN"
   | Parser.IN -> "IN"
   | Parser.COLON -> "COLON"

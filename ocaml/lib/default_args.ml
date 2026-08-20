@@ -100,6 +100,7 @@ and fill_statement defaults stmt =
   | SWhile (condition, body, pos) ->
       SWhile (fill_expr defaults condition,
         List.map (fill_statement defaults) body, pos)
+  | SBreak pos -> SBreak pos
   | SFor (pattern, iterable, body, pos) ->
       SFor (pattern, fill_expr defaults iterable,
         List.map (fill_statement defaults) body, pos)

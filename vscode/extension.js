@@ -33,11 +33,11 @@ function analyzeDreamFile(filePath) {
 
 // 查找 dream 可执行文件
 function findDreamExecutable() {
-  // 尝试从项目根目录的 _build 查找
+  // 尝试从项目根目录的 ocaml/_build 查找
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (workspaceFolders && workspaceFolders.length > 0) {
     const rootPath = workspaceFolders[0].uri.fsPath;
-    const localDream = path.join(rootPath, '_build', 'default', 'bin', 'main.exe');
+    const localDream = path.join(rootPath, 'ocaml', '_build', 'default', 'bin', 'main.exe');
     const fs = require('fs');
     if (fs.existsSync(localDream)) {
       return localDream;

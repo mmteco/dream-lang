@@ -48,7 +48,7 @@
 %token <bool> BOOL
 %token <string> IDENT
 %token LET LAMBDA DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
-%token IF ELSE ELIF SWITCH MATCH CASE DEFAULT FOR WHILE RETURN
+%token IF ELSE ELIF SWITCH MATCH CASE DEFAULT FOR WHILE BREAK RETURN
 %token IMPORT FROM AS OF ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
 %token PLUS MINUS TIMES DIV FLOORDIV MOD POW
@@ -174,6 +174,8 @@ statement:
           def_body = body;
           def_pos = make_position $startpos;
         } }
+  | BREAK
+      { SBreak (make_position $startpos) }
   | RETURN
       { SReturn (None, { line = 0; column = 0 }) }
   | RETURN e = expr

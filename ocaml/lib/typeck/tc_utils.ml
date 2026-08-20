@@ -51,7 +51,9 @@ let set_current_file file =
 
 let is_stdlib_file () =
   let file = !current_file in
-  String.length file >= 7 && String.sub file 0 7 = "stdlib/"
+  let prefix = "runtime/stdlib/" in
+  let len = String.length prefix in
+  String.length file >= len && String.sub file 0 len = prefix
 
 let rec resolve_type_expr env = function
   | TInt -> TyInt

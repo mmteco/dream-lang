@@ -264,6 +264,7 @@ let rec substitute_statement ctx type_params type_args stmt =
         Option.map (List.map (substitute_statement ctx type_params type_args)) else_opt,
         pos
       )
+  | SBreak pos -> SBreak pos
   | SWhile (cond, body, pos) ->
       SWhile (
         substitute_expr ctx type_params type_args cond,
@@ -377,6 +378,7 @@ let rec rewrite_statement generic_instances generic_funcs stmt =
         Option.map (List.map (rewrite_statement generic_instances generic_funcs)) else_opt,
         pos
       )
+  | SBreak pos -> SBreak pos
   | SWhile (cond, body, pos) ->
       SWhile (
         rewrite_generic_calls generic_instances generic_funcs cond,

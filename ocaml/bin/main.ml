@@ -133,26 +133,26 @@ let compile_to_dir input_file output_file =
 let compile_to_exe output_ll =
   let output_exe = Filename.remove_extension output_ll in
   let runtime_files = [
-    "runtime/io.c";
-    "runtime/memory.c";
-    "runtime/dynarray.c";
-    "runtime/utf8.c";
-    "runtime/utf8_wrapper.c";
-    "runtime/bytes_wrapper.c";
-    "runtime/process.c";
-    "runtime/compiler.c";
-    "runtime/str.c";
-    "runtime/file.c";
-    "runtime/dict.c";
-    "runtime/tuple.c";
-    "runtime/union.c";
-    "runtime/enum.c";
-    "runtime/closure.c";
-    "runtime/math.c"
+    "runtime/c/io.c";
+    "runtime/c/memory.c";
+    "runtime/c/dynarray.c";
+    "runtime/c/utf8.c";
+    "runtime/c/utf8_wrapper.c";
+    "runtime/c/bytes_wrapper.c";
+    "runtime/c/process.c";
+    "runtime/c/compiler.c";
+    "runtime/c/str.c";
+    "runtime/c/file.c";
+    "runtime/c/dict.c";
+    "runtime/c/tuple.c";
+    "runtime/c/union.c";
+    "runtime/c/enum.c";
+    "runtime/c/closure.c";
+    "runtime/c/math.c"
   ] in
   let runtime_args = String.concat " " runtime_files in
   let compile_cmd = Printf.sprintf
-    "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s -I runtime"
+    "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s -I runtime/c"
     (Filename.quote output_exe) (Filename.quote output_ll) runtime_args in
   let exit_code = Sys.command compile_cmd in
   if exit_code = 0 then begin

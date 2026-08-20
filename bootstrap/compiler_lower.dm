@@ -95,12 +95,13 @@ def lower_append_comment(records: list[int], buffer: list[int], text: str):
     buffer[0] = len(buffer)
 
 def lower_find_variable(source: str, name_start: int, name_end: int, variable_starts: list[int], variable_ends: list[int]) -> int:
+    let result = -1
     let variable_index = 0
     while variable_index < len(variable_starts):
         if source_ranges_equal(source, name_start, name_end, variable_starts[variable_index], variable_ends[variable_index]):
-            return variable_index
+            result = variable_index
         variable_index = variable_index + 1
-    return -1
+    return result
 
 def lower_has_variable(source: str, name_start: int, name_end: int, variable_starts: list[int], variable_ends: list[int]) -> bool:
     return lower_find_variable(source, name_start, name_end, variable_starts, variable_ends) >= 0
@@ -225,6 +226,36 @@ def lower_expr_binary(context: ParseContext, ast: list[int], node: int, variable
                 bin_compare_type = DIR_TYPE_BOOL
             dir_append_native_compare(records, bin_compare_type, bin_predicate, bin_result, lower_operand_kind(bin_left_type), bin_left_value, lower_operand_kind(bin_right_type), bin_right_value)
         return (bin_result, VALUE_TYPE_BOOL, bin_result)
+    if bin_operator == TOKEN_PLUS:
+        if bin_left_type == VALUE_TYPE_STRING or bin_right_type == VALUE_TYPE_STRING:
+            let str_cat_arg_kinds = []
+            let str_cat_arg_values = []
+            let str_cat_arg_types = []
+            append(str_cat_arg_kinds, lower_operand_kind(bin_left_type))
+            append(str_cat_arg_values, bin_left_value)
+            append(str_cat_arg_types, DIR_TYPE_POINTER)
+            append(str_cat_arg_kinds, lower_operand_kind(bin_right_type))
+            append(str_cat_arg_values, bin_right_value)
+            append(str_cat_arg_types, DIR_TYPE_POINTER)
+            let str_cat_no_names: list[str] = []
+            dir_append_native_call_direct(records, DIR_TYPE_POINTER, DIR_NATIVE_OPERAND_TEMPORARY, bin_result, "string_concat", str_cat_arg_kinds, str_cat_arg_values, str_cat_arg_types, 2, true, str_cat_no_names)
+            return (bin_result, VALUE_TYPE_STRING, bin_result)
+        if bin_left_type == VALUE_TYPE_LIST or bin_right_type == VALUE_TYPE_LIST or bin_left_type == VALUE_TYPE_LIST_STRING or bin_right_type == VALUE_TYPE_LIST_STRING:
+            let list_concat_symbol = "concat_dynarray_i32"
+            if bin_left_type == VALUE_TYPE_LIST_STRING or bin_right_type == VALUE_TYPE_LIST_STRING:
+                list_concat_symbol = "concat_dynarray_ptr"
+            let list_cat_arg_kinds = []
+            let list_cat_arg_values = []
+            let list_cat_arg_types = []
+            append(list_cat_arg_kinds, lower_operand_kind(bin_left_type))
+            append(list_cat_arg_values, bin_left_value)
+            append(list_cat_arg_types, DIR_TYPE_LIST)
+            append(list_cat_arg_kinds, lower_operand_kind(bin_right_type))
+            append(list_cat_arg_values, bin_right_value)
+            append(list_cat_arg_types, DIR_TYPE_LIST)
+            let list_cat_no_names: list[str] = []
+            dir_append_native_call_direct(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, bin_result, list_concat_symbol, list_cat_arg_kinds, list_cat_arg_values, list_cat_arg_types, 2, true, list_cat_no_names)
+            return (bin_result, VALUE_TYPE_LIST, bin_result)
     let bin_instruction = DIR_OPCODE_ADD
     if bin_operator == TOKEN_PLUS:
         bin_instruction = DIR_OPCODE_ADD
@@ -389,8 +420,22 @@ def lower_expr_slice(context: ParseContext, ast: list[int], node: int, variable_
     let slice_start_node = ast_node_arg(ast, node, 1)
     let slice_end_node = ast_node_arg(ast, node, 2)
     let (slice_collection_next, slice_collection_type, slice_collection_value) = lower_expr(context, ast, slice_collection_node, variable_starts, variable_ends, variable_types, counter, records)
-    let (slice_start_next, slice_start_type, slice_start_value) = lower_expr(context, ast, slice_start_node, variable_starts, variable_ends, variable_types, slice_collection_next, records)
-    let (slice_end_next, slice_end_type, slice_end_value) = lower_expr(context, ast, slice_end_node, variable_starts, variable_ends, variable_types, slice_start_next, records)
+    let slice_start_next = slice_collection_next
+    let slice_start_type = VALUE_TYPE_IMMEDIATE
+    let slice_start_value = 0
+    if slice_start_node != 0:
+        let (parsed_start_next, parsed_start_type, parsed_start_value) = lower_expr(context, ast, slice_start_node, variable_starts, variable_ends, variable_types, slice_collection_next, records)
+        slice_start_next = parsed_start_next
+        slice_start_type = parsed_start_type
+        slice_start_value = parsed_start_value
+    let slice_end_next = slice_start_next
+    let slice_end_type = VALUE_TYPE_IMMEDIATE
+    let slice_end_value = 2147483647
+    if slice_end_node != 0:
+        let (parsed_end_next, parsed_end_type, parsed_end_value) = lower_expr(context, ast, slice_end_node, variable_starts, variable_ends, variable_types, slice_start_next, records)
+        slice_end_next = parsed_end_next
+        slice_end_type = parsed_end_type
+        slice_end_value = parsed_end_value
     let slice_symbol = "slice_dynarray_i32"
     let slice_result_type = VALUE_TYPE_LIST
     if slice_collection_type == VALUE_TYPE_BYTES:
@@ -696,6 +741,31 @@ def lower_expr_attr(context: ParseContext, ast: list[int], node: int, variable_s
     let attr_field_end = ast_node_arg(ast, node, 2)
     let (attr_receiver_next, attr_receiver_type, attr_receiver_value) = lower_expr(context, ast, attr_receiver_node, variable_starts, variable_ends, variable_types, counter, records)
     let attr_result = attr_receiver_next + 1
+    if ast_node_kind(ast, attr_receiver_node) == AST_EXPR_VAR:
+        let attr_recv_start = ast_node_start(ast, attr_receiver_node)
+        let attr_recv_end = ast_node_end(ast, attr_receiver_node)
+        if find_variable(context.src, attr_recv_start, attr_recv_end, variable_starts, variable_ends) < 0:
+            let attr_enum_tag = enum_variant_tag(context.src, context.kinds, context.starts, context.ends, attr_recv_start, attr_recv_end, attr_field_start, attr_field_end)
+            if attr_enum_tag >= 0:
+                let enum_create_kinds = []
+                let enum_create_values = []
+                let enum_create_types = []
+                append(enum_create_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(enum_create_values, 4)
+                append(enum_create_types, DIR_TYPE_I32)
+                let enum_no_names: list[str] = []
+                dir_append_native_call_direct(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, attr_result, "create_dynarray_i32", enum_create_kinds, enum_create_values, enum_create_types, 1, true, enum_no_names)
+                let enum_tag_kinds = []
+                let enum_tag_values = []
+                let enum_tag_types = []
+                append(enum_tag_kinds, DIR_NATIVE_OPERAND_TEMPORARY)
+                append(enum_tag_values, attr_result)
+                append(enum_tag_types, DIR_TYPE_LIST)
+                append(enum_tag_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(enum_tag_values, attr_enum_tag)
+                append(enum_tag_types, DIR_TYPE_I32)
+                dir_append_native_call_direct(records, DIR_TYPE_UNKNOWN, DIR_TAG_INVALID, 0, "append_i32", enum_tag_kinds, enum_tag_values, enum_tag_types, 2, false, enum_no_names)
+                return (attr_result, VALUE_TYPE_LIST, attr_result)
     let attr_struct_name = find_struct_name_for_variable(context.src, context.kinds, context.starts, context.ends, ast_node_start(ast, attr_receiver_node), ast_node_end(ast, attr_receiver_node))
     let attr_field_index = 0
     let attr_field_type = VALUE_TYPE_INT
@@ -773,7 +843,13 @@ def lower_expr_match(context: ParseContext, ast: list[int], node: int, variable_
     let m_cases_start = ast_node_arg(ast, node, 1)
     let m_cases_end = ast_node_arg(ast, node, 2)
     let (m_scrutinee_next, m_scrutinee_type, m_scrutinee_value) = lower_expr(context, ast, m_scrutinee_node, variable_starts, variable_ends, variable_types, counter, records)
+    let m_is_scalar = false
+    if m_scrutinee_type == VALUE_TYPE_INT or m_scrutinee_type == VALUE_TYPE_BOOL or m_scrutinee_type == VALUE_TYPE_FLOAT or m_scrutinee_type == VALUE_TYPE_STRING:
+        m_is_scalar = true
     let m_tag = m_scrutinee_next + 1
+    let m_compare_value = m_scrutinee_value
+    let m_compare_type = m_scrutinee_type
+    let m_compare_kind = lower_operand_kind(m_scrutinee_type)
     let m_tag_kinds = []
     let m_tag_values = []
     let m_tag_types = []
@@ -784,7 +860,11 @@ def lower_expr_match(context: ParseContext, ast: list[int], node: int, variable_
     append(m_tag_values, 0)
     append(m_tag_types, DIR_TYPE_I32)
     let m_no_names: list[str] = []
-    dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_tag, "get", m_tag_kinds, m_tag_values, m_tag_types, 2, true, m_no_names)
+    if not m_is_scalar:
+        dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_tag, "get", m_tag_kinds, m_tag_values, m_tag_types, 2, true, m_no_names)
+        m_compare_value = m_tag
+        m_compare_type = VALUE_TYPE_INT
+        m_compare_kind = DIR_NATIVE_OPERAND_TEMPORARY
     let m_result_slot = "match.result"
     if lower_find_variable(context.src, 0, 0, variable_starts, variable_ends) < 0:
         dir_append_native_alloca(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_NAMED, 0, m_result_slot)
@@ -801,6 +881,8 @@ def lower_expr_match(context: ParseContext, ast: list[int], node: int, variable_
         let m_body_node = ast_node_arg(ast, m_case_node, 2)
         let m_case_tag = 0
         let m_pattern_kind = ast_node_kind(ast, m_pattern_node)
+        if m_pattern_kind == AST_PAT_INT or m_pattern_kind == AST_PAT_BOOL:
+            m_case_tag = ast_node_arg(ast, m_pattern_node, 0)
         if m_pattern_kind == AST_PAT_ENUM:
             let m_enum_name_start = ast_node_start(ast, m_pattern_node)
             let m_enum_name_end = ast_node_end(ast, m_pattern_node)
@@ -815,17 +897,187 @@ def lower_expr_match(context: ParseContext, ast: list[int], node: int, variable_
         let m_cond_temp = m_counter + 1
         let m_case_label = m_cond_temp + 1
         m_next_label = m_cond_temp + 2
-        dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_EQ, m_cond_temp, DIR_NATIVE_OPERAND_TEMPORARY, m_tag, DIR_NATIVE_OPERAND_IMMEDIATE, m_case_tag)
-        dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_cond_temp, m_case_label, m_next_label)
+        if m_pattern_kind == AST_PAT_STRUCT or m_pattern_kind == AST_PAT_WILDCARD or m_pattern_kind == AST_PAT_LIST or m_pattern_kind == AST_PAT_CONS:
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_case_label, 0)
+        else:
+            dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_EQ, m_cond_temp, m_compare_kind, m_compare_value, DIR_NATIVE_OPERAND_IMMEDIATE, m_case_tag)
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_cond_temp, m_case_label, m_next_label)
         lower_append_label_number(records, m_case_label)
         let m_body_counter = m_cond_temp
-        if m_guard_node != 0:
-            let (m_guard_next, m_guard_type, m_guard_value) = lower_expr(context, ast, m_guard_node, variable_starts, variable_ends, variable_types, m_cond_temp, records)
-            let m_guard_cond = lower_branch_condition(m_guard_type, m_guard_value, m_guard_next, records)
-            let m_guard_body_label = m_guard_cond + 1
-            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_guard_cond, m_guard_body_label, m_next_label)
-            lower_append_label_number(records, m_guard_body_label)
-            m_body_counter = m_guard_cond
+        if m_pattern_kind == AST_PAT_LIST:
+            let m_list_token_start = ast_node_arg(ast, m_pattern_node, 0)
+            let m_list_token_end = ast_node_arg(ast, m_pattern_node, 1)
+            let m_element_count = 0
+            let m_count_cursor = m_list_token_start
+            while m_count_cursor < m_list_token_end:
+                if token_kind(context.kinds, m_count_cursor) != TOKEN_COMMA:
+                    m_element_count = m_element_count + 1
+                m_count_cursor = m_count_cursor + 1
+            let m_list_len_temp = m_body_counter + 1
+            let m_list_len_kinds = []
+            let m_list_len_values = []
+            let m_list_len_types = []
+            append(m_list_len_kinds, lower_operand_kind(m_scrutinee_type))
+            append(m_list_len_values, m_scrutinee_value)
+            append(m_list_len_types, lower_dir_type(m_scrutinee_type))
+            let m_list_no_names: list[str] = []
+            dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_list_len_temp, "len", m_list_len_kinds, m_list_len_values, m_list_len_types, 1, true, m_list_no_names)
+            let m_list_len_check = m_list_len_temp + 1
+            let m_list_bind_label = m_list_len_check + 1
+            let m_list_fail_label = m_list_len_check + 2
+            dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_EQ, m_list_len_check, DIR_NATIVE_OPERAND_TEMPORARY, m_list_len_temp, DIR_NATIVE_OPERAND_IMMEDIATE, m_element_count)
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_list_len_check, m_list_bind_label, m_list_fail_label)
+            lower_append_label_number(records, m_list_bind_label)
+            m_body_counter = m_list_fail_label
+            let m_element_slot = 0
+            let m_bind_cursor = m_list_token_start
+            while m_bind_cursor < m_list_token_end:
+                if token_kind(context.kinds, m_bind_cursor) != TOKEN_COMMA:
+                    let m_evar_start = token_start(context.starts, m_bind_cursor)
+                    let m_evar_end = token_end(context.ends, m_bind_cursor)
+                    if context.src[m_evar_start:m_evar_end] != "_":
+                        let m_elem_temp = m_body_counter + 1
+                        let m_elem_kinds = []
+                        let m_elem_values = []
+                        let m_elem_types = []
+                        append(m_elem_kinds, lower_operand_kind(m_scrutinee_type))
+                        append(m_elem_values, m_scrutinee_value)
+                        append(m_elem_types, lower_dir_type(m_scrutinee_type))
+                        append(m_elem_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                        append(m_elem_values, m_element_slot)
+                        append(m_elem_types, DIR_TYPE_I32)
+                        dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_elem_temp, "get", m_elem_kinds, m_elem_values, m_elem_types, 2, true, m_list_no_names)
+                        let m_elem_slot_name = lower_variable_slot_name(context.src, m_evar_start, m_evar_end, VALUE_TYPE_INT)
+                        if not lower_has_variable(context.src, m_evar_start, m_evar_end, variable_starts, variable_ends):
+                            dir_append_native_alloca(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_NAMED, 0, m_elem_slot_name)
+                        dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_elem_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_elem_slot_name)
+                        append(variable_starts, m_evar_start)
+                        append(variable_ends, m_evar_end)
+                        append(variable_types, VALUE_TYPE_INT)
+                        m_body_counter = m_elem_temp
+                    m_element_slot = m_element_slot + 1
+                m_bind_cursor = m_bind_cursor + 1
+            let m_list_continue_label = m_list_fail_label + 1
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_list_continue_label, 0)
+            lower_append_label_number(records, m_list_fail_label)
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_next_label, 0)
+            lower_append_label_number(records, m_list_continue_label)
+        if m_pattern_kind == AST_PAT_CONS:
+            let m_cons_head_start = ast_node_arg(ast, m_pattern_node, 0)
+            let m_cons_head_end = ast_node_arg(ast, m_pattern_node, 1)
+            let m_cons_tail_start = ast_node_arg(ast, m_pattern_node, 2)
+            let m_cons_tail_end = ast_node_arg(ast, m_pattern_node, 3)
+            let m_cons_len_temp = m_body_counter + 1
+            let m_cons_len_kinds = []
+            let m_cons_len_values = []
+            let m_cons_len_types = []
+            append(m_cons_len_kinds, lower_operand_kind(m_scrutinee_type))
+            append(m_cons_len_values, m_scrutinee_value)
+            append(m_cons_len_types, lower_dir_type(m_scrutinee_type))
+            let m_cons_no_names: list[str] = []
+            dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_len_temp, "len", m_cons_len_kinds, m_cons_len_values, m_cons_len_types, 1, true, m_cons_no_names)
+            let m_cons_len_check = m_cons_len_temp + 1
+            let m_cons_bind_label = m_cons_len_check + 1
+            let m_cons_fail_label = m_cons_len_check + 2
+            dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_SGT, m_cons_len_check, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_len_temp, DIR_NATIVE_OPERAND_IMMEDIATE, 0)
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_len_check, m_cons_bind_label, m_cons_fail_label)
+            lower_append_label_number(records, m_cons_bind_label)
+            m_body_counter = m_cons_fail_label
+            if context.src[m_cons_head_start:m_cons_head_end] != "_":
+                let m_cons_head_temp = m_body_counter + 1
+                let m_cons_head_kinds = []
+                let m_cons_head_values = []
+                let m_cons_head_types = []
+                append(m_cons_head_kinds, lower_operand_kind(m_scrutinee_type))
+                append(m_cons_head_values, m_scrutinee_value)
+                append(m_cons_head_types, lower_dir_type(m_scrutinee_type))
+                append(m_cons_head_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(m_cons_head_values, 0)
+                append(m_cons_head_types, DIR_TYPE_I32)
+                dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_head_temp, "get", m_cons_head_kinds, m_cons_head_values, m_cons_head_types, 2, true, m_cons_no_names)
+                let m_cons_head_slot = lower_variable_slot_name(context.src, m_cons_head_start, m_cons_head_end, VALUE_TYPE_INT)
+                if not lower_has_variable(context.src, m_cons_head_start, m_cons_head_end, variable_starts, variable_ends):
+                    dir_append_native_alloca(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_NAMED, 0, m_cons_head_slot)
+                dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_head_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_cons_head_slot)
+                append(variable_starts, m_cons_head_start)
+                append(variable_ends, m_cons_head_end)
+                append(variable_types, VALUE_TYPE_INT)
+                m_body_counter = m_cons_head_temp
+            if context.src[m_cons_tail_start:m_cons_tail_end] != "_":
+                let m_cons_tail_temp = m_body_counter + 1
+                let m_cons_tail_kinds = []
+                let m_cons_tail_values = []
+                let m_cons_tail_types = []
+                append(m_cons_tail_kinds, lower_operand_kind(m_scrutinee_type))
+                append(m_cons_tail_values, m_scrutinee_value)
+                append(m_cons_tail_types, lower_dir_type(m_scrutinee_type))
+                append(m_cons_tail_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(m_cons_tail_values, 1)
+                append(m_cons_tail_types, DIR_TYPE_I32)
+                append(m_cons_tail_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(m_cons_tail_values, 2147483647)
+                append(m_cons_tail_types, DIR_TYPE_I32)
+                dir_append_native_call_direct(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_tail_temp, "slice_dynarray_i32", m_cons_tail_kinds, m_cons_tail_values, m_cons_tail_types, 3, true, m_cons_no_names)
+                let m_cons_tail_slot = lower_variable_slot_name(context.src, m_cons_tail_start, m_cons_tail_end, VALUE_TYPE_LIST)
+                if not lower_has_variable(context.src, m_cons_tail_start, m_cons_tail_end, variable_starts, variable_ends):
+                    dir_append_native_alloca(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_NAMED, 0, m_cons_tail_slot)
+                dir_append_native_store(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_tail_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_cons_tail_slot)
+                append(variable_starts, m_cons_tail_start)
+                append(variable_ends, m_cons_tail_end)
+                append(variable_types, VALUE_TYPE_LIST)
+                m_body_counter = m_cons_tail_temp
+            let m_cons_continue_label = m_cons_fail_label + 1
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_cons_continue_label, 0)
+            lower_append_label_number(records, m_cons_fail_label)
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_next_label, 0)
+            lower_append_label_number(records, m_cons_continue_label)
+        if m_pattern_kind == AST_PAT_STRUCT:
+            let m_field_start = ast_node_arg(ast, m_pattern_node, 2)
+            let m_field_end = ast_node_arg(ast, m_pattern_node, 3)
+            let m_struct_name = context.src[ast_node_start(ast, m_pattern_node):ast_node_end(ast, m_pattern_node)]
+            let m_field_cursor = m_field_start
+            while m_field_cursor < m_field_end:
+                let m_fname_start = token_start(context.starts, m_field_cursor)
+                let m_fname_end = token_end(context.ends, m_field_cursor)
+                let m_fmode_index = m_field_cursor + 2
+                let m_fvar_start = token_start(context.starts, m_fmode_index)
+                let m_fvar_end = token_end(context.ends, m_fmode_index)
+                let m_fvar_name = context.src[m_fvar_start:m_fvar_end]
+                if m_fvar_name != "_":
+                    let m_field_number = lower_struct_field_index(context.src, context.kinds, context.starts, context.ends, m_struct_name, m_fname_start, m_fname_end)
+                    let m_field_slot = 0
+                    let m_field_type = VALUE_TYPE_INT
+                    if m_field_number >= 0:
+                        m_field_slot = lower_struct_field_offset(context.src, context.kinds, context.starts, context.ends, m_struct_name, m_field_number)
+                        m_field_type = lower_struct_field_type(context.src, context.kinds, context.starts, context.ends, m_struct_name, m_fname_start, m_fname_end)
+                    let m_field_temp = m_body_counter + 1
+                    let m_field_kinds = []
+                    let m_field_values = []
+                    let m_field_types = []
+                    append(m_field_kinds, lower_operand_kind(m_scrutinee_type))
+                    append(m_field_values, m_scrutinee_value)
+                    append(m_field_types, lower_dir_type(m_scrutinee_type))
+                    append(m_field_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                    append(m_field_values, m_field_slot)
+                    append(m_field_types, DIR_TYPE_I32)
+                    if m_field_type == VALUE_TYPE_STRING or is_sequence_value_type(m_field_type) or is_dictionary_value_type(m_field_type) or is_closure_value_type(m_field_type) or is_interface_value_type(m_field_type):
+                        dir_append_native_call_direct(records, DIR_TYPE_POINTER, DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp, "get_pointer", m_field_kinds, m_field_values, m_field_types, 2, true, m_no_names)
+                        dir_append_native_bitcast(records, lower_dir_type(m_field_type), "i8*", DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp + 1, DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp)
+                        m_field_temp = m_field_temp + 1
+                    else:
+                        dir_append_native_call_direct(records, lower_dir_type(m_field_type), DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp, "get", m_field_kinds, m_field_values, m_field_types, 2, true, m_no_names)
+                    let m_field_slot_name = lower_variable_slot_name(context.src, m_fvar_start, m_fvar_end, m_field_type)
+                    if not lower_has_variable(context.src, m_fvar_start, m_fvar_end, variable_starts, variable_ends):
+                        dir_append_native_alloca(records, lower_dir_type(m_field_type), DIR_NATIVE_OPERAND_NAMED, 0, m_field_slot_name)
+                    dir_append_native_store(records, lower_dir_type(m_field_type), DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_field_slot_name)
+                    append(variable_starts, m_fvar_start)
+                    append(variable_ends, m_fvar_end)
+                    append(variable_types, m_field_type)
+                    m_body_counter = m_field_temp
+                m_field_cursor = m_fmode_index + 1
+                while m_field_cursor < m_field_end and token_kind(context.kinds, m_field_cursor) != TOKEN_COMMA:
+                    m_field_cursor = m_field_cursor + 1
+                m_field_cursor = m_field_cursor + 1
         # payload 解包:模式记录保存的是 token 范围，直接绑定变量名
         let m_payload_name_start = 0
         let m_payload_name_end = 0
@@ -862,17 +1114,318 @@ def lower_expr_match(context: ParseContext, ast: list[int], node: int, variable_
             append(variable_ends, m_payload_name_end)
             append(variable_types, VALUE_TYPE_INT)
             m_body_counter = m_payload_temp
+        if m_guard_node != 0:
+            let (m_guard_next, m_guard_type, m_guard_value) = lower_expr(context, ast, m_guard_node, variable_starts, variable_ends, variable_types, m_body_counter, records)
+            let m_guard_cond = lower_branch_condition(m_guard_type, m_guard_value, m_guard_next, records)
+            let m_guard_body_label = m_guard_cond + 1
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_guard_cond, m_guard_body_label, m_next_label)
+            lower_append_label_number(records, m_guard_body_label)
+            m_body_counter = m_guard_cond
         let (m_body_next, m_body_type, m_body_value) = lower_expr(context, ast, m_body_node, variable_starts, variable_ends, variable_types, m_body_counter, records)
         dir_append_native_store(records, DIR_TYPE_I32, lower_operand_kind(m_body_type), m_body_value, "", DIR_NATIVE_OPERAND_NAMED, 0, m_result_slot)
         dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_end_label, 0)
         lower_append_label_number(records, m_next_label)
         m_counter = m_body_next
+        if m_counter <= m_next_label:
+            m_counter = m_next_label
         m_case_node = ast_node_arg(ast, m_case_node, 3)
     dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_end_label, 0)
     lower_append_label_number(records, m_end_label)
     let m_result_temp = m_counter + 1
     dir_append_native_load(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_result_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_result_slot)
     return (m_result_temp, VALUE_TYPE_INT, m_result_temp)
+
+def lower_stmt_match(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], break_label: int) -> (int, int):
+    let m_scrutinee_node = ast_node_arg(ast, node, 0)
+    let m_cases_start = ast_node_arg(ast, node, 1)
+    let m_cases_end = ast_node_arg(ast, node, 2)
+    let (m_scrutinee_next, m_scrutinee_type, m_scrutinee_value) = lower_expr(context, ast, m_scrutinee_node, variable_starts, variable_ends, variable_types, counter, records)
+    let m_is_scalar = false
+    if m_scrutinee_type == VALUE_TYPE_INT or m_scrutinee_type == VALUE_TYPE_BOOL or m_scrutinee_type == VALUE_TYPE_FLOAT or m_scrutinee_type == VALUE_TYPE_STRING:
+        m_is_scalar = true
+    let m_tag = m_scrutinee_next + 1
+    let m_compare_value = m_scrutinee_value
+    let m_compare_type = m_scrutinee_type
+    let m_compare_kind = lower_operand_kind(m_scrutinee_type)
+    let m_tag_kinds = []
+    let m_tag_values = []
+    let m_tag_types = []
+    append(m_tag_kinds, lower_operand_kind(m_scrutinee_type))
+    append(m_tag_values, m_scrutinee_value)
+    append(m_tag_types, lower_dir_type(m_scrutinee_type))
+    append(m_tag_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+    append(m_tag_values, 0)
+    append(m_tag_types, DIR_TYPE_I32)
+    let m_no_names: list[str] = []
+    if not m_is_scalar:
+        dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_tag, "get", m_tag_kinds, m_tag_values, m_tag_types, 2, true, m_no_names)
+        m_compare_value = m_tag
+        m_compare_type = VALUE_TYPE_INT
+        m_compare_kind = DIR_NATIVE_OPERAND_TEMPORARY
+    let m_end_label = m_tag + 1
+    let m_counter = m_tag
+    let m_next_label = m_tag + 1
+    let m_case_node = m_cases_start
+    while m_case_node < m_cases_end:
+        let m_pattern_node = ast_node_arg(ast, m_case_node, 0)
+        let m_guard_node = ast_node_arg(ast, m_case_node, 1)
+        let m_body_node = ast_node_arg(ast, m_case_node, 2)
+        let m_case_tag = 0
+        let m_pattern_kind = ast_node_kind(ast, m_pattern_node)
+        if m_pattern_kind == AST_PAT_INT or m_pattern_kind == AST_PAT_BOOL:
+            m_case_tag = ast_node_arg(ast, m_pattern_node, 0)
+        if m_pattern_kind == AST_PAT_ENUM:
+            let m_enum_name_start = ast_node_start(ast, m_pattern_node)
+            let m_enum_name_end = ast_node_end(ast, m_pattern_node)
+            let m_variant_name_start = ast_node_arg(ast, m_pattern_node, 2)
+            let m_variant_name_end = ast_node_arg(ast, m_pattern_node, 3)
+            m_case_tag = enum_variant_tag(context.src, context.kinds, context.starts, context.ends, m_enum_name_start, m_enum_name_end, m_variant_name_start, m_variant_name_end)
+        if m_pattern_kind == AST_PAT_BUILTIN:
+            let m_builtin_name_start = ast_node_start(ast, m_pattern_node)
+            let m_builtin_name_end = ast_node_end(ast, m_pattern_node)
+            if context.src[m_builtin_name_start:m_builtin_name_end] == "None" or context.src[m_builtin_name_start:m_builtin_name_end] == "Err":
+                m_case_tag = 1
+        let m_cond_temp = m_counter + 1
+        let m_case_label = m_cond_temp + 1
+        m_next_label = m_cond_temp + 2
+        if m_pattern_kind == AST_PAT_STRUCT or m_pattern_kind == AST_PAT_WILDCARD or m_pattern_kind == AST_PAT_LIST or m_pattern_kind == AST_PAT_CONS:
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_case_label, 0)
+        else:
+            dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_EQ, m_cond_temp, m_compare_kind, m_compare_value, DIR_NATIVE_OPERAND_IMMEDIATE, m_case_tag)
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_cond_temp, m_case_label, m_next_label)
+        lower_append_label_number(records, m_case_label)
+        let m_body_counter = m_cond_temp
+        if m_pattern_kind == AST_PAT_LIST:
+            let m_list_token_start = ast_node_arg(ast, m_pattern_node, 0)
+            let m_list_token_end = ast_node_arg(ast, m_pattern_node, 1)
+            let m_element_count = 0
+            let m_count_cursor = m_list_token_start
+            while m_count_cursor < m_list_token_end:
+                if token_kind(context.kinds, m_count_cursor) != TOKEN_COMMA:
+                    m_element_count = m_element_count + 1
+                m_count_cursor = m_count_cursor + 1
+            let m_list_len_temp = m_body_counter + 1
+            let m_list_len_kinds = []
+            let m_list_len_values = []
+            let m_list_len_types = []
+            append(m_list_len_kinds, lower_operand_kind(m_scrutinee_type))
+            append(m_list_len_values, m_scrutinee_value)
+            append(m_list_len_types, lower_dir_type(m_scrutinee_type))
+            let m_list_no_names: list[str] = []
+            dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_list_len_temp, "len", m_list_len_kinds, m_list_len_values, m_list_len_types, 1, true, m_list_no_names)
+            let m_list_len_check = m_list_len_temp + 1
+            let m_list_bind_label = m_list_len_check + 1
+            let m_list_fail_label = m_list_len_check + 2
+            dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_EQ, m_list_len_check, DIR_NATIVE_OPERAND_TEMPORARY, m_list_len_temp, DIR_NATIVE_OPERAND_IMMEDIATE, m_element_count)
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_list_len_check, m_list_bind_label, m_list_fail_label)
+            lower_append_label_number(records, m_list_bind_label)
+            m_body_counter = m_list_fail_label
+            let m_element_slot = 0
+            let m_bind_cursor = m_list_token_start
+            while m_bind_cursor < m_list_token_end:
+                if token_kind(context.kinds, m_bind_cursor) != TOKEN_COMMA:
+                    let m_evar_start = token_start(context.starts, m_bind_cursor)
+                    let m_evar_end = token_end(context.ends, m_bind_cursor)
+                    if context.src[m_evar_start:m_evar_end] != "_":
+                        let m_elem_temp = m_body_counter + 1
+                        let m_elem_kinds = []
+                        let m_elem_values = []
+                        let m_elem_types = []
+                        append(m_elem_kinds, lower_operand_kind(m_scrutinee_type))
+                        append(m_elem_values, m_scrutinee_value)
+                        append(m_elem_types, lower_dir_type(m_scrutinee_type))
+                        append(m_elem_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                        append(m_elem_values, m_element_slot)
+                        append(m_elem_types, DIR_TYPE_I32)
+                        dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_elem_temp, "get", m_elem_kinds, m_elem_values, m_elem_types, 2, true, m_list_no_names)
+                        let m_elem_slot_name = lower_variable_slot_name(context.src, m_evar_start, m_evar_end, VALUE_TYPE_INT)
+                        if not lower_has_variable(context.src, m_evar_start, m_evar_end, variable_starts, variable_ends):
+                            dir_append_native_alloca(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_NAMED, 0, m_elem_slot_name)
+                        dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_elem_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_elem_slot_name)
+                        append(variable_starts, m_evar_start)
+                        append(variable_ends, m_evar_end)
+                        append(variable_types, VALUE_TYPE_INT)
+                        m_body_counter = m_elem_temp
+                    m_element_slot = m_element_slot + 1
+                m_bind_cursor = m_bind_cursor + 1
+            let m_list_continue_label = m_list_fail_label + 1
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_list_continue_label, 0)
+            lower_append_label_number(records, m_list_fail_label)
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_next_label, 0)
+            lower_append_label_number(records, m_list_continue_label)
+        if m_pattern_kind == AST_PAT_CONS:
+            let m_cons_head_start = ast_node_arg(ast, m_pattern_node, 0)
+            let m_cons_head_end = ast_node_arg(ast, m_pattern_node, 1)
+            let m_cons_tail_start = ast_node_arg(ast, m_pattern_node, 2)
+            let m_cons_tail_end = ast_node_arg(ast, m_pattern_node, 3)
+            let m_cons_len_temp = m_body_counter + 1
+            let m_cons_len_kinds = []
+            let m_cons_len_values = []
+            let m_cons_len_types = []
+            append(m_cons_len_kinds, lower_operand_kind(m_scrutinee_type))
+            append(m_cons_len_values, m_scrutinee_value)
+            append(m_cons_len_types, lower_dir_type(m_scrutinee_type))
+            let m_cons_no_names: list[str] = []
+            dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_len_temp, "len", m_cons_len_kinds, m_cons_len_values, m_cons_len_types, 1, true, m_cons_no_names)
+            let m_cons_len_check = m_cons_len_temp + 1
+            let m_cons_bind_label = m_cons_len_check + 1
+            let m_cons_fail_label = m_cons_len_check + 2
+            dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_SGT, m_cons_len_check, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_len_temp, DIR_NATIVE_OPERAND_IMMEDIATE, 0)
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_len_check, m_cons_bind_label, m_cons_fail_label)
+            lower_append_label_number(records, m_cons_bind_label)
+            m_body_counter = m_cons_fail_label
+            if context.src[m_cons_head_start:m_cons_head_end] != "_":
+                let m_cons_head_temp = m_body_counter + 1
+                let m_cons_head_kinds = []
+                let m_cons_head_values = []
+                let m_cons_head_types = []
+                append(m_cons_head_kinds, lower_operand_kind(m_scrutinee_type))
+                append(m_cons_head_values, m_scrutinee_value)
+                append(m_cons_head_types, lower_dir_type(m_scrutinee_type))
+                append(m_cons_head_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(m_cons_head_values, 0)
+                append(m_cons_head_types, DIR_TYPE_I32)
+                dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_head_temp, "get", m_cons_head_kinds, m_cons_head_values, m_cons_head_types, 2, true, m_cons_no_names)
+                let m_cons_head_slot = lower_variable_slot_name(context.src, m_cons_head_start, m_cons_head_end, VALUE_TYPE_INT)
+                if not lower_has_variable(context.src, m_cons_head_start, m_cons_head_end, variable_starts, variable_ends):
+                    dir_append_native_alloca(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_NAMED, 0, m_cons_head_slot)
+                dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_head_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_cons_head_slot)
+                append(variable_starts, m_cons_head_start)
+                append(variable_ends, m_cons_head_end)
+                append(variable_types, VALUE_TYPE_INT)
+                m_body_counter = m_cons_head_temp
+            if context.src[m_cons_tail_start:m_cons_tail_end] != "_":
+                let m_cons_tail_temp = m_body_counter + 1
+                let m_cons_tail_kinds = []
+                let m_cons_tail_values = []
+                let m_cons_tail_types = []
+                append(m_cons_tail_kinds, lower_operand_kind(m_scrutinee_type))
+                append(m_cons_tail_values, m_scrutinee_value)
+                append(m_cons_tail_types, lower_dir_type(m_scrutinee_type))
+                append(m_cons_tail_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(m_cons_tail_values, 1)
+                append(m_cons_tail_types, DIR_TYPE_I32)
+                append(m_cons_tail_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                append(m_cons_tail_values, 2147483647)
+                append(m_cons_tail_types, DIR_TYPE_I32)
+                dir_append_native_call_direct(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_tail_temp, "slice_dynarray_i32", m_cons_tail_kinds, m_cons_tail_values, m_cons_tail_types, 3, true, m_cons_no_names)
+                let m_cons_tail_slot = lower_variable_slot_name(context.src, m_cons_tail_start, m_cons_tail_end, VALUE_TYPE_LIST)
+                if not lower_has_variable(context.src, m_cons_tail_start, m_cons_tail_end, variable_starts, variable_ends):
+                    dir_append_native_alloca(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_NAMED, 0, m_cons_tail_slot)
+                dir_append_native_store(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, m_cons_tail_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_cons_tail_slot)
+                append(variable_starts, m_cons_tail_start)
+                append(variable_ends, m_cons_tail_end)
+                append(variable_types, VALUE_TYPE_LIST)
+                m_body_counter = m_cons_tail_temp
+            let m_cons_continue_label = m_cons_fail_label + 1
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_cons_continue_label, 0)
+            lower_append_label_number(records, m_cons_fail_label)
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_next_label, 0)
+            lower_append_label_number(records, m_cons_continue_label)
+        if m_pattern_kind == AST_PAT_STRUCT:
+            let m_field_start = ast_node_arg(ast, m_pattern_node, 2)
+            let m_field_end = ast_node_arg(ast, m_pattern_node, 3)
+            let m_struct_name = context.src[ast_node_start(ast, m_pattern_node):ast_node_end(ast, m_pattern_node)]
+            let m_field_cursor = m_field_start
+            while m_field_cursor < m_field_end:
+                let m_fname_start = token_start(context.starts, m_field_cursor)
+                let m_fname_end = token_end(context.ends, m_field_cursor)
+                let m_fmode_index = m_field_cursor + 2
+                let m_fvar_start = token_start(context.starts, m_fmode_index)
+                let m_fvar_end = token_end(context.ends, m_fmode_index)
+                let m_fvar_name = context.src[m_fvar_start:m_fvar_end]
+                if m_fvar_name != "_":
+                    let m_field_number = lower_struct_field_index(context.src, context.kinds, context.starts, context.ends, m_struct_name, m_fname_start, m_fname_end)
+                    let m_field_slot = 0
+                    let m_field_type = VALUE_TYPE_INT
+                    if m_field_number >= 0:
+                        m_field_slot = lower_struct_field_offset(context.src, context.kinds, context.starts, context.ends, m_struct_name, m_field_number)
+                        m_field_type = lower_struct_field_type(context.src, context.kinds, context.starts, context.ends, m_struct_name, m_fname_start, m_fname_end)
+                    let m_field_temp = m_body_counter + 1
+                    let m_field_kinds = []
+                    let m_field_values = []
+                    let m_field_types = []
+                    append(m_field_kinds, lower_operand_kind(m_scrutinee_type))
+                    append(m_field_values, m_scrutinee_value)
+                    append(m_field_types, lower_dir_type(m_scrutinee_type))
+                    append(m_field_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+                    append(m_field_values, m_field_slot)
+                    append(m_field_types, DIR_TYPE_I32)
+                    if m_field_type == VALUE_TYPE_STRING or is_sequence_value_type(m_field_type) or is_dictionary_value_type(m_field_type) or is_closure_value_type(m_field_type) or is_interface_value_type(m_field_type):
+                        dir_append_native_call_direct(records, DIR_TYPE_POINTER, DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp, "get_pointer", m_field_kinds, m_field_values, m_field_types, 2, true, m_no_names)
+                        dir_append_native_bitcast(records, lower_dir_type(m_field_type), "i8*", DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp + 1, DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp)
+                        m_field_temp = m_field_temp + 1
+                    else:
+                        dir_append_native_call_direct(records, lower_dir_type(m_field_type), DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp, "get", m_field_kinds, m_field_values, m_field_types, 2, true, m_no_names)
+                    let m_field_slot_name = lower_variable_slot_name(context.src, m_fvar_start, m_fvar_end, m_field_type)
+                    if not lower_has_variable(context.src, m_fvar_start, m_fvar_end, variable_starts, variable_ends):
+                        dir_append_native_alloca(records, lower_dir_type(m_field_type), DIR_NATIVE_OPERAND_NAMED, 0, m_field_slot_name)
+                    dir_append_native_store(records, lower_dir_type(m_field_type), DIR_NATIVE_OPERAND_TEMPORARY, m_field_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_field_slot_name)
+                    append(variable_starts, m_fvar_start)
+                    append(variable_ends, m_fvar_end)
+                    append(variable_types, m_field_type)
+                    m_body_counter = m_field_temp
+                m_field_cursor = m_fmode_index + 1
+                while m_field_cursor < m_field_end and token_kind(context.kinds, m_field_cursor) != TOKEN_COMMA:
+                    m_field_cursor = m_field_cursor + 1
+                m_field_cursor = m_field_cursor + 1
+        # payload 解包:模式记录保存的是 token 范围，直接绑定变量名
+        let m_payload_name_start = 0
+        let m_payload_name_end = 0
+        let m_has_payload_name = false
+        if m_pattern_kind == AST_PAT_ENUM:
+            let m_payload_token_start = ast_node_arg(ast, m_pattern_node, 4)
+            let m_payload_token_end = ast_node_arg(ast, m_pattern_node, 5)
+            if m_payload_token_start < m_payload_token_end:
+                m_payload_name_start = token_start(context.starts, m_payload_token_start)
+                m_payload_name_end = token_end(context.ends, m_payload_token_start)
+                m_has_payload_name = true
+        if m_pattern_kind == AST_PAT_BUILTIN:
+            m_payload_name_start = ast_node_arg(ast, m_pattern_node, 1)
+            m_payload_name_end = ast_node_arg(ast, m_pattern_node, 2)
+            if m_payload_name_end > m_payload_name_start:
+                m_has_payload_name = true
+        if m_has_payload_name and context.src[m_payload_name_start:m_payload_name_end] != "_":
+            let m_payload_temp = m_body_counter + 1
+            let m_payload_kinds = []
+            let m_payload_values = []
+            let m_payload_types = []
+            append(m_payload_kinds, lower_operand_kind(m_scrutinee_type))
+            append(m_payload_values, m_scrutinee_value)
+            append(m_payload_types, lower_dir_type(m_scrutinee_type))
+            append(m_payload_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+            append(m_payload_values, 1)
+            append(m_payload_types, DIR_TYPE_I32)
+            dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_payload_temp, "get", m_payload_kinds, m_payload_values, m_payload_types, 2, true, m_no_names)
+            let m_payload_slot = lower_variable_slot_name(context.src, m_payload_name_start, m_payload_name_end, VALUE_TYPE_INT)
+            if not lower_has_variable(context.src, m_payload_name_start, m_payload_name_end, variable_starts, variable_ends):
+                dir_append_native_alloca(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_NAMED, 0, m_payload_slot)
+            dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, m_payload_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, m_payload_slot)
+            append(variable_starts, m_payload_name_start)
+            append(variable_ends, m_payload_name_end)
+            append(variable_types, VALUE_TYPE_INT)
+            m_body_counter = m_payload_temp
+        if m_guard_node != 0:
+            let (m_guard_next, m_guard_type, m_guard_value) = lower_expr(context, ast, m_guard_node, variable_starts, variable_ends, variable_types, m_body_counter, records)
+            let m_guard_cond = lower_branch_condition(m_guard_type, m_guard_value, m_guard_next, records)
+            let m_guard_body_label = m_guard_cond + 1
+            dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, m_guard_cond, m_guard_body_label, m_next_label)
+            lower_append_label_number(records, m_guard_body_label)
+            m_body_counter = m_guard_cond
+        let m_body_next = m_body_counter
+        let m_body_block_end = ast_node_arg(ast, m_case_node, 3)
+        let (stmt_body_next, stmt_body_has) = lower_stmt_block(context, ast, m_body_node, m_body_block_end, variable_starts, variable_ends, variable_types, m_body_counter, records, buffer, 0, break_label)
+        m_body_next = stmt_body_next
+        if stmt_body_has == 0:
+            dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_end_label, 0)
+        lower_append_label_number(records, m_next_label)
+        m_counter = m_body_next
+        if m_counter <= m_next_label:
+            m_counter = m_next_label
+        m_case_node = ast_node_arg(ast, m_case_node, 3)
+    dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, m_end_label, 0)
+    lower_append_label_number(records, m_end_label)
+    return (m_counter + 1, 0)
 
 def lower_lambda_number(ast: list[int], node: int) -> int:
     if node >= len(ast):
@@ -1085,12 +1638,10 @@ def lower_expr_list_comp(context: ParseContext, ast: list[int], node: int, varia
     append(lc_append_types, lower_dir_type(lc_element_type))
     dir_append_native_call_direct(records, DIR_TYPE_UNKNOWN, DIR_TAG_INVALID, 0, "append", lc_append_kinds, lc_append_values, lc_append_types, 2, false, lc_no_names)
     dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, lc_next_label, 0)
-    if lc_condition_node != 0:
-        lower_append_label_number(records, lc_next_label)
+    lower_append_label_number(records, lc_next_label)
     let lc_inc_temp = lc_element_next + 1
-    dir_append_native_load(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, lc_inc_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, lc_index_slot)
     let lc_added_temp = lc_inc_temp + 1
-    dir_append_native_operation(records, DIR_OPCODE_ADD, DIR_TYPE_I32, lc_added_temp, DIR_NATIVE_OPERAND_TEMPORARY, lc_inc_temp, DIR_NATIVE_OPERAND_IMMEDIATE, 1)
+    dir_append_native_operation(records, DIR_OPCODE_ADD, DIR_TYPE_I32, lc_added_temp, DIR_NATIVE_OPERAND_TEMPORARY, lc_index_temp, DIR_NATIVE_OPERAND_IMMEDIATE, 1)
     dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, lc_added_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, lc_index_slot)
     dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, lc_check, 0)
     lower_append_label_number(records, lc_end)
@@ -1249,6 +1800,22 @@ def lower_expr_call(context: ParseContext, ast: list[int], node: int, variable_s
         append(call_arg_types, lower_dir_type(call_argument_type))
         call_argument_counter = call_argument_next
         call_argument_index = call_argument_index + 1
+    if call_function_index >= 0:
+        let call_param_offset = context.param_offsets[call_function_index]
+        let call_param_count = context.param_counts[call_function_index]
+        let call_missing_index = call_arg_count
+        while call_missing_index < call_param_count:
+            let call_default_token = context.pd[call_param_offset + call_missing_index]
+            if call_default_token < 0:
+                break
+            let call_default_ast = [0]
+            let (call_default_next_index, call_default_node) = ast_parse_expression(context, call_default_token, call_default_ast)
+            let (call_default_next, call_default_type, call_default_value) = lower_expr(context, call_default_ast, call_default_node, variable_starts, variable_ends, variable_types, call_argument_counter, records)
+            append(call_arg_kinds, lower_operand_kind(call_default_type))
+            append(call_arg_values, call_default_value)
+            append(call_arg_types, lower_dir_type(call_default_type))
+            call_argument_counter = call_default_next
+            call_missing_index = call_missing_index + 1
     if call_name == "ord" and len(call_arg_kinds) > 0:
         # ord 是身份函数(rune 与 int 底层都是 i32)
         let ord_result_type = VALUE_TYPE_INT
@@ -1387,6 +1954,28 @@ def lower_expr(context: ParseContext, ast: list[int], node: int, variable_starts
             return lower_expr_attr(context, ast, node, variable_starts, variable_ends, variable_types, counter, records)
         case AST_EXPR_LIST_COMP:
             return lower_expr_list_comp(context, ast, node, variable_starts, variable_ends, variable_types, counter, records)
+        case AST_EXPR_BUILTIN_ENUM:
+            let be_tag = ast_node_arg(ast, node, 0)
+            let be_result = counter + 1
+            let be_create_kinds = []
+            let be_create_values = []
+            let be_create_types = []
+            append(be_create_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+            append(be_create_values, 4)
+            append(be_create_types, DIR_TYPE_I32)
+            let be_no_names: list[str] = []
+            dir_append_native_call_direct(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, be_result, "create_dynarray_i32", be_create_kinds, be_create_values, be_create_types, 1, true, be_no_names)
+            let be_tag_kinds = []
+            let be_tag_values = []
+            let be_tag_types = []
+            append(be_tag_kinds, DIR_NATIVE_OPERAND_TEMPORARY)
+            append(be_tag_values, be_result)
+            append(be_tag_types, DIR_TYPE_LIST)
+            append(be_tag_kinds, DIR_NATIVE_OPERAND_IMMEDIATE)
+            append(be_tag_values, be_tag)
+            append(be_tag_types, DIR_TYPE_I32)
+            dir_append_native_call_direct(records, DIR_TYPE_UNKNOWN, DIR_TAG_INVALID, 0, "append_i32", be_tag_kinds, be_tag_values, be_tag_types, 2, false, be_no_names)
+            return (be_result, VALUE_TYPE_LIST, be_result)
         case AST_EXPR_METHOD_CALL:
             return lower_expr_method_call(context, ast, node, variable_starts, variable_ends, variable_types, counter, records)
         case AST_EXPR_MATCH:
@@ -1427,7 +2016,12 @@ def lower_stmt_let(context: ParseContext, ast: list[int], node: int, variable_st
         let q_ok_label = q_cond + 1
         let q_error_label = q_cond + 2
         let q_slot = lower_variable_slot_name(source, let_name_start, let_name_end, VALUE_TYPE_INT)
-        if not lower_has_variable(source, let_name_start, let_name_end, variable_starts, variable_ends):
+        let q_need_alloca = not lower_has_variable(source, let_name_start, let_name_end, variable_starts, variable_ends)
+        if not q_need_alloca:
+            let q_existing_index = lower_find_variable(source, let_name_start, let_name_end, variable_starts, variable_ends)
+            if q_existing_index >= 0 and is_global_let_value_type(variable_types[q_existing_index]):
+                q_need_alloca = true
+        if q_need_alloca:
             dir_append_native_alloca(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_NAMED, 0, q_slot)
         dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, q_cond, q_ok_label, q_error_label)
         lower_append_label_number(records, q_error_label)
@@ -1462,7 +2056,12 @@ def lower_stmt_let(context: ParseContext, ast: list[int], node: int, variable_st
     if let_type_final == VALUE_TYPE_IMMEDIATE:
         let_type_final = VALUE_TYPE_INT
     let let_slot = lower_variable_slot_name(source, let_name_start, let_name_end, let_type_final)
-    if not lower_has_variable(source, let_name_start, let_name_end, variable_starts, variable_ends):
+    let let_need_alloca = not lower_has_variable(source, let_name_start, let_name_end, variable_starts, variable_ends)
+    if not let_need_alloca:
+        let let_existing_index = lower_find_variable(source, let_name_start, let_name_end, variable_starts, variable_ends)
+        if let_existing_index >= 0 and is_global_let_value_type(variable_types[let_existing_index]):
+            let_need_alloca = true
+    if let_need_alloca:
         dir_append_native_alloca(records, lower_dir_type(let_type_final), DIR_NATIVE_OPERAND_NAMED, 0, let_slot)
     dir_append_native_store(records, lower_dir_type(let_type_final), lower_operand_kind(let_value_type), let_value_value, "", DIR_NATIVE_OPERAND_NAMED, 0, let_slot)
     append(variable_starts, let_name_start)
@@ -1484,8 +2083,10 @@ def lower_stmt_return(context: ParseContext, ast: list[int], node: int, variable
     dir_append_native_ret(records, ret_dir_type, lower_operand_kind(ret_type), ret_value)
     return (ret_next, 1)
 
-def lower_stmt_expr(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int]) -> (int, int):
+def lower_stmt_expr(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], break_label: int) -> (int, int):
     let expr_expression_node = ast_node_arg(ast, node, 0)
+    if ast_node_kind(ast, expr_expression_node) == AST_EXPR_MATCH and ast_node_arg(ast, expr_expression_node, 3) != 0:
+        return lower_stmt_match(context, ast, expr_expression_node, variable_starts, variable_ends, variable_types, counter, records, buffer, break_label)
     if ast_node_kind(ast, expr_expression_node) == AST_EXPR_PRINT:
         let expr_print_value = ast_node_arg(ast, expr_expression_node, 0)
         let (expr_next, expr_value_type, expr_value_value) = lower_expr(context, ast, expr_print_value, variable_starts, variable_ends, variable_types, counter, records)
@@ -1537,7 +2138,7 @@ def lower_switch_comparison(sw_type: int, sw_value: int, case_type: int, case_va
     dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_EQ, int_cond, lower_operand_kind(sw_type), sw_value, lower_operand_kind(case_type), case_value)
     return int_cond
 
-def lower_stmt_switch(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int) -> (int, int):
+def lower_stmt_switch(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int, break_label: int) -> (int, int):
     let sw_header_node = ast_node_arg(ast, node, 0)
     let sw_cases_start = ast_node_arg(ast, node, 1)
     let sw_cases_end = ast_node_arg(ast, node, 2)
@@ -1557,14 +2158,14 @@ def lower_stmt_switch(context: ParseContext, ast: list[int], node: int, variable
         let case_check_label = case_condition + 2
         dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, case_condition, case_body_label, case_check_label)
         lower_append_label_number(records, case_body_label)
-        let (body_next, body_has_return) = lower_stmt_block(context, ast, case_block_node, case_block_end, variable_starts, variable_ends, variable_types, case_condition + 2, records, buffer, expected_return_type)
+        let (body_next, body_has_return) = lower_stmt_block(context, ast, case_block_node, case_block_end, variable_starts, variable_ends, variable_types, case_condition + 2, records, buffer, expected_return_type, break_label)
         if body_has_return == 0:
             dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, sw_end_label, 0)
         lower_append_label_number(records, case_check_label)
         current_counter = body_next
         case_node = case_block_end
     if sw_default_node != 0:
-        let (default_next, default_has_return) = lower_stmt_block(context, ast, sw_default_node, sw_default_end, variable_starts, variable_ends, variable_types, current_counter, records, buffer, expected_return_type)
+        let (default_next, default_has_return) = lower_stmt_block(context, ast, sw_default_node, sw_default_end, variable_starts, variable_ends, variable_types, current_counter, records, buffer, expected_return_type, break_label)
         if default_has_return == 0:
             dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, sw_end_label, 0)
         current_counter = default_next
@@ -1573,7 +2174,7 @@ def lower_stmt_switch(context: ParseContext, ast: list[int], node: int, variable
     lower_append_label_number(records, sw_end_label)
     return (current_counter, 0)
 
-def lower_stmt_if(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int) -> (int, int):
+def lower_stmt_if(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int, break_label: int) -> (int, int):
     let if_condition_node = ast_node_arg(ast, node, 0)
     let if_then_block = ast_node_arg(ast, node, 1)
     let if_then_end = ast_node_arg(ast, node, 2)
@@ -1588,7 +2189,7 @@ def lower_stmt_if(context: ParseContext, ast: list[int], node: int, variable_sta
     let if_end_label = if_condition + 3
     dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, if_condition, if_then_label, if_check_label)
     lower_append_label_number(records, if_then_label)
-    let (if_then_next, if_then_has) = lower_stmt_block(context, ast, if_then_block, if_then_end, variable_starts, variable_ends, variable_types, if_condition + 3, records, buffer, expected_return_type)
+    let (if_then_next, if_then_has) = lower_stmt_block(context, ast, if_then_block, if_then_end, variable_starts, variable_ends, variable_types, if_condition + 3, records, buffer, expected_return_type, break_label)
     if if_then_has == 0:
         dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, if_end_label, 0)
     lower_append_label_number(records, if_check_label)
@@ -1604,7 +2205,7 @@ def lower_stmt_if(context: ParseContext, ast: list[int], node: int, variable_sta
         let if_elif_check_label = if_elif_condition + 2
         dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, if_elif_condition, if_elif_then_label, if_elif_check_label)
         lower_append_label_number(records, if_elif_then_label)
-        let (if_elif_next, if_elif_has) = lower_stmt_block(context, ast, if_elif_block, if_elif_block_end, variable_starts, variable_ends, variable_types, if_elif_condition + 2, records, buffer, expected_return_type)
+        let (if_elif_next, if_elif_has) = lower_stmt_block(context, ast, if_elif_block, if_elif_block_end, variable_starts, variable_ends, variable_types, if_elif_condition + 2, records, buffer, expected_return_type, break_label)
         if if_elif_has == 0:
             dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, if_end_label, 0)
         lower_append_label_number(records, if_elif_check_label)
@@ -1615,7 +2216,7 @@ def lower_stmt_if(context: ParseContext, ast: list[int], node: int, variable_sta
         let if_else_label = if_branch_counter + 1
         dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, if_else_label, 0)
         lower_append_label_number(records, if_else_label)
-        let (if_else_next, if_else_has) = lower_stmt_block(context, ast, if_else_block, if_else_block_end, variable_starts, variable_ends, variable_types, if_else_label, records, buffer, expected_return_type)
+        let (if_else_next, if_else_has) = lower_stmt_block(context, ast, if_else_block, if_else_block_end, variable_starts, variable_ends, variable_types, if_else_label, records, buffer, expected_return_type, break_label)
         if if_else_has == 0:
             dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, if_end_label, 0)
         if_branch_counter = if_else_next
@@ -1624,7 +2225,7 @@ def lower_stmt_if(context: ParseContext, ast: list[int], node: int, variable_sta
     lower_append_label_number(records, if_end_label)
     return (if_branch_counter, 0)
 
-def lower_stmt_while(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int) -> (int, int):
+def lower_stmt_while(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int, break_label: int) -> (int, int):
     let wh_condition_node = ast_node_arg(ast, node, 0)
     let wh_block_node = ast_node_arg(ast, node, 1)
     let wh_block_end = ast_node_arg(ast, node, 2)
@@ -1639,13 +2240,13 @@ def lower_stmt_while(context: ParseContext, ast: list[int], node: int, variable_
     let wh_body_counter = wh_cond_next + 1
     dir_append_native_br(records, 3, DIR_NATIVE_OPERAND_TEMPORARY, wh_condition, wh_body, wh_end)
     lower_append_label_number(records, wh_body)
-    let (wh_body_next, wh_body_has) = lower_stmt_block(context, ast, wh_block_node, wh_block_end, variable_starts, variable_ends, variable_types, wh_body_counter, records, buffer, expected_return_type)
+    let (wh_body_next, wh_body_has) = lower_stmt_block(context, ast, wh_block_node, wh_block_end, variable_starts, variable_ends, variable_types, wh_body_counter, records, buffer, expected_return_type, wh_end)
     if wh_body_has == 0:
         dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, wh_check, 0)
     lower_append_label_number(records, wh_end)
     return (wh_body_next, 0)
 
-def lower_stmt_for(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int) -> (int, int):
+def lower_stmt_for(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int, break_label: int) -> (int, int):
     let source = context.src
     let for_loop_name_start = ast_node_arg(ast, node, 0)
     let for_loop_name_end = ast_node_arg(ast, node, 1)
@@ -1694,13 +2295,12 @@ def lower_stmt_for(context: ParseContext, ast: list[int], node: int, variable_st
     let for_get_no_names: list[str] = []
     dir_append_native_call_direct(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, for_element_temp, "get", for_get_arg_kinds, for_get_arg_values, for_get_arg_types, 2, true, for_get_no_names)
     dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, for_element_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, for_index_slot)
-    let (for_body_next, for_body_has) = lower_stmt_block(context, ast, for_block_node, for_block_end, variable_starts, variable_ends, variable_types, for_element_temp, records, buffer, expected_return_type)
+    let (for_body_next, for_body_has) = lower_stmt_block(context, ast, for_block_node, for_block_end, variable_starts, variable_ends, variable_types, for_element_temp, records, buffer, expected_return_type, for_end)
     let for_return_counter = for_body_next
     if for_body_has == 0:
         let for_inc_temp = for_body_next + 1
-        dir_append_native_load(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, for_inc_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, for_index_slot)
         let for_added_temp = for_inc_temp + 1
-        dir_append_native_operation(records, DIR_OPCODE_ADD, DIR_TYPE_I32, for_added_temp, DIR_NATIVE_OPERAND_TEMPORARY, for_inc_temp, DIR_NATIVE_OPERAND_IMMEDIATE, 1)
+        dir_append_native_operation(records, DIR_OPCODE_ADD, DIR_TYPE_I32, for_added_temp, DIR_NATIVE_OPERAND_TEMPORARY, for_index_temp, DIR_NATIVE_OPERAND_IMMEDIATE, 1)
         dir_append_native_store(records, DIR_TYPE_I32, DIR_NATIVE_OPERAND_TEMPORARY, for_added_temp, "", DIR_NATIVE_OPERAND_NAMED, 0, for_index_slot)
         dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, for_check, 0)
         for_return_counter = for_added_temp
@@ -1769,12 +2369,18 @@ def lower_stmt_assign(context: ParseContext, ast: list[int], node: int, variable
         return (as_key_next, 0)
     if as_variable_index >= 0:
         let as_variable_type = variable_types[as_variable_index]
-        if not is_global_let_value_type(as_variable_type):
+        if is_global_let_value_type(as_variable_type):
+            let as_global_buffer = [1]
+            append_text(as_global_buffer, source[as_name_start:as_name_end])
+            let as_global_marker = as_global_buffer[0]
+            let as_global_base_type = global_let_base_type(as_variable_type)
+            dir_append_native_store_symbol(records, lower_dir_type(as_global_base_type), lower_operand_kind(as_type), as_value, "", as_global_buffer, as_global_marker)
+        else:
             let as_slot = lower_variable_slot_name(source, as_name_start, as_name_end, as_variable_type)
             dir_append_native_store(records, lower_dir_type(as_variable_type), lower_operand_kind(as_type), as_value, "", DIR_NATIVE_OPERAND_NAMED, 0, as_slot)
     return (as_next, 0)
 
-def lower_stmt(context: ParseContext, ast: list[int], node: int, body_end: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int) -> (int, int):
+def lower_stmt(context: ParseContext, ast: list[int], node: int, body_end: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int, break_label: int) -> (int, int):
     let kind = ast_node_kind(ast, node)
     switch kind:
         case AST_STMT_LET:
@@ -1784,21 +2390,25 @@ def lower_stmt(context: ParseContext, ast: list[int], node: int, body_end: int, 
         case AST_STMT_RETURN:
             return lower_stmt_return(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, expected_return_type)
         case AST_STMT_EXPR:
-            return lower_stmt_expr(context, ast, node, variable_starts, variable_ends, variable_types, counter, records)
+            return lower_stmt_expr(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, break_label)
         case AST_STMT_IF:
-            return lower_stmt_if(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type)
+            return lower_stmt_if(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type, break_label)
         case AST_STMT_WHILE:
-            return lower_stmt_while(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type)
+            return lower_stmt_while(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type, break_label)
         case AST_STMT_FOR:
-            return lower_stmt_for(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type)
+            return lower_stmt_for(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type, break_label)
         case AST_STMT_ASSIGN:
             return lower_stmt_assign(context, ast, node, variable_starts, variable_ends, variable_types, counter, records)
         case AST_STMT_SWITCH:
-            return lower_stmt_switch(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type)
+            return lower_stmt_switch(context, ast, node, variable_starts, variable_ends, variable_types, counter, records, buffer, expected_return_type, break_label)
+        case AST_STMT_BREAK:
+            if break_label >= 0:
+                dir_append_native_br(records, 1, DIR_TAG_INVALID, 0, break_label, 0)
+            return (counter, 0)
         default:
             return (counter, 0)
 
-def lower_stmt_block(context: ParseContext, ast: list[int], block_start: int, block_end: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int) -> (int, int):
+def lower_stmt_block(context: ParseContext, ast: list[int], block_start: int, block_end: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int], buffer: list[int], expected_return_type: int, break_label: int) -> (int, int):
     let node = block_start
     let current_counter = counter
     let has_return = 0
@@ -1823,7 +2433,7 @@ def lower_stmt_block(context: ParseContext, ast: list[int], block_start: int, bl
             __c_eprint_int(node)
             __c_eprint_text("\n")
             return (current_counter, has_return)
-        let (next_counter, statement_has_return) = lower_stmt(context, ast, node, block_end, variable_starts, variable_ends, variable_types, current_counter, records, buffer, expected_return_type)
+        let (next_counter, statement_has_return) = lower_stmt(context, ast, node, block_end, variable_starts, variable_ends, variable_types, current_counter, records, buffer, expected_return_type, break_label)
         current_counter = next_counter
         if statement_has_return != 0:
             has_return = 1
@@ -1999,7 +2609,7 @@ def lower_function(context: ParseContext, ast: list[int], function_index: int, f
                 dir_append_native_store_symbol(function_records, lower_dir_type(global_init_type), lower_operand_kind(init_expr_type), init_expr_value, "", global_init_buffer, global_init_marker)
                 entry_counter = init_expr_next
             global_init_index = global_init_index + 1
-    let (body_counter, has_return) = lower_stmt_block(context, ast, body_start, body_end, variable_starts, variable_ends, variable_types, entry_counter, function_records, function_buffer, return_type_value)
+    let (body_counter, has_return) = lower_stmt_block(context, ast, body_start, body_end, variable_starts, variable_ends, variable_types, entry_counter, function_records, function_buffer, return_type_value, -1)
     if has_return == 0:
         if return_type_value == VALUE_TYPE_LIST or return_type_value == VALUE_TYPE_BYTES:
             let result_temporary = body_counter + 1
@@ -2033,6 +2643,7 @@ def lower_function(context: ParseContext, ast: list[int], function_index: int, f
 def lower_program(context: ParseContext, ast: list[int], fn_ast_starts: list[int], fn_ast_ends: list[int], global_let_nodes: list[int], records: list[int], global_let_name_starts: list[int], global_let_name_ends: list[int], global_let_types: list[int], function_bodies: list[int], function_body_ends: list[int], parameter_types: list[int], constant_starts: list[int], constant_ends: list[int], constant_values: list[int], constant_types: list[int]) -> bool:
     let buffer = [1]
     lower_append_module(records, buffer, "%dynarray_i32 = type { i32, i32, i32* }\n")
+    lower_append_module(records, buffer, "%dynarray_ptr = type { i32, i32, i64* }\n")
     lower_append_module(records, buffer, "%dict_t = type opaque\n")
     lower_append_module(records, buffer, "%dir_closure = type { i8*, i8* }\n")
     lower_append_module(records, buffer, "%dir_interface = type { i8*, i8* }\n")
@@ -2078,6 +2689,7 @@ def lower_program(context: ParseContext, ast: list[int], fn_ast_starts: list[int
     lower_append_extern(records, buffer, "declare i32 @get_dynarray_i32(%dynarray_i32*, i32)\n")
     lower_append_extern(records, buffer, "declare %dynarray_i32* @slice_dynarray_i32(%dynarray_i32*, i32, i32)\n")
     lower_append_extern(records, buffer, "declare %dynarray_i32* @concat_dynarray_i32(%dynarray_i32*, %dynarray_i32*)\n")
+    lower_append_extern(records, buffer, "declare %dynarray_ptr* @concat_dynarray_ptr(%dynarray_ptr*, %dynarray_ptr*)\n")
     lower_append_extern(records, buffer, "declare %dir_closure* @dream_closure_create(i8*, i8*)\n")
     lower_append_extern(records, buffer, "declare i8* @dream_closure_alloc(i64)\n")
     lower_append_extern(records, buffer, "declare %dict_t* @dream_dict_create_int_int(i32)\n")
@@ -2129,6 +2741,13 @@ def lower_program(context: ParseContext, ast: list[int], fn_ast_starts: list[int
                 lower_append_string_global(records, buffer, context.src, ast_node_start(ast, string_scan_node), ast_node_end(ast, string_scan_node))
             string_scan_prev = string_scan_node
             string_scan_node = scan_next
+    let def_param_scan = 0
+    while def_param_scan < len(context.pd):
+        let def_param_token = context.pd[def_param_scan]
+        if def_param_token >= 0:
+            if token_kind(context.kinds, def_param_token) == TOKEN_STRING:
+                lower_append_string_global(records, buffer, context.src, token_start(context.starts, def_param_token), token_end(context.ends, def_param_token))
+        def_param_scan = def_param_scan + 1
     let lambda_scan_node = 1
     let lambda_scan_number = 0
     while lambda_scan_node < len(ast):

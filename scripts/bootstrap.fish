@@ -4,13 +4,13 @@ set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
 cd "$root_dir"
 
-set stage0_compiler _build/default/bin/main.exe
+set stage0_compiler ocaml/_build/default/bin/main.exe
 set bootstrap_dir bootstrap
-set runtime_dir runtime
+set runtime_dir runtime/c
 set llvm_flags -Wno-override-module
 set runtime_sources (find "$runtime_dir" -maxdepth 1 -type f -name '*.c' ! -name 'test_*.c' ! -name 'bytes.c' | sort)
 set compiler_source "$bootstrap_dir/compiler.dm"
-set stage1_llvm "$bootstrap_dir/stage1.ll"
+set stage1_llvm "tmp/stage1.ll"
 set include_stage3 true
 if test (count $argv) -gt 0
     if test "$argv[1]" = '--skip-stage3'
@@ -44,16 +44,16 @@ function compile_llvm
 end
 
 function verify_bootstrap_llvm
-    set llvm_files "$stage1_llvm" "$bootstrap_dir/stage2.ll"
+    set llvm_files "$stage1_llvm" "tmp/stage2.ll"
     if test (count $argv) -gt 0; and test "$argv[1]" = '--with-stage3'
-        set -a llvm_files "$bootstrap_dir/stage3.ll"
+        set -a llvm_files "tmp/stage3.ll"
     end
     fish --no-config scripts/verify_llvm.fish $llvm_files
 end
 
 function check_dir_lowering
     set stage_name $argv[1]
-    set llvm_file "$bootstrap_dir/$stage_name.ll"
+    set llvm_file "tmp/$stage_name.ll"
     set lowering_matches (rg '^define i1 @dir_lower_records_buffer' "$llvm_file")
     set failure_markers (rg '^; DIR validation failed' "$llvm_file")
     if test (count $lowering_matches) -eq 0; or test (count $failure_markers) -ne 0
@@ -64,7 +64,7 @@ end
 
 function check_bool_abi
     set stage_name $argv[1]
-    set llvm_file "$bootstrap_dir/$stage_name.ll"
+    set llvm_file "tmp/$stage_name.ll"
     set bool_functions (rg '^define i1 @(is_digit|is_identifier_start|is_identifier_continue|source_equals|source_ranges_equal)\(' "$llvm_file")
     set bool_returns (rg '^ret i1 ' "$llvm_file")
     if test (count $bool_functions) -lt 5; or test (count $bool_returns) -eq 0
@@ -74,8 +74,8 @@ function check_bool_abi
 end
 
 function check_fixed_point
-    set stage2_file "$bootstrap_dir/stage2.ll"
-    set stage3_file "$bootstrap_dir/stage3.ll"
+    set stage2_file "tmp/stage2.ll"
+    set stage3_file "tmp/stage3.ll"
     cmp "$stage2_file" "$stage3_file"
     or exit 1
     set stage2_hash (shasum -a 256 "$stage2_file" | awk '{print $1}')
@@ -86,7 +86,7 @@ function check_fixed_point
     end
     echo "fixed-point sha256: $stage2_hash"
     for stage_name in stage2 stage3
-        set stage_file "$bootstrap_dir/$stage_name.ll"
+        set stage_file "tmp/$stage_name.ll"
         set record_stats (rg '^; DIR records=' "$stage_file" | tail -n 1)
         if test -z "$record_stats"
             echo "错误: $stage_name 缺少 DIR record 统计" >&2
@@ -100,9 +100,9 @@ function check_bootstrapped_example
     set source_file $argv[1]
     set output_file $argv[2]
     set expected_lines $argv[3..-1]
-    set compilers "$bootstrap_dir/stage2"
+    set compilers "tmp/stage2"
     if test "$include_stage3" = true
-        set -a compilers "$bootstrap_dir/stage3"
+        set -a compilers "tmp/stage3"
     end
     set compiler_index 1
     for compiler in $compilers
@@ -129,15 +129,15 @@ function check_bootstrapped_build
     rm -f "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file" "$cli_dir_stage3_file"
     "$stage0_compiler" dir test/test_const_dir.dm -o "$cli_dir_host_file" >/dev/null
     or exit 1
-    "$bootstrap_dir/stage1" dir test/test_const_dir.dm -o "$cli_dir_stage1_file"
+    "tmp/stage1" dir test/test_const_dir.dm -o "$cli_dir_stage1_file"
     or exit 1
-    "$bootstrap_dir/stage2" dir test/test_const_dir.dm -o "$cli_dir_stage2_file"
+    "tmp/stage2" dir test/test_const_dir.dm -o "$cli_dir_stage2_file"
     or exit 1
     cmp "$cli_dir_stage1_file" "$cli_dir_stage2_file"
     or exit 1
     set dir_files "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file"
     if test "$include_stage3" = true
-        "$bootstrap_dir/stage3" dir test/test_const_dir.dm -o "$cli_dir_stage3_file"
+        "tmp/stage3" dir test/test_const_dir.dm -o "$cli_dir_stage3_file"
         or exit 1
         cmp "$cli_dir_stage2_file" "$cli_dir_stage3_file"
         or exit 1
@@ -150,7 +150,7 @@ function check_bootstrapped_build
         end
     end
     rm -f "$cli_binary_file"
-    "$bootstrap_dir/stage1" build test/test_string_add_dir.dm -o "$cli_binary_file"
+    "tmp/stage1" build test/test_string_add_dir.dm -o "$cli_binary_file"
     or exit 1
     set cli_output ("$cli_binary_file" | string split \n)
     if test (count $cli_output) -ne 3; or test "$cli_output[1]" != 'dream language'; or test "$cli_output[2]" != 'hello world'; or test "$cli_output[3]" != '[hello]'
@@ -165,7 +165,7 @@ function check_bootstrapped_build
     check_bootstrapped_example examples/quicksort.dm tmp/dream_bootstrap_quicksort 1 2 3 5 7 9
     check_bootstrapped_example test/test_for_dir.dm tmp/dream_bootstrap_for 60
     check_bootstrapped_example test/test_bootstrap_collections.dm tmp/dream_bootstrap_collections 3 2 30 1
-    check_bootstrapped_example examples/lang_full_dream.dm tmp/lang_full_dream 3 2 10 6 10 25 2 9 7 2 42 7 6 -1 20 10 2 3 4 6 100 -1 10 42 2 98 ab 3.5 true 65 66
+    check_bootstrapped_example examples/lang_full_dream.dm tmp/lang_full_dream 3 2 10 6 10 25 2 9 7 2 42 7 6 -1 20 10 2 3 4 6 100 -1 10 42 2 98 ab 3.5 true 65 66 6 3
     check_bootstrapped_example test/test_rune_index_dir.dm tmp/dream_bootstrap_rune_index true 20320 65536
     check_bootstrapped_example test/test_bootstrap_struct.dm tmp/dream_bootstrap_struct 7
     check_bootstrapped_example test/test_bootstrap_struct_function.dm tmp/dream_bootstrap_struct_function 7
@@ -218,7 +218,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_interface_args_dir.dm tmp/dream_bootstrap_interface_args 15 true false
     if test "$include_stage3" = true
         rm -f "$cli_binary_file"
-        "$bootstrap_dir/stage3" build test/test_string_add_dir.dm -o "$cli_binary_file"
+        "tmp/stage3" build test/test_string_add_dir.dm -o "$cli_binary_file"
         or exit 1
         set stage3_output ("$cli_binary_file" | string split \n)
         if test (count $stage3_output) -ne 3; or test "$stage3_output[1]" != 'dream language'; or test "$stage3_output[2]" != 'hello world'; or test "$stage3_output[3]" != '[hello]'
@@ -233,47 +233,47 @@ $stage0_compiler build "$compiler_source" >/dev/null
 or exit 1
 mv "$bootstrap_dir/compiler.ll" "$stage1_llvm"
 or exit 1
-mv "$bootstrap_dir/compiler" "$bootstrap_dir/stage1"
+mv "$bootstrap_dir/compiler" "tmp/stage1"
 or exit 1
-compile_llvm "$bootstrap_dir/stage1" "$stage1_llvm"
+compile_llvm "tmp/stage1" "$stage1_llvm"
 or exit 1
-"$bootstrap_dir/stage1" llvm "$compiler_source" -o "$cli_output_file"
+"tmp/stage1" llvm "$compiler_source" -o "$cli_output_file"
 or exit 1
-"$bootstrap_dir/stage1" llvm "$compiler_source" -o "$bootstrap_dir/stage2.ll"
+"tmp/stage1" llvm "$compiler_source" -o "tmp/stage2.ll"
 or exit 1
-cmp "$cli_output_file" "$bootstrap_dir/stage2.ll"
+cmp "$cli_output_file" "tmp/stage2.ll"
 or exit 1
 verify_bootstrap_llvm
 or exit 1
 
-compile_llvm "$bootstrap_dir/stage2" "$bootstrap_dir/stage2.ll"
+compile_llvm "tmp/stage2" "tmp/stage2.ll"
 or exit 1
 
-"$bootstrap_dir/stage1" llvm bootstrap/sample_functions.dm -o "$bootstrap_dir/sample_functions.ll"
+"tmp/stage1" llvm bootstrap/sample_functions.dm -o "tmp/sample_functions.ll"
 or exit 1
 
-compile_llvm "$bootstrap_dir/sample_functions" "$bootstrap_dir/sample_functions.ll"
+compile_llvm "tmp/sample_functions" "tmp/sample_functions.ll"
 or exit 1
-set sample_output ("$bootstrap_dir/sample_functions" | string split \n)
+set sample_output ("tmp/sample_functions" | string split \n)
 if test (count $sample_output) -ne 2; or test "$sample_output[1]" != 48; or test "$sample_output[2]" != stage2
     echo '错误: sample_functions 输出不符合预期' >&2
     exit 1
 end
 printf '%s\n' $sample_output
 
-"$bootstrap_dir/stage2" help >/dev/null
+"tmp/stage2" help >/dev/null
 or exit 1
 verify_bootstrap_llvm
 or exit 1
 
 if test "$include_stage3" = true
-    "$bootstrap_dir/stage2" llvm "$compiler_source" -o "$bootstrap_dir/stage3.ll"
+    "tmp/stage2" llvm "$compiler_source" -o "tmp/stage3.ll"
     or exit 1
     verify_bootstrap_llvm --with-stage3
     or exit 1
-    compile_llvm "$bootstrap_dir/stage3" "$bootstrap_dir/stage3.ll"
+    compile_llvm "tmp/stage3" "tmp/stage3.ll"
     or exit 1
-    "$bootstrap_dir/stage3" help >/dev/null
+    "tmp/stage3" help >/dev/null
     or exit 1
     check_dir_lowering stage2
     check_dir_lowering stage3

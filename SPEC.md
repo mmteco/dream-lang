@@ -684,7 +684,7 @@ render(Shape.Circle(5))  # 编译时验证
 
 #### 运算符重载 ✅
 
-通过接口实现运算符重载。标准运算符接口定义在 `stdlib/operators.dm`：
+通过接口实现运算符重载。标准运算符接口定义在 `runtime/stdlib/operators.dm`：
 
 ```python
 # 从标准库导入运算符接口
@@ -718,7 +718,7 @@ let v4 = v1 * 3         # 自动脱糖为 v1.mul(3)
 let v5 = -v1            # 自动脱糖为 v1.neg()
 ```
 
-**标准运算符接口** (`stdlib/operators.dm`)：
+**标准运算符接口** (`runtime/stdlib/operators.dm`)：
 - 算术：`Add[T, R]`, `Sub[T, R]`, `Mul[T, R]`, `Div[T, R]`, `Mod[T, R]`
 - 比较：`Eq[T]`, `Ord[T]`
 - 一元：`Neg[T]`, `Not`

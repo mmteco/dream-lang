@@ -25,7 +25,7 @@ if test (count $argv) -eq 3; and test -n "$argv[3]"
     end
 end
 
-set bootstrapped_compiler "$root_dir/bootstrap/stage2"
+set bootstrapped_compiler "$root_dir/tmp/stage2"
 if set -q DREAM_BOOTSTRAP_COMPILER
     set bootstrapped_compiler "$DREAM_BOOTSTRAP_COMPILER"
 end

@@ -39,6 +39,7 @@ const AST_STMT_SWITCH: int = 33
 const AST_CASE: int = 34
 const AST_STMT_RETURN: int = 35
 const AST_STMT_EXPR: int = 36
+const AST_STMT_BREAK: int = 50
 
 const AST_M_CASE: int = 37
 const AST_PAT_WILDCARD: int = 38
@@ -105,6 +106,7 @@ const ARGS_STMT_EXPR: int = 2
 const ARGS_M_CASE: int = 4
 const ARGS_PAIR: int = 2
 const ARGS_PAT_CONS: int = 4
+const ARGS_PAT_STRUCT: int = 6
 
 def ast_kind_name(kind: int) -> str:
     switch kind:
@@ -180,6 +182,8 @@ def ast_kind_name(kind: int) -> str:
             return "stmt_return"
         case AST_STMT_EXPR:
             return "stmt_expr"
+        case AST_STMT_BREAK:
+            return "stmt_break"
         case AST_M_CASE:
             return "m_case"
         case AST_PAT_WILDCARD:
@@ -282,6 +286,8 @@ def ast_node_size(kind: int) -> int:
             return 6
         case AST_STMT_EXPR:
             return 5
+        case AST_STMT_BREAK:
+            return 3
         case AST_M_CASE:
             return 7
         case AST_PAT_WILDCARD:
@@ -424,6 +430,10 @@ def ast_parse_primary(context: ParseContext, index: int, ast: list[int]) -> (int
             return ast_parse_match_expression(context, index, ast, 0)
         if source[identifier_name_start:identifier_name_end] == "lambda":
             return ast_parse_lambda(context, index, ast)
+        if source[identifier_name_start:identifier_name_end] == "None":
+            let none_node = ast_append_node(ast, AST_EXPR_BUILTIN_ENUM, identifier_name_start, identifier_name_end, ARGS_BUILTIN_ENUM)
+            ast_set_arg(ast, none_node, 0, 1)
+            return (index + 1, none_node)
         if token_kind(kinds, index + 1) == TOKEN_OPEN_BRACE:
             return ast_parse_struct_literal(context, index, ast)
         let var_node = ast_append_node(ast, AST_EXPR_VAR, identifier_name_start, identifier_name_end, 0)
@@ -620,6 +630,9 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
         return ast_parse_let_statement(context, index, body_end, ast)
     if token_kind_value == TOKEN_RETURN:
         return ast_parse_return_statement(context, index, body_end, ast)
+    if token_kind_value == TOKEN_BREAK:
+        let break_node = ast_append_node(ast, AST_STMT_BREAK, 0, 0, 0)
+        return (break_node, index + 1)
     if token_kind_value == TOKEN_IF:
         return ast_parse_if_statement(context, index, body_end, ast)
     if token_kind_value == TOKEN_WHILE:
@@ -1359,7 +1372,7 @@ def ast_parse_pattern(context: ParseContext, index: int, ast: list[int]) -> (int
                     struct_field_cursor = struct_field_cursor + 1
                 if token_kind(kinds, struct_field_cursor) != TOKEN_CLOSE_BRACE:
                     return (0, index)
-                let struct_node = ast_append_node(ast, AST_PAT_STRUCT, pattern_name_start, pattern_name_end, ARGS_STRUCT)
+                let struct_node = ast_append_node(ast, AST_PAT_STRUCT, pattern_name_start, pattern_name_end, ARGS_PAT_STRUCT)
                 ast_set_arg(ast, struct_node, 0, pattern_name_start)
                 ast_set_arg(ast, struct_node, 1, pattern_name_end)
                 ast_set_arg(ast, struct_node, 2, index + 2)

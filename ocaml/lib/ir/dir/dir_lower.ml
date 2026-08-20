@@ -49,6 +49,7 @@ type context = {
   lambda_counter: int ref;
   global_inits: (string * Ast.expr) list ref;
   globals: (string * Dir.ty) list ref;
+  break_labels: (string * (string * Dir.ty) list) list ref;
 }
 
 exception Lower_error of string
@@ -221,6 +222,7 @@ let rec first_return_type statements =
       (match first_return_type body with
        | Some _ as result -> result
        | None -> first_return_type rest)
+  | SBreak _ :: rest -> first_return_type rest
   | _ :: rest -> first_return_type rest
 
 let signature_of_def resolve_struct def_info =
@@ -574,6 +576,7 @@ and free_statements bound statements =
   | SWhile (condition, body, _) :: rest ->
       StringSet.union (free_expression bound condition)
         (StringSet.union (free_statements bound body) (free_statements bound rest))
+  | SBreak _ :: rest -> free_statements bound rest
   | SFor (pattern, iterable, body, _) :: rest ->
       StringSet.union (free_expression bound iterable)
         (StringSet.union
@@ -2531,7 +2534,11 @@ and lower_while context function_builder environment condition body position =
   List.iter (fun (name, value, ty) ->
     Hashtbl.replace body_environment name { operand = Value value; ty }
   ) body_params;
+  let previous_break_stack = !(context.break_labels) in
+  context.break_labels :=
+    (exit_label, List.map (fun (name, _, ty) -> (name, ty)) body_params) :: previous_break_stack;
   lower_statements context function_builder body_environment body;
+  context.break_labels := previous_break_stack;
   if not (is_terminated function_builder) then
     terminate function_builder (Jump (condition_label,
       List.map (fun (name, _, _) ->
@@ -2619,7 +2626,11 @@ and lower_for context function_builder environment pattern iterable body positio
          | _ -> fail_at position "DIR for tuple patterns only support variables and wildcards"
        ) patterns
    | _ -> fail_at position "DIR for loops only support variable, wildcard and tuple patterns");
+  let previous_break_stack = !(context.break_labels) in
+  context.break_labels :=
+    (exit_label, List.map (fun (name, _, ty) -> (name, ty)) body_bindings) :: previous_break_stack;
   lower_statements context function_builder body_environment body;
+  context.break_labels := previous_break_stack;
   if not (is_terminated function_builder) then begin
     let next_index = fresh_value function_builder in
     emit function_builder (Binop (next_index, I32, Add, Value body_index, Int 1));
@@ -2678,6 +2689,17 @@ and lower_statement context function_builder environment statement =
       lower_while context function_builder environment condition body position
   | SFor (pattern, iterable, body, position) ->
       lower_for context function_builder environment pattern iterable body position
+  | SBreak position ->
+      (match !(context.break_labels) with
+       | [] -> fail_at position "break outside of loop"
+       | (exit_label, param_names) :: _ ->
+           let arguments = List.map (fun (name, _) ->
+             match Hashtbl.find_opt environment name with
+             | Some value -> value.operand
+             | None -> fail_at position ("unknown variable " ^ name)
+           ) param_names in
+           release_interface_boxes function_builder;
+           terminate function_builder (Jump (exit_label, arguments)))
   | SAssign (name, expression, position) ->
       (match Hashtbl.find_opt environment name with
        | Some previous_value ->
@@ -3129,6 +3151,7 @@ let lower_program program =
       lambda_counter = ref 0;
       global_inits = ref [];
       globals = ref [];
+      break_labels = ref [];
     } in
     let top_level = List.filter (function
       | SDef _

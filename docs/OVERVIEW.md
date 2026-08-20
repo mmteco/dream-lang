@@ -4,14 +4,14 @@
 
 Dream 是一门现代编译型语言，设计目标是结合 Python 的简洁语法和静态类型系统的安全性，使用 LLVM 作为编译后端。编译器存在两个实现：
 
-- **宿主 OCaml 编译器**（`bin/main.ml` + `lib/`）：完整语言能力，正式发布路径；
+- **宿主 OCaml 编译器**（`ocaml/bin/main.ml` + `ocaml/lib/`）：完整语言能力，正式发布路径；
 - **bootstrap 自举编译器**（`bootstrap/compiler.dm`，Dream 语言编写）：用于自举验证，当前通过 Stage 0 → 1 → 2 → 3 链编译自身并达到固定点。
 
 两者共享同一管线方向：`lex → AST → lower → 结构化 DIR records → DIR verifier → LLVM`，并统一提供 `dir` 命令输出正式 DreamIR 文本。
 
 ## 编译器入口
 
-**宿主入口**：`bin/main.ml`，支持子命令：
+**宿主入口**：`ocaml/bin/main.ml`，支持子命令：
 
 - `build <file.dm>` - 编译源文件生成可执行文件
 - `run <file.dm>` - 编译并运行源文件（自动清理中间文件）
@@ -30,25 +30,25 @@ Dream 是一门现代编译型语言，设计目标是结合 Python 的简洁语
 ```
 .dm 源码
   ↓
-lib/lexer.mll         词法分析（token 流 + 位置信息，缩进敏感）
+ocaml/lib/lexer.mll         词法分析（token 流 + 位置信息，缩进敏感）
   ↓
-lib/parser.mly        语法分析（menhir，输出 AST）
+ocaml/lib/parser.mly        语法分析（menhir，输出 AST）
   ↓
 内置类型注入          Option/Result 枚举定义
   ↓
-lib/typeck/           类型检查（HM 推导、统一、泛型收集、穷尽性检查）
+ocaml/lib/typeck/           类型检查（HM 推导、统一、泛型收集、穷尽性检查）
   ↓
-lib/monomorphize.ml   泛型单态化（为每个具体类型生成专门函数）
+ocaml/lib/monomorphize.ml   泛型单态化（为每个具体类型生成专门函数）
   ↓
-lib/ir/dir/           DreamIR 后端（唯一正式后端）
+ocaml/lib/ir/dir/           DreamIR 后端（唯一正式后端）
   │  dir_lower.ml     类型检查后 AST → 结构化 DIR
   │  dir_verify.ml    DIR 验证
   │  dir_lower_llvm.ml DIR → LLVM 文本
   ↓
-clang + runtime/      链接生成可执行文件
+clang + runtime/c/      链接生成可执行文件
 ```
 
-DreamIR 是类型化 CFG/SSA 中间表示：SSA 值使用稳定 ID（`%v1`），block 参数表达合流（LLVM lowering 转 `phi`），字符串/列表等以高层指令存在（`string_length`、`list_get` 等），ABI 细节由 `dir_lower_llvm.ml` 集中处理。所有 runtime 函数签名只有一个来源（`lib/ir/dir/dir_lower.ml` 的 runtime 注册表）。
+DreamIR 是类型化 CFG/SSA 中间表示：SSA 值使用稳定 ID（`%v1`），block 参数表达合流（LLVM lowering 转 `phi`），字符串/列表等以高层指令存在（`string_length`、`list_get` 等），ABI 细节由 `dir_lower_llvm.ml` 集中处理。所有 runtime 函数签名只有一个来源（`ocaml/lib/ir/dir/dir_lower.ml` 的 runtime 注册表）。
 
 ### bootstrap 自举编译器
 
@@ -63,7 +63,7 @@ compiler_lower.dm     lower 顶向下遍历 → 结构化 DIR records（FUNCTION
   ↓
 compiler_dir.dm       dir_validate_records 验证 → dir_render_records 渲染 LLVM IR
   ↓
-clang + runtime/      链接生成可执行文件（runtime linker 动态扫描 runtime/*.c）
+clang + runtime/c/      链接生成可执行文件（runtime linker 动态扫描 runtime/c/*.c）
 ```
 
 自举编译器的 lexer/表达式/语句解析仍是过渡实现（服务于 `compiler.dm` 自身的语法子集），但发射器已直接构建结构化 DIR records，与 OCaml 版本保持同一流水线方向，不再存在「先生成 LLVM 文本、再反解析为 DIR」的反向路径。新旧管线的详细进度见 [BOOTSTRAP.md](BOOTSTRAP.md)。
@@ -72,26 +72,26 @@ clang + runtime/      链接生成可执行文件（runtime linker 动态扫描 
 
 ```
 dream/
-├── bin/               # 宿主编译器入口（main.ml、debug_tokens.ml）
-├── lib/               # 宿主编译器核心库
-│   ├── ast.ml / types.ml / env.ml / error.ml / lexer.mll / parser.mly
-│   ├── symbol_analyzer.ml / exhaustiveness.ml / monomorphize.ml / module_loader.ml
-│   ├── typeck/        # 类型检查（typeck.ml、tc_expr.ml、tc_stmt.ml、tc_generics.ml、tc_defaults.ml、tc_utils.ml）
-│   ├── ir/dir/        # DreamIR 后端（dir.ml、dir_lower.ml、dir_verify.ml、dir_printer.ml、dir_lower_llvm.ml）
-│   └── compiler/      # 编译管线（dir_compiler.ml）
-├── bootstrap/         # 自举编译器（Dream 语言编写）
-│   ├── compiler.dm    # 导入入口
-│   ├── compiler_lex.dm / compiler_ast.dm / compiler_lower.dm / compiler_dir.dm
-│   ├── compiler_expr.dm / compiler_stmt.dm / compiler_main.dm
-│   └── stage1 / stage2 / stage3   # 各级自举产物
-├── stdlib/            # 标准库（dir_bootstrap.dm、operators.dm、file.dm 等）
-├── runtime/           # C 运行时库
-│   ├── io.c / memory.c / dynarray.c / str.c / bytes.c / file.c
-│   ├── dict.c / tuple.c / union.c / enum.c / utf8.c / math.c / str_wrapper.c 等
+├── ocaml/             # 宿主编译器（独立 dune 工程）
+│   ├── dune-project
+│   ├── bin/           # 入口（main.ml、debug_tokens.ml）
+│   ├── lib/           # 核心库
+│   │   ├── ast.ml / types.ml / env.ml / error.ml / lexer.mll / parser.mly
+│   │   ├── symbol_analyzer.ml / exhaustiveness.ml / monomorphize.ml / module_loader.ml
+│   │   ├── typeck/    # 类型检查（typeck.ml、tc_expr.ml、tc_stmt.ml、tc_generics.ml、tc_defaults.ml、tc_utils.ml）
+│   │   ├── ir/dir/    # DreamIR 后端（dir.ml、dir_lower.ml、dir_verify.ml、dir_printer.ml、dir_lower_llvm.ml）
+│   │   └── compiler/  # 编译管线（dir_compiler.ml）
+│   └── test/          # OCaml 单元测试（dir_test.ml）
+├── bootstrap/         # 自举编译器源码（Dream 语言编写，compiler*.dm）
+├── runtime/           # 运行时标准库
+│   ├── c/             # C 运行时（io.c / memory.c / dynarray.c / str.c / bytes.c / file.c
+│   │                  #  dict.c / tuple.c / union.c / enum.c / utf8.c / math.c 等）
+│   └── stdlib/        # Dream 标准库（dir_bootstrap.dm、operators.dm、file.dm 等）
 ├── scripts/           # Fish 脚本（自举编排、测试、构建）
 ├── examples/          # 示例代码
-├── test/              # 测试（大而全的覆盖测试）
+├── test/              # .dm 语言测试（大而全的覆盖测试）
 ├── docs/              # 文档
+├── tmp/               # 构建产物（stage 二进制、*.ll，gitignored）
 ├── SPEC.md            # 语言规范
 └── README.md          # 项目说明
 ```
@@ -108,14 +108,14 @@ Dream 使用自动内存管理，结合引用计数和分代垃圾回收：
 
 ## 错误处理
 
-编译器使用集中的错误处理机制（lib/error.ml）：
+编译器使用集中的错误处理机制（ocaml/lib/error.ml）：
 
 - **Error**：编译失败；**Warning**：潜在问题但不终止编译；
 - 错误报告含位置信息（文件、行、列）、错误类型和描述、上下文代码显示、错误计数和摘要。
 
 ## 标准库位置
 
-标准库 Runtime 函数直接链接到可执行文件中（`str_length`、`dynarray_push`、`dict_set`、`file_read`、`print_*` 等），另有 Dream 源码标准库 `stdlib/`（`operators.dm` 运算符重载接口、`file.dm` 文件 I/O 包装等）。
+标准库 Runtime 函数直接链接到可执行文件中（`str_length`、`dynarray_push`、`dict_set`、`file_read`、`print_*` 等），另有 Dream 源码标准库 `runtime/stdlib/`（`operators.dm` 运算符重载接口、`file.dm` 文件 I/O 包装等）。
 
 ## 相关文档
 

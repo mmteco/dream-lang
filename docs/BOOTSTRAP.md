@@ -9,22 +9,22 @@
 
 | 阶段 | 编译器 | 输入 | 产物与职责 |
 | --- | --- | --- | --- |
-| Stage 0 | `_build/default/bin/main.exe`（宿主 OCaml 编译器） | `bootstrap/compiler.dm` | 生成并链接 `bootstrap/stage1` |
-| Stage 1 | `bootstrap/stage1`（Stage 0 生成） | `bootstrap/compiler.dm` | 通过通用 `compile` CLI 生成 `stage2.ll` |
-| Stage 2 | `bootstrap/stage2`（Stage 1 生成） | `bootstrap/compiler.dm` | 在完整模式下生成 `stage3.ll`；也是 `bootstrap-build` 使用的编译器 |
-| Stage 3 | `bootstrap/stage3`（Stage 2 生成） | `bootstrap/compiler.dm` | 编译并执行通用 CLI，确认 Stage 2/3 固定点 |
+| Stage 0 | `ocaml/_build/default/bin/main.exe`（宿主 OCaml 编译器） | `bootstrap/compiler.dm` | 生成并链接 `tmp/stage1` |
+| Stage 1 | `tmp/stage1`（Stage 0 生成） | `bootstrap/compiler.dm` | 通过通用 `compile` CLI 生成 `stage2.ll` |
+| Stage 2 | `tmp/stage2`（Stage 1 生成） | `bootstrap/compiler.dm` | 在完整模式下生成 `stage3.ll`；也是 `bootstrap-build` 使用的编译器 |
+| Stage 3 | `tmp/stage3`（Stage 2 生成） | `bootstrap/compiler.dm` | 编译并执行通用 CLI，确认 Stage 2/3 固定点 |
 
-执行顺序如下：
+执行顺序如下（所有 stage 产物在 `tmp/`，源码在 `bootstrap/`）：
 
 ```text
 Stage 0: OCaml compiler
-    └─ compiler.dm → stage1.ll → bootstrap/stage1
-        └─ compiler.dm → stage2.ll → bootstrap/stage2
-            └─ compiler.dm → stage3.ll → bootstrap/stage3
+    └─ compiler.dm → stage1.ll → tmp/stage1
+        └─ compiler.dm → stage2.ll → tmp/stage2
+            └─ compiler.dm → stage3.ll → tmp/stage3
                 └─ compiler.dm → stage2.ll / stage3.ll（必须达到固定点）
 ```
 
-`bootstrap/sample_functions` 只是由 Stage 1 编译出的功能回归样例，不是 Stage 1 编译器。`compiler.ll` 也不再作为阶段产物保留；Stage 0 生成的编译器统一命名为 `stage1.ll` 和 `stage1`。
+`tmp/sample_functions` 只是由 Stage 1 编译出的功能回归样例，不是 Stage 1 编译器。`compiler.ll` 也不再作为阶段产物保留；Stage 0 生成的编译器统一命名为 `stage1.ll` 和 `stage1`。
 
 ## 当前自举进度
 
@@ -36,7 +36,7 @@ Stage 0: OCaml compiler
 - Stage 2（新管线）编译 `compiler.dm` 成功生成 Stage 3；
 - Stage 3 编译并运行程序（hello 输出 `hello`）验证功能；
 - 测试套件（含 `def main` 的用例）15 通过 / 7 待实现（enum/match/lambda lower）；
-- `./bootstrap/compiler build`（无 DEBUG）与 `DEBUG=1` 行为一致，均走新管线。
+- `make bootstrap-build` 产物（无 DEBUG）与 `DEBUG=1` 行为一致，均走新管线。
 
 本次自举打通修复的关键问题：
 
@@ -80,7 +80,7 @@ Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；�
 - 结构体：整数结构体构造/乱序初始化/字段访问、作为函数参数和返回值、模式匹配字段绑定
 - bytes 基础 ABI：`str_to_bytes`/`bytes_to_str`/`bytes_from_list`/`bytes_to_list`、索引、切片（链接用 `bytes_wrapper.c` 的 `__c_*` ABI）
 - match：`switch/case/default` 支持 int/bool/float/str；整数 `match`、通配符、`[tag, payload]` 基础 enum match（用户 enum + Some/None + Ok/Err）
-- 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/*.c`
+- 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/c/*.c`
 - CLI 与格式：Stage 1/2 提供 `build`/`llvm`/`dir` CLI；宿主与 DM 统一输出正式 DreamIR 文本，typed record 仅为内部序列化 ABI，未映射指令以 `native llvm` 记录保留
 - 固定点：Stage 0 → 1 → 2 → 3 字节一致固定点，Stage 3 独立执行 `dir`/`build` 回归（`lang_full_dream.dm`、`quicksort.dm`、rune 索引、基础捕获 lambda、登记的 DIR 示例）
 
@@ -110,16 +110,16 @@ fish scripts/bootstrap_build.fish run bootstrap/sample_functions.dm
 make bootstrap-build FILE=bootstrap/sample_functions.dm
 ```
 
-这条路径使用 `bootstrap/stage2`，不会调用 `_build/default/bin/main.exe` 编译目标文件。当前自举编译器已经稳定覆盖编译器自身和登记的 DIR 回归子集；超出该集合的语法仍会在 DIR/LLVM 验证或链接阶段报告失败，而不会被标记为完整语言支持。
+这条路径使用 `tmp/stage2`，不会调用 `ocaml/_build/default/bin/main.exe` 编译目标文件。当前自举编译器已经稳定覆盖编译器自身和登记的 DIR 回归子集；超出该集合的语法仍会在 DIR/LLVM 验证或链接阶段报告失败，而不会被标记为完整语言支持。
 
 直接让某个自举阶段输出 LLVM：
 
 ```fish
-bootstrap/stage1 llvm bootstrap/compiler.dm -o tmp/stage2-from-stage1.ll
-bootstrap/stage2 llvm bootstrap/compiler.dm -o tmp/stage3-from-stage2.ll
+tmp/stage1 llvm bootstrap/compiler.dm -o tmp/stage2-from-stage1.ll
+tmp/stage2 llvm bootstrap/compiler.dm -o tmp/stage3-from-stage2.ll
 ```
 
-输出应分别与 `bootstrap/stage2.ll`、`bootstrap/stage3.ll` 一致；输出文件属于临时产物，应放在 `tmp/`。
+输出应分别与 `tmp/stage2.ll`、`tmp/stage3.ll` 一致；输出文件属于临时产物，应放在 `tmp/`。
 
 没有显式 `def main()` 的示例会由 `bootstrap_build.fish` 在 `tmp/` 中生成临时入口，将顶层可执行语句放入 `main` 后再交给 Stage 2；临时文件会在脚本退出时清理。
 

@@ -313,6 +313,7 @@ let rec check_statement env = function
          report_error err;
          (env, empty_subst))
 
+  | SBreak _ -> (env, empty_subst)
   | SWhile (cond, body, pos) ->
       let (cond_type, cond_subst) = !infer_expr env cond in
       (try

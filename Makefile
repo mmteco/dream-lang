@@ -1,7 +1,7 @@
 EXAMPLE_SOURCES := $(wildcard examples/*.dm)
 EXAMPLE_TARGETS := $(patsubst examples/%.dm,%,$(EXAMPLE_SOURCES))
 FISH ?= fish
-RUNTIME_DIR ?= runtime
+RUNTIME_DIR ?= runtime/c
 STAGE3 ?= 0
 
 .PHONY: build clean run test examples runtime-check check bootstrap bootstrap-verify bootstrap-build compile dynarray help $(EXAMPLE_TARGETS)
@@ -26,7 +26,7 @@ help:
 
 # 构建编译器
 build:
-	dune build
+	cd ocaml && dune build
 
 # 清理所有构建产物
 clean:
@@ -46,7 +46,7 @@ runtime-check:
 
 # 单一入口：前端、示例、runtime、UBSan 和 DIR 自举全部通过才算检查通过。
 check: build
-	dune test
+	cd ocaml && dune test
 	$(MAKE) test
 	$(MAKE) runtime-check
 	$(MAKE) bootstrap

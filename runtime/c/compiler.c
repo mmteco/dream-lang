@@ -97,7 +97,7 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
 
     const char* runtime_directory = getenv("DREAM_RUNTIME_DIR");
     if (runtime_directory == NULL || runtime_directory[0] == '\0') {
-        runtime_directory = "runtime";
+        runtime_directory = "runtime/c";
     }
 
     char** runtime_names = NULL;

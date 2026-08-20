@@ -25,13 +25,11 @@ examples/*
 *.dir
 
 # 可执行文件和无扩展名构建输出
-bootstrap/*
-!bootstrap/*.dm
 test/test_*
 !test/test_*.dm
-runtime/test_*
-!runtime/test_*.c
-!runtime/test_*.h
+runtime/c/test_*
+!runtime/c/test_*.c
+!runtime/c/test_*.h
 
 # 临时文件
 *.swp

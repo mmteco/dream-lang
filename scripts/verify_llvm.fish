@@ -7,7 +7,7 @@ mkdir -p tmp
 
 set llvm_files $argv
 if test (count $llvm_files) -eq 0
-    set llvm_files (find bootstrap -maxdepth 1 -type f -name '*.ll' | sort)
+    set llvm_files (find tmp -maxdepth 1 -type f -name '*.ll' | sort)
 end
 
 if test (count $llvm_files) -eq 0

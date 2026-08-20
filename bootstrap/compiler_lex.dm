@@ -47,6 +47,7 @@ const TOKEN_FLOAT: int = 45
 const TOKEN_NOT: int = 46
 const TOKEN_CONS: int = 47
 const TOKEN_RUNE: int = 48
+const TOKEN_BREAK: int = 49
 
 struct ParseContext:
     src: str
@@ -583,6 +584,7 @@ let KEYWORD_DICTIONARY = {
     "elif": TOKEN_ELIF,
     "else": TOKEN_ELSE,
     "while": TOKEN_WHILE,
+    "break": TOKEN_BREAK,
     "for": TOKEN_FOR,
     "switch": TOKEN_SWITCH,
     "case": TOKEN_CASE,

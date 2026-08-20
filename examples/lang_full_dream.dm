@@ -122,4 +122,19 @@ def main():
     print('A')
     print(b'B')
 
+    let break_sum = 0
+    let break_i = 0
+    while break_i < 10:
+        if break_i == 4:
+            break
+        break_sum = break_sum + break_i
+        break_i = break_i + 1
+    print(break_sum)
+    let break_found = 0
+    for break_n in [1, 2, 3, 4, 5]:
+        if break_n == 3:
+            break
+        break_found = break_found + break_n
+    print(break_found)
+
 main()

@@ -6,7 +6,7 @@ let resolve_module_path module_path =
   let module_name = String.concat "." module_path in
 
   (* 尝试在 stdlib 目录查找 *)
-  let stdlib_path = "stdlib/" ^ module_name ^ ".dm" in
+  let stdlib_path = "runtime/stdlib/" ^ module_name ^ ".dm" in
   if Sys.file_exists stdlib_path then
     Some stdlib_path
   else

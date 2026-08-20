@@ -30,6 +30,7 @@ type token =
   | DEFAULT
   | FOR
   | WHILE
+  | BREAK
   | RETURN
   | IMPORT
   | FROM
@@ -290,6 +291,7 @@ and statement =
   | SLetPat of pattern * expr * position  (* 元组解包: let (a,b) = tuple *)
   | SDef of def_stmt
   | SReturn of expr option * position
+  | SBreak of position
   | SIf of expr * statement list * (expr * statement list) list * statement list option * position
   | SWhile of expr * statement list * position
   | SFor of pattern * expr * statement list * position

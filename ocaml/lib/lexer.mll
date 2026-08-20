@@ -84,6 +84,7 @@
         ("default", DEFAULT);
         ("for", FOR);
         ("while", WHILE);
+        ("break", BREAK);
         ("return", RETURN);
         ("import", IMPORT);
         ("from", FROM);

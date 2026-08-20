@@ -77,6 +77,7 @@ and called_names_statement statement =
       (match else_body with Some body -> StringSet.union names (called_names_statements body) | None -> names)
   | Ast.SWhile (condition, body, _) ->
       StringSet.union (called_names_expr condition) (called_names_statements body)
+  | Ast.SBreak _ -> StringSet.empty
   | Ast.SFor (_, iterable, body, _) ->
       StringSet.union (called_names_expr iterable) (called_names_statements body)
   | Ast.SAssign (_, expression, _) -> called_names_expr expression
