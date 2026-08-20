@@ -2,6 +2,13 @@
 # 节点索引 = 池中 kind 字段的下标;池首 dummy 节点(kind=0),真实节点 >= 1,0 表示"无节点"
 # 子节点区间 [child_start, child_end) 可走查:从 child_start 循环 ast_next_node 直到 child_end
 
+# kind 编号按类别分组,组内连续,组间留空便于未来插入:
+# 表达式 1-31
+# 语句 32-63
+# 模式 64-95
+# 其他 96-127
+
+# === 表达式 ===
 const AST_EXPR_INT: int = 1
 const AST_EXPR_FLOAT: int = 2
 const AST_EXPR_STRING: int = 3
@@ -28,32 +35,36 @@ const AST_EXPR_LIST_COMP: int = 23
 const AST_EXPR_MATCH: int = 24
 const AST_EXPR_PRINT: int = 25
 
-const AST_STMT_LET: int = 26
-const AST_STMT_LET_TUPLE: int = 27
-const AST_STMT_ASSIGN: int = 28
-const AST_STMT_IF: int = 29
-const AST_ELIF: int = 30
-const AST_STMT_WHILE: int = 31
-const AST_STMT_FOR: int = 32
-const AST_STMT_SWITCH: int = 33
-const AST_CASE: int = 34
-const AST_STMT_RETURN: int = 35
-const AST_STMT_EXPR: int = 36
-const AST_STMT_BREAK: int = 50
+# === 语句 ===
+const AST_STMT_LET: int = 32
+const AST_STMT_LET_TUPLE: int = 33
+const AST_STMT_ASSIGN: int = 34
+const AST_STMT_IF: int = 35
+const AST_ELIF: int = 36
+const AST_STMT_WHILE: int = 37
+const AST_STMT_FOR: int = 38
+const AST_STMT_SWITCH: int = 39
+const AST_CASE: int = 40
+const AST_STMT_RETURN: int = 41
+const AST_STMT_EXPR: int = 42
+const AST_STMT_BREAK: int = 43
 
-const AST_M_CASE: int = 37
-const AST_PAT_WILDCARD: int = 38
-const AST_PAT_INT: int = 39
-const AST_PAT_RUNE: int = 40
-const AST_PAT_BOOL: int = 41
-const AST_PAT_FLOAT: int = 42
-const AST_PAT_STRING: int = 43
-const AST_PAT_VAR: int = 44
-const AST_PAT_ENUM: int = 45
-const AST_PAT_BUILTIN: int = 46
-const AST_PAT_LIST: int = 47
-const AST_PAT_CONS: int = 48
-const AST_PAT_STRUCT: int = 49
+# === 模式 ===
+const AST_PAT_WILDCARD: int = 64
+const AST_PAT_INT: int = 65
+const AST_PAT_RUNE: int = 66
+const AST_PAT_BOOL: int = 67
+const AST_PAT_FLOAT: int = 68
+const AST_PAT_STRING: int = 69
+const AST_PAT_VAR: int = 70
+const AST_PAT_ENUM: int = 71
+const AST_PAT_BUILTIN: int = 72
+const AST_PAT_LIST: int = 73
+const AST_PAT_CONS: int = 74
+const AST_PAT_STRUCT: int = 75
+
+# === 其他 ===
+const AST_M_CASE: int = 96
 
 # 节点池布局: [kind, token_start, token_end, arg0...argN]
 const AST_HEADER_KIND: int = 0
