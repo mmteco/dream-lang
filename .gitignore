@@ -2,7 +2,6 @@
 _opam/
 _build/
 *.opam
-claude_docs/
 .agents/
 .codegraph/
 codegraph.json
