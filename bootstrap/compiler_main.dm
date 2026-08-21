@@ -35,12 +35,18 @@ def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
         module_start = module_end + 1
     return false
 
-def append_imported_module(imported_source: str, module_name: str) -> str:
+def append_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int], file_ends: list[int]) -> str:
     let imported_path = module_path(module_name)
     let module_source = read_text_file(imported_path)
-    return string_concat(imported_source, string_concat(module_source, "\n"))
+    let start_offset = text_length(imported_source)
+    let new_source = string_concat(imported_source, string_concat(module_source, "\n"))
+    let end_offset = text_length(new_source)
+    append(file_packages, classify_package(imported_path))
+    append(file_starts, start_offset)
+    append(file_ends, end_offset)
+    return new_source
 
-def load_imported_source(source: str) -> str:
+def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int], file_ends: list[int]) -> str:
     let imported_source = ""
     let loaded_modules = ""
     let scan_source = source
@@ -59,7 +65,7 @@ def load_imported_source(source: str) -> str:
                 if token_kind(import_kinds, module_index) == TOKEN_IDENTIFIER:
                     let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends, module_index)]
                     if not module_is_loaded(loaded_modules, module_name):
-                        imported_source = append_imported_module(imported_source, module_name)
+                        imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends)
                         loaded_modules = string_concat(loaded_modules, string_concat(module_name, "\n"))
                         found_new_module = true
             token_index = token_index + 1
@@ -67,7 +73,15 @@ def load_imported_source(source: str) -> str:
             scan_source = imported_source
         scan_round = scan_round + 1
     if text_length(loaded_modules) != 0:
-        return string_concat(imported_source, string_concat("\n", source))
+        let user_source_start = text_length(imported_source) + 1
+        let final_source = string_concat(imported_source, string_concat("\n", source))
+        append(file_packages, classify_package(source_path))
+        append(file_starts, user_source_start)
+        append(file_ends, text_length(final_source))
+        return final_source
+    append(file_packages, classify_package(source_path))
+    append(file_starts, 0)
+    append(file_ends, text_length(source))
     return source
 
 const COMPILE_OUTPUT_LL: int = 0
@@ -76,10 +90,15 @@ const COMPILE_OUTPUT_AST: int = 2
 
 def compile_source(source_path: str, output_path: str, output_mode: int):
     let debug_enabled = __c_debug_on()
+    access_violation_count[0] = 0
     let total_start = __c_time_ms()
     let stage_start = __c_time_ms()
     let stage_end = 0
-    let source = load_imported_source(read_text_file(source_path))
+    let raw_source = read_text_file(source_path)
+    let file_packages = []
+    let file_starts: list[int] = []
+    let file_ends: list[int] = []
+    let source = load_imported_source(raw_source, source_path, file_packages, file_starts, file_ends)
     let kinds = []
     let starts = []
     let ends = []
@@ -108,7 +127,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
     collect_declared_types(source, kinds, starts, ends)
     collect_functions(source, kinds, starts, ends, function_starts, function_ends, function_bodies, function_body_ends, function_param_offsets, function_param_counts, parameter_starts, parameter_ends, parameter_types, function_return_types, parameter_default_indexes)
     collect_constants(source, kinds, starts, ends, constant_starts, constant_ends, constant_values, constant_types)
-    let parse_context = ParseContext{src: source, kinds: kinds, starts: starts, ends: ends, fn_starts: function_starts, fn_ends: function_ends, param_offsets: function_param_offsets, param_counts: function_param_counts, param_starts: parameter_starts, param_ends: parameter_ends, ret_types: function_return_types, pd: parameter_default_indexes, cst_starts: constant_starts, cst_ends: constant_ends, cst_values: constant_values}
+    let parse_context = ParseContext{src: source, kinds: kinds, starts: starts, ends: ends, fn_starts: function_starts, fn_ends: function_ends, param_offsets: function_param_offsets, param_counts: function_param_counts, param_starts: parameter_starts, param_ends: parameter_ends, ret_types: function_return_types, pd: parameter_default_indexes, cst_starts: constant_starts, cst_ends: constant_ends, cst_values: constant_values, file_packages: file_packages, file_starts: file_starts, file_ends: file_ends}
     let global_let_name_starts = []
     let global_let_name_ends = []
     let global_let_collected_types = []
@@ -237,6 +256,10 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
             dir_dump_records(lower_records, lower_invalid_output)
             write_text_codes(output_path, lower_invalid_output)
             return
+        if access_violation_count[0] > 0:
+            __c_eprint_text("error: ")
+            __c_eprint_int(access_violation_count[0])
+            __c_eprint_text(" access violation(s) detected\n")
         if output_mode == COMPILE_OUTPUT_DIR_SOURCE:
             let formal_dir = []
             if not dir_render_formal_records(lower_records, formal_dir):

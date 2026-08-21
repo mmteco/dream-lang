@@ -274,7 +274,7 @@ def ast_node_size(kind: int) -> int:
         case AST_EXPR_MATCH:
             return 7
         case AST_EXPR_PRINT:
-            return 4
+            return 5
         case AST_STMT_LET:
             return 10
         case AST_STMT_LET_TUPLE:
@@ -653,7 +653,9 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
     if token_kind_value == TOKEN_SWITCH:
         return ast_parse_switch_statement(context, index, body_end, ast)
     if token_kind_value == TOKEN_PRINT:
-        return ast_parse_print_statement(context, index, ast)
+        return ast_parse_print_statement(context, index, ast, 0)
+    if token_kind_value == TOKEN_EPRINT:
+        return ast_parse_print_statement(context, index, ast, 1)
     if token_kind_value == TOKEN_IDENTIFIER:
         let next_kind = token_kind(kinds, index + 1)
         if next_kind == TOKEN_ASSIGN:
@@ -765,15 +767,16 @@ def ast_parse_return_statement(context: ParseContext, index: int, body_end: int,
     ast_set_arg(ast, return_node, 2, len(ast))
     return (return_next_index, return_node)
 
-def ast_parse_print_statement(context: ParseContext, index: int, ast: list[int]) -> (int, int):
+def ast_parse_print_statement(context: ParseContext, index: int, ast: list[int], to_stderr: int) -> (int, int):
     let starts = context.starts
     let ends = context.ends
     let print_stmt_node = ast_append_node(ast, AST_STMT_EXPR, 0, 0, ARGS_STMT_EXPR)
-    let print_node = ast_append_node(ast, AST_EXPR_PRINT, token_start(starts, index), token_end(ends, index), 1)
+    let print_node = ast_append_node(ast, AST_EXPR_PRINT, token_start(starts, index), token_end(ends, index), 2)
     let (print_value_next_index, print_value_node) = ast_parse_expression(context, index + 2, ast)
     if print_value_node == 0:
         return (index, 0)
     ast_set_arg(ast, print_node, 0, print_value_node)
+    ast_set_arg(ast, print_node, 1, to_stderr)
     ast_set_arg(ast, print_stmt_node, 0, print_node)
     ast_set_arg(ast, print_stmt_node, 1, len(ast))
     return (print_value_next_index + 1, print_stmt_node)

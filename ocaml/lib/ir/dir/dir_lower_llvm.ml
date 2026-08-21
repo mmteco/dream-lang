@@ -558,9 +558,27 @@ let render_instruction string_literals value_types buffer instruction =
          field_pointer payload_type payload_type typed_data index;
        Printf.bprintf buffer "  %s = load %s, %s* %s\n"
          (value_name value) (llvm_ty field_type) (llvm_ty field_type) field_pointer
-   | ListAppend (collection, value) ->
-       Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
-         (operand collection) (operand value)
+   | ListAppend (collection, value, element_type) ->
+       (match element_type with
+        | I32 ->
+            Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+              (operand collection) (operand value)
+        | F64 ->
+            Printf.bprintf buffer "  call void @append_f64(%%dynarray_i32* %s, double %s)\n"
+              (operand collection) (operand value)
+        | Str | Tuple _ ->
+            let elem_int_name = Printf.sprintf "%%dir_append_elem_%s" (operand value) in
+            tuple_element_store buffer elem_int_name element_type (operand value);
+            Printf.bprintf buffer "  call void @append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
+              (operand collection) elem_int_name
+        | Bool ->
+            let zext_name = Printf.sprintf "%s.zext" (operand value) in
+            Printf.bprintf buffer "  %s = zext i1 %s to i32\n" zext_name (operand value);
+            Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+              (operand collection) zext_name
+        | _ ->
+            Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+              (operand collection) (operand value))
    | ListSet (collection, index, value) ->
        Printf.bprintf buffer "  call void @set_dynarray_i32(%%dynarray_i32* %s, i32 %s, i32 %s)\n"
          (operand collection) (operand index) (operand value)
@@ -846,6 +864,7 @@ let render module_ =
   if module_.globals <> [] then Buffer.add_char buffer '\n';
   Buffer.add_string buffer "declare %dynarray_i32* @create_dynarray_i32(i32)\n";
   Buffer.add_string buffer "declare void @append_i32(%dynarray_i32*, i32)\n";
+  Buffer.add_string buffer "declare void @append_f64(%dynarray_i32*, double)\n";
   Buffer.add_string buffer "declare void @set_dynarray_i32(%dynarray_i32*, i32, i32)\n";
   Buffer.add_string buffer "declare i32 @len_dynarray_i32(%dynarray_i32*)\n";
   Buffer.add_string buffer "declare i32 @get_dynarray_i32(%dynarray_i32*, i32)\n";

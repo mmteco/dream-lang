@@ -2,23 +2,30 @@ open Ast
 open Types
 open Env
 
-(* 类型变量生成器 *)
+(* 类型变量生成器，缓存常用名称避免重复分配 *)
 let type_counter = ref 0
+
+let cached_type_var_names =
+  let arr = Array.init 64 (fun i -> Printf.sprintf "T%d" (i + 1)) in
+  arr
 
 let fresh_type_var () =
   type_counter := !type_counter + 1;
-  TyVar (Printf.sprintf "T%d" !type_counter)
+  let n = !type_counter in
+  let name = if n <= 64 then cached_type_var_names.(n - 1)
+             else Printf.sprintf "T%d" n in
+  TyVar name
 
 (* 实例化多态类型：将类型中的 TyVar 替换为新的类型变量 *)
 let instantiate ty =
-  let var_map = ref [] in
+  let var_map = ref Env.StringMap.empty in
   let rec inst = function
     | TyVar name ->
-        (match List.assoc_opt name !var_map with
+        (match Env.StringMap.find_opt name !var_map with
          | Some new_var -> new_var
          | None ->
              let new_var = fresh_type_var () in
-             var_map := (name, new_var) :: !var_map;
+             var_map := Env.StringMap.add name new_var !var_map;
              new_var)
     | TyList t -> TyList (inst t)
     | TyDict (k, v) -> TyDict (inst k, inst v)
@@ -96,6 +103,7 @@ let rec resolve_type_expr env = function
 
 (* 将替换应用到环境中，保持多态函数类型不变 *)
 let apply_subst_to_env subst env =
-  {env with bindings = Env.StringMap.map (fun ty ->
+  if Types.Subst.is_empty subst then env
+  else {env with bindings = Env.StringMap.map (fun ty ->
     if is_polymorphic ty then ty else apply_subst subst ty
   ) env.bindings}

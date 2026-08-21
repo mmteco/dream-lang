@@ -10,7 +10,7 @@ cd "$root_dir"
 set stage0_compiler ocaml/_build/default/bin/main.exe
 set llvm_flags -Wno-override-module
 set link_flags -O0
-set runtime_sources (find runtime/c -maxdepth 1 -type f -name '*.c' ! -name 'test_*.c' ! -name 'bytes.c' | sort)
+set runtime_sources (find runtime/c/core runtime/c/wrappers -type f -name '*.c' ! -path 'runtime/c/core/bytes.c' | sort)
 
 if test (count $argv) -eq 0
     set test_files test/test_bootstrap_bool.dm test/test_bootstrap_elif_tail.dm examples/lang_full_dream.dm
@@ -27,7 +27,7 @@ or exit 1
 
 # 2. 链接新 stage1(-O0 加速冒烟;全量验证用 make bootstrap 的 -O2)
 echo '== link stage1'
-clang $llvm_flags $link_flags -o tmp/stage1 tmp/stage1.ll $runtime_sources -I runtime/c
+clang $llvm_flags $link_flags -o tmp/stage1 tmp/stage1.ll $runtime_sources -I runtime/c/core -I runtime/c/wrappers
 or exit 1
 
 # 3. 用新 stage1 的新流水线(DEBUG)编译目标测试

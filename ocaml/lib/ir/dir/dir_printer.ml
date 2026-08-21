@@ -166,8 +166,8 @@ let instruction value_types = function
   | EnumGet (value, field_type, enum_value, tag) ->
       Printf.sprintf "%%v%d = enum_get %s %d %s" value
         (ty field_type) tag (operand enum_value)
-  | ListAppend (collection, value) ->
-      Printf.sprintf "list_append %s, %s" (operand collection) (operand value)
+  | ListAppend (collection, value, element_type) ->
+      Printf.sprintf "list_append<%s> %s, %s" (ty element_type) (operand collection) (operand value)
   | ListSet (collection, index, value) ->
       Printf.sprintf "list_set %s, %s, %s" (operand collection)
         (operand index) (operand value)

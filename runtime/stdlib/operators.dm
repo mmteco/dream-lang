@@ -125,3 +125,10 @@ interface Index[K, V]:
 # 转换为字符串
 interface Display:
     def to_string(self) -> str
+
+
+# ===== 长度 =====
+
+# 获取长度
+interface Len:
+    def length(self) -> int

@@ -24,67 +24,15 @@ let compile_program_to_ir input_file =
   Typeck.clear_generic_instances ();
 
   let source = read_file input_file in
-
-  let tokens_with_pos = Lexer.tokenize_string_with_pos source in
-
-  let token_array = Array.of_list tokens_with_pos in
-  let token_pos = ref 0 in
-  let next_token lexbuf =
-    if !token_pos < Array.length token_array then begin
-      let (tok, start_pos, end_pos) = token_array.(!token_pos) in
-      incr token_pos;
-      (* 更新 lexbuf 的位置，使 parser 的 $startpos 和 $endpos 能获取正确位置 *)
-      lexbuf.Lexing.lex_start_p <- start_pos;
-      lexbuf.Lexing.lex_curr_p <- end_pos;
-      tok
-    end else
-      Parser.EOF
-  in
-
-  let lexbuf = Lexing.from_string source in
   let ast =
     try
-      Parser.program next_token lexbuf
+      Module_loader.parse_source source
     with Parser.Error ->
-      let pos = lexbuf.Lexing.lex_curr_p in
-      let line = pos.Lexing.pos_lnum in
-      let col = pos.Lexing.pos_cnum - pos.Lexing.pos_bol + 1 in
-      Printf.eprintf "Parse error at line %d, column %d\n" line col;
-      (* 尝试显示出错位置的上下文 *)
-      let lines = String.split_on_char '\n' source in
-      if line > 0 && line <= List.length lines then begin
-        let error_line = List.nth lines (line - 1) in
-        Printf.eprintf "%s\n" error_line;
-        Printf.eprintf "%s^\n" (String.make col ' ')
-      end;
+      Printf.eprintf "Parse error\n";
       exit 1
   in
 
-  (* 在用户代码前插入内置枚举定义 *)
-  (* 暂时使用 int 类型，避免泛型复杂性 *)
-  let builtin_enums = [
-    Ast.SEnum {
-      enum_name = "Option";
-      enum_name_pos = {line = 0; column = 0};
-      enum_type_params = [];
-      enum_variants = [
-        Ast.VTuple ("Some", [Ast.TInt], {line = 0; column = 0});
-        Ast.VSimple ("None", {line = 0; column = 0})
-      ];
-      enum_pos = {line = 0; column = 0};
-    };
-    Ast.SEnum {
-      enum_name = "Result";
-      enum_name_pos = {line = 0; column = 0};
-      enum_type_params = [];
-      enum_variants = [
-        Ast.VTuple ("Ok", [Ast.TInt], {line = 0; column = 0});
-        Ast.VTuple ("Err", [Ast.TInt], {line = 0; column = 0})
-      ];
-      enum_pos = {line = 0; column = 0};
-    }
-  ] in
-  let full_ast = builtin_enums @ ast in
+  let full_ast = Module_loader.builtin_enums @ ast in
 
   (* 设置当前文件路径，用于类型检查中判断是否为标准库 *)
   Typeck.set_current_file input_file;
@@ -133,26 +81,28 @@ let compile_to_dir input_file output_file =
 let compile_to_exe output_ll =
   let output_exe = Filename.remove_extension output_ll in
   let runtime_files = [
-    "runtime/c/io.c";
-    "runtime/c/memory.c";
-    "runtime/c/dynarray.c";
-    "runtime/c/utf8.c";
-    "runtime/c/utf8_wrapper.c";
-    "runtime/c/bytes_wrapper.c";
-    "runtime/c/process.c";
-    "runtime/c/compiler.c";
-    "runtime/c/str.c";
-    "runtime/c/file.c";
-    "runtime/c/dict.c";
-    "runtime/c/tuple.c";
-    "runtime/c/union.c";
-    "runtime/c/enum.c";
-    "runtime/c/closure.c";
-    "runtime/c/math.c"
+    "runtime/c/core/memory.c";
+    "runtime/c/core/dynarray.c";
+    "runtime/c/core/utf8.c";
+    "runtime/c/core/str.c";
+    "runtime/c/core/bytes.c";
+    "runtime/c/core/dict.c";
+    "runtime/c/core/tuple.c";
+    "runtime/c/core/union.c";
+    "runtime/c/core/enum.c";
+    "runtime/c/core/io.c";
+    "runtime/c/core/math.c";
+    "runtime/c/core/closure.c";
+    "runtime/c/wrappers/utf8.c";
+    "runtime/c/wrappers/str.c";
+    "runtime/c/wrappers/bytes.c";
+    "runtime/c/wrappers/file.c";
+    "runtime/c/wrappers/process.c";
+    "runtime/c/wrappers/compiler.c"
   ] in
   let runtime_args = String.concat " " runtime_files in
   let compile_cmd = Printf.sprintf
-    "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s -I runtime/c"
+    "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s -I runtime/c/core -I runtime/c/wrappers"
     (Filename.quote output_exe) (Filename.quote output_ll) runtime_args in
   let exit_code = Sys.command compile_cmd in
   if exit_code = 0 then begin
@@ -207,21 +157,12 @@ let run_command input_file =
     let final_exe = Filename.concat bin_dir basename in
 
     (* 移动 .ll 文件到 cache/<程序名>/ 目录 *)
-    (try
-      let ic = open_in temp_ll in
-      let content = really_input_string ic (in_channel_length ic) in
-      close_in ic;
-      let oc = open_out final_ll in
-      output_string oc content;
-      close_out oc;
-      Sys.remove temp_ll
-    with _ -> ());
+    (try Sys.rename temp_ll final_ll with _ -> ());
 
     (* 移动可执行文件到 bin/ 目录 *)
     (try
-      let copy_cmd = Printf.sprintf "cp %s %s && chmod +x %s" temp_exe final_exe final_exe in
-      ignore (Sys.command copy_cmd);
-      Sys.remove temp_exe
+      Sys.rename temp_exe final_exe;
+      Unix.chmod final_exe 0o755
     with _ -> ());
 
     (* 运行程序 *)
@@ -245,26 +186,8 @@ let run_command input_file =
 
 let lsp_command input_file =
   try
-    (* LSP 分析使用带位置信息的 tokenize，确保位置信息准确 *)
     let source = read_file input_file in
-    let tokens_with_pos = Lexer.tokenize_string_with_pos source in
-
-    let token_array = Array.of_list tokens_with_pos in
-    let token_pos = ref 0 in
-    let next_token lexbuf =
-      if !token_pos < Array.length token_array then begin
-        let (tok, start_pos, end_pos) = token_array.(!token_pos) in
-        incr token_pos;
-        (* 更新 lexbuf 的位置，使 parser 的 $startpos 和 $endpos 能获取正确位置 *)
-        (* Menhir 使用 lex_start_p 作为 token 的起始位置, lex_curr_p 作为结束位置 *)
-        lexbuf.Lexing.lex_start_p <- start_pos;
-        lexbuf.Lexing.lex_curr_p <- end_pos;
-        tok
-      end else
-        Parser.EOF
-    in
-    let lexbuf = Lexing.from_string source in
-    let ast = Parser.program next_token lexbuf in
+    let ast = Module_loader.parse_source source in
     let result = Symbol_analyzer.analyze_program ast source in
     let json = Symbol_analyzer.result_to_json result in
     Printf.printf "%s\n" json;

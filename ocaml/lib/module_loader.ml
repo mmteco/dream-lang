@@ -30,6 +30,48 @@ let read_file filename =
   close_in ic;
   s
 
+(* 共享的词法适配器：将源码解析为 AST *)
+let parse_source source =
+  let tokens_with_pos = Lexer.tokenize_string_with_pos source in
+  let token_array = Array.of_list tokens_with_pos in
+  let token_pos = ref 0 in
+  let next_token lexbuf =
+    if !token_pos < Array.length token_array then begin
+      let (tok, start_pos, end_pos) = token_array.(!token_pos) in
+      incr token_pos;
+      lexbuf.Lexing.lex_start_p <- start_pos;
+      lexbuf.Lexing.lex_curr_p <- end_pos;
+      tok
+    end else
+      Parser.EOF
+  in
+  let lexbuf = Lexing.from_string source in
+  Parser.program next_token lexbuf
+
+(* 内置枚举定义：Option 和 Result *)
+let builtin_enums = [
+  SEnum {
+    enum_name = "Option";
+    enum_name_pos = {line = 0; column = 0};
+    enum_type_params = [];
+    enum_variants = [
+      VTuple ("Some", [TInt], {line = 0; column = 0});
+      VSimple ("None", {line = 0; column = 0})
+    ];
+    enum_pos = {line = 0; column = 0};
+  };
+  SEnum {
+    enum_name = "Result";
+    enum_name_pos = {line = 0; column = 0};
+    enum_type_params = [];
+    enum_variants = [
+      VTuple ("Ok", [TInt], {line = 0; column = 0});
+      VTuple ("Err", [TInt], {line = 0; column = 0})
+    ];
+    enum_pos = {line = 0; column = 0};
+  }
+]
+
 (* 解析模块文件 *)
 let parse_module module_path =
   match resolve_module_path module_path with
@@ -39,21 +81,7 @@ let parse_module module_path =
   | Some file_path ->
       try
         let source = read_file file_path in
-        let tokens_with_pos = Lexer.tokenize_string_with_pos source in
-        let token_array = Array.of_list tokens_with_pos in
-        let token_pos = ref 0 in
-        let next_token lexbuf =
-          if !token_pos < Array.length token_array then begin
-            let (tok, start_pos, end_pos) = token_array.(!token_pos) in
-            incr token_pos;
-            lexbuf.Lexing.lex_start_p <- start_pos;
-            lexbuf.Lexing.lex_curr_p <- end_pos;
-            tok
-          end else
-            Parser.EOF
-        in
-        let lexbuf = Lexing.from_string source in
-        let ast = Parser.program next_token lexbuf in
+        let ast = parse_source source in
         Ok (file_path, ast)
       with
       | Lexer.LexError msg ->

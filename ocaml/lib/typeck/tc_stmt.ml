@@ -206,7 +206,7 @@ let rec check_statement env = function
                  (match Env.find_struct actual_struct_name env with
                   | Some struct_def ->
                       List.fold_left (fun env_acc (field_name, field_pat) ->
-                        match List.assoc_opt field_name struct_def.struct_fields with
+                        match Env.StringMap.find_opt field_name struct_def.struct_fields with
                         | Some field_type -> check_pattern env_acc field_pat field_type
                         | None ->
                             let err = make_error (TypeError "Unknown field") pos
@@ -673,7 +673,7 @@ let rec check_statement env = function
                    | SMethod _ -> None
                  ) struct_info.struct_members in
 
-                 let struct_fields = List.map (fun field ->
+                 let struct_fields_list = List.map (fun field ->
                    let field_name = match field.field_name with
                      | Some name -> name
                      | None ->
@@ -683,6 +683,10 @@ let rec check_statement env = function
                    in
                    (field_name, type_expr_to_ty field.field_type)
                  ) field_list in
+
+                 let struct_fields = List.fold_left (fun acc (name, ty) ->
+                   Env.StringMap.add name ty acc
+                 ) Env.StringMap.empty struct_fields_list in
 
                  let method_list = List.filter_map (function
                    | SField _ -> None
@@ -767,7 +771,7 @@ let rec check_statement env = function
                    | SMethod _ -> None
                  ) struct_info.struct_members in
 
-                 let struct_fields = List.map (fun field ->
+                 let struct_fields_list = List.map (fun field ->
                    let field_name = match field.field_name with
                      | Some name -> name
                      | None ->
@@ -777,6 +781,10 @@ let rec check_statement env = function
                    in
                    (field_name, type_expr_to_ty field.field_type)
                  ) field_list in
+
+                 let struct_fields = List.fold_left (fun acc (name, ty) ->
+                   Env.StringMap.add name ty acc
+                 ) Env.StringMap.empty struct_fields_list in
 
                  let method_list = List.filter_map (function
                    | SField _ -> None
@@ -839,7 +847,7 @@ let rec check_statement env = function
                  Some (method_name, type_params, params, ret_ty_opt, body)
            ) members in
 
-           let struct_fields = List.map (fun field ->
+           let struct_fields_list = List.map (fun field ->
              let field_name = match field.field_name with
                | Some name -> name
                | None ->
@@ -853,6 +861,10 @@ let rec check_statement env = function
              in
              (field_name, type_expr_to_ty field.field_type)
            ) field_list in
+
+           let struct_fields = List.fold_left (fun acc (name, ty) ->
+             Env.StringMap.add name ty acc
+           ) Env.StringMap.empty struct_fields_list in
 
            let struct_methods = List.fold_left (fun methods_map (method_name, _type_params, params, ret_ty_opt, body) ->
              let method_env =
@@ -939,7 +951,7 @@ let rec check_statement env = function
                 report_error err;
                 (env, empty_subst)
             | Some struct_def ->
-                (match List.assoc_opt field struct_def.struct_fields with
+                (match Env.StringMap.find_opt field struct_def.struct_fields with
                  | None ->
                      let err = make_error (TypeError "Unknown field") pos
                        (Printf.sprintf "Struct '%s' has no field '%s'" struct_name field) in

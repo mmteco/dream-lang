@@ -1,6 +1,17 @@
 # AST → DIR records 结构化 lower(自顶向下遍历)
 # 指令全部用结构化 native 记录;label/模块级声明用文本记录(非指令)
 
+def is_access_allowed(context: ParseContext, call_site_offset: int, callee_name: str, callee_offset: int) -> bool:
+    let caller_package = get_package_at_offset(context, call_site_offset)
+    # __c_ 前缀函数只允许可信包(runtime/stdlib, bootstrap)访问
+    if string_starts_with(callee_name, "__c_"):
+        return is_trusted_package(caller_package)
+    # 以 _ 开头的符号是包私有的
+    if is_private_symbol(callee_name):
+        return is_same_package(context, call_site_offset, callee_offset)
+    # 其他符号公开可访问
+    return true
+
 def lower_dir_type(value_type: int) -> int:
     switch value_type:
         case VALUE_TYPE_STRING:
@@ -734,6 +745,57 @@ def lower_find_struct_declaration_token(source: str, kinds: list[int], starts: l
                 return declaration_token
         declaration_index = declaration_index + 1
     return -1
+
+def lower_emit_interface_dispatch(records: list[int], counter: int, receiver_value: int, method_slot: int, result_type_text: str) -> (int, int):
+    let vd0 = counter + 1
+    let vd1 = counter + 2
+    let vd2 = counter + 3
+    let vd3 = counter + 4
+    let vd4 = counter + 5
+    let vd5 = counter + 6
+    let vd6 = counter + 7
+    let fallback_text: list[int] = []
+    append_text(fallback_text, "  %t")
+    append_integer(fallback_text, vd0)
+    append_text(fallback_text, " = getelementptr %dir_interface, %dir_interface* %t")
+    append_integer(fallback_text, receiver_value)
+    append_text(fallback_text, ", i32 0, i32 0\n  %t")
+    append_integer(fallback_text, vd1)
+    append_text(fallback_text, " = load i8*, i8** %t")
+    append_integer(fallback_text, vd0)
+    append_text(fallback_text, "\n  %t")
+    append_integer(fallback_text, vd2)
+    append_text(fallback_text, " = getelementptr %dir_interface, %dir_interface* %t")
+    append_integer(fallback_text, receiver_value)
+    append_text(fallback_text, ", i32 0, i32 1\n  %t")
+    append_integer(fallback_text, vd3)
+    append_text(fallback_text, " = load i8*, i8** %t")
+    append_integer(fallback_text, vd2)
+    append_text(fallback_text, "\n  %t")
+    append_integer(fallback_text, vd4)
+    append_text(fallback_text, " = bitcast i8* %t")
+    append_integer(fallback_text, vd3)
+    append_text(fallback_text, " to ")
+    append_text(fallback_text, result_type_text)
+    append_text(fallback_text, " (i8*)*\n  %t")
+    append_integer(fallback_text, vd5)
+    append_text(fallback_text, " = load ")
+    append_text(fallback_text, result_type_text)
+    append_text(fallback_text, " (i8*)*, ")
+    append_text(fallback_text, result_type_text)
+    append_text(fallback_text, " (i8*)** %t")
+    append_integer(fallback_text, vd4)
+    append_text(fallback_text, "\n  %t")
+    append_integer(fallback_text, vd6)
+    append_text(fallback_text, " = call ")
+    append_text(fallback_text, result_type_text)
+    append_text(fallback_text, " %t")
+    append_integer(fallback_text, vd5)
+    append_text(fallback_text, "(i8* %t")
+    append_integer(fallback_text, vd1)
+    append_text(fallback_text, ")")
+    dir_append_native_fallback(records, fallback_text, 0, len(fallback_text))
+    return (counter + 7, vd6)
 
 def lower_expr_attr(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int]) -> (int, int, int):
     let attr_receiver_node = ast_node_arg(ast, node, 0)
@@ -1787,6 +1849,10 @@ def lower_expr_call(context: ParseContext, ast: list[int], node: int, variable_s
     if call_function_index >= 0:
         call_symbol = function_symbol_name(source, context.kinds, context.starts, context.ends, context.fn_starts[call_function_index], context.fn_ends[call_function_index])
         call_return_type = context.ret_types[call_function_index]
+        # 包级可见性检查:跨包不能调用私有符号
+        if not is_access_allowed(context, call_name_start, call_name, context.fn_starts[call_function_index]):
+            report_access_violation(context, call_name_start, call_name, context.fn_starts[call_function_index])
+            return (counter, VALUE_TYPE_INT, 0)
     let call_arg_kinds = []
     let call_arg_values = []
     let call_arg_types = []
@@ -1881,6 +1947,9 @@ def lower_expr_call(context: ParseContext, ast: list[int], node: int, variable_s
             call_return_type = VALUE_TYPE_BOOL
         if call_name == "len":
             if len(call_arg_kinds) > 0:
+                if call_arg_types[0] == DIR_TYPE_INTERFACE:
+                    let (len_iface_counter, len_iface_result) = lower_emit_interface_dispatch(records, call_argument_counter, call_arg_values[0], 0, "i32")
+                    return (len_iface_counter, VALUE_TYPE_INT, len_iface_result)
                 if call_arg_types[0] == DIR_TYPE_POINTER:
                     call_symbol = "string_length"
                 if call_arg_types[0] == DIR_TYPE_DICT:
@@ -1888,6 +1957,21 @@ def lower_expr_call(context: ParseContext, ast: list[int], node: int, variable_s
             call_return_type = VALUE_TYPE_INT
         if call_name == "append" or call_name == "get" or call_name == "print":
             call_return_type = VALUE_TYPE_IMMEDIATE
+        if call_name == "append" and len(call_arg_types) >= 2:
+            if call_arg_types[1] == DIR_TYPE_POINTER:
+                call_symbol = "append_pointer"
+            elif call_arg_types[1] == DIR_TYPE_F64:
+                call_symbol = "append_f64"
+            elif call_arg_types[1] == DIR_TYPE_BOOL:
+                let append_bool_tmp = call_argument_counter + 1
+                dir_append_native_zext(records, append_bool_tmp, call_arg_kinds[1], call_arg_values[1])
+                call_arg_kinds[1] = DIR_NATIVE_OPERAND_TEMPORARY
+                call_arg_values[1] = append_bool_tmp
+                call_arg_types[1] = DIR_TYPE_I32
+                call_argument_counter = append_bool_tmp
+                call_symbol = "append_i32"
+            else:
+                call_symbol = "append_i32"
     let call_is_value = call_return_type != VALUE_TYPE_IMMEDIATE
     let call_result = call_argument_counter + 1
     let call_no_names: list[str] = []
@@ -2089,14 +2173,30 @@ def lower_stmt_expr(context: ParseContext, ast: list[int], node: int, variable_s
         return lower_stmt_match(context, ast, expr_expression_node, variable_starts, variable_ends, variable_types, counter, records, buffer, break_label)
     if ast_node_kind(ast, expr_expression_node) == AST_EXPR_PRINT:
         let expr_print_value = ast_node_arg(ast, expr_expression_node, 0)
+        let expr_print_stderr = ast_node_arg(ast, expr_expression_node, 1)
+        let print_fn_prefix = "dream_print"
+        if expr_print_stderr != 0:
+            print_fn_prefix = "dream_eprint"
         let (expr_next, expr_value_type, expr_value_value) = lower_expr(context, ast, expr_print_value, variable_starts, variable_ends, variable_types, counter, records)
-        let expr_symbol = "dream_print_int"
+        if expr_value_type == VALUE_TYPE_INTERFACE:
+            let (print_iface_counter, print_to_string_result) = lower_emit_interface_dispatch(records, expr_next, expr_value_value, 0, "i8*")
+            let print_str_kinds = []
+            let print_str_values = []
+            let print_str_types = []
+            append(print_str_kinds, DIR_NATIVE_OPERAND_TEMPORARY)
+            append(print_str_values, print_to_string_result)
+            append(print_str_types, DIR_TYPE_POINTER)
+            let print_str_no_names: list[str] = []
+            let print_str_fn = string_concat(print_fn_prefix, "_string")
+            dir_append_native_call_direct(records, DIR_TYPE_UNKNOWN, DIR_TAG_INVALID, 0, print_str_fn, print_str_kinds, print_str_values, print_str_types, 1, false, print_str_no_names)
+            return (print_iface_counter, 0)
+        let expr_symbol = string_concat(print_fn_prefix, "_int")
         if expr_value_type == VALUE_TYPE_STRING:
-            expr_symbol = "dream_print_string"
+            expr_symbol = string_concat(print_fn_prefix, "_string")
         if expr_value_type == VALUE_TYPE_FLOAT:
-            expr_symbol = "dream_print_float"
+            expr_symbol = string_concat(print_fn_prefix, "_float")
         if expr_value_type == VALUE_TYPE_BOOL:
-            expr_symbol = "dream_print_bool"
+            expr_symbol = string_concat(print_fn_prefix, "_bool")
         let expr_arg_kinds = []
         let expr_arg_values = []
         let expr_arg_types = []
@@ -2322,8 +2422,14 @@ def lower_stmt_assign(context: ParseContext, ast: list[int], node: int, variable
     if as_form != 0:
         if is_dictionary_value_type(as_variable_type):
             let as_dict_temporary = as_next + 1
-            let as_dict_slot = lower_variable_slot_name(source, as_name_start, as_name_end, as_variable_type)
-            dir_append_native_load(records, DIR_TYPE_DICT, DIR_NATIVE_OPERAND_TEMPORARY, as_dict_temporary, "", DIR_NATIVE_OPERAND_NAMED, 0, as_dict_slot)
+            if is_global_let_value_type(as_variable_type):
+                let as_dict_base = global_let_base_type(as_variable_type)
+                let as_dict_sym = [1]
+                append_text(as_dict_sym, source[as_name_start:as_name_end])
+                dir_append_native_load_global(records, lower_dir_type(as_dict_base), DIR_NATIVE_OPERAND_TEMPORARY, as_dict_temporary, as_dict_sym, as_dict_sym[0])
+            else:
+                let as_dict_slot = lower_variable_slot_name(source, as_name_start, as_name_end, as_variable_type)
+                dir_append_native_load(records, DIR_TYPE_DICT, DIR_NATIVE_OPERAND_TEMPORARY, as_dict_temporary, "", DIR_NATIVE_OPERAND_NAMED, 0, as_dict_slot)
             let (as_dict_key_next, as_dict_key_type, as_dict_key_value) = lower_expr(context, ast, as_key_node, variable_starts, variable_ends, variable_types, as_dict_temporary, records)
             let as_dict_symbol = "dict_set_int_int"
             if as_variable_type == VALUE_TYPE_DICT_INT_STRING:
@@ -2349,8 +2455,14 @@ def lower_stmt_assign(context: ParseContext, ast: list[int], node: int, variable
             return (as_dict_key_next, 0)
         # 元素赋值 name[key] = value → set_dynarray_i32(name, key, value)
         let as_list_temporary = as_next + 1
-        let as_list_slot = lower_variable_slot_name(source, as_name_start, as_name_end, VALUE_TYPE_LIST)
-        dir_append_native_load(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, as_list_temporary, "", DIR_NATIVE_OPERAND_NAMED, 0, as_list_slot)
+        if is_global_let_value_type(as_variable_type):
+            let as_list_base = global_let_base_type(as_variable_type)
+            let as_list_sym = [1]
+            append_text(as_list_sym, source[as_name_start:as_name_end])
+            dir_append_native_load_global(records, lower_dir_type(as_list_base), DIR_NATIVE_OPERAND_TEMPORARY, as_list_temporary, as_list_sym, as_list_sym[0])
+        else:
+            let as_list_slot = lower_variable_slot_name(source, as_name_start, as_name_end, VALUE_TYPE_LIST)
+            dir_append_native_load(records, DIR_TYPE_LIST, DIR_NATIVE_OPERAND_TEMPORARY, as_list_temporary, "", DIR_NATIVE_OPERAND_NAMED, 0, as_list_slot)
         let (as_key_next, as_key_type, as_key_value) = lower_expr(context, ast, as_key_node, variable_starts, variable_ends, variable_types, as_list_temporary, records)
         let as_set_kinds = []
         let as_set_values = []
@@ -2651,10 +2763,16 @@ def lower_program(context: ParseContext, ast: list[int], fn_ast_starts: list[int
     lower_append_extern(records, buffer, "declare void @dream_print_float(double)\n")
     lower_append_extern(records, buffer, "declare void @dream_print_bool(i1)\n")
     lower_append_extern(records, buffer, "declare void @dream_print_string(i8*)\n")
+    lower_append_extern(records, buffer, "declare void @dream_eprint_int(i32)\n")
+    lower_append_extern(records, buffer, "declare void @dream_eprint_float(double)\n")
+    lower_append_extern(records, buffer, "declare void @dream_eprint_bool(i1)\n")
+    lower_append_extern(records, buffer, "declare void @dream_eprint_string(i8*)\n")
     lower_append_extern(records, buffer, "declare i8* @malloc(i32)\n")
     lower_append_extern(records, buffer, "declare i8* @string_substring(i8*, i32, i32)\n")
     lower_append_extern(records, buffer, "declare i8* @string_concat(i8*, i8*)\n")
     lower_append_extern(records, buffer, "declare i32 @string_compare(i8*, i8*)\n")
+    lower_append_extern(records, buffer, "declare i32 @string_find(i8*, i8*)\n")
+    lower_append_extern(records, buffer, "declare i32 @string_starts_with(i8*, i8*)\n")
     lower_append_extern(records, buffer, "declare i1 @__c_range_equal(i8*, i32, i32, i32, i32)\n")
     lower_append_extern(records, buffer, "declare i32 @__c_fnv_hash_range(i8*, i32, i32)\n")
     lower_append_extern(records, buffer, "declare i32 @string_length(i8*)\n")

@@ -243,9 +243,9 @@ let check_exhaustiveness env scrutinee_type patterns pos =
 
 (* 检查是否有不可达的模式 *)
 let check_reachability env scrutinee_type patterns =
-  let rec check_from_index idx patterns acc_patterns_with_metadata =
+  let rec check_from_index idx patterns acc_patterns_with_metadata acc_unreachable =
     match patterns with
-    | [] -> []
+    | [] -> List.rev acc_unreachable
     | (pat, guard, _) :: rest ->
         let current_space = pattern_to_space pat in
         (* 如果有 guard，认为模式是可达的 *)
@@ -271,9 +271,9 @@ let check_reachability env scrutinee_type patterns =
                    is_covered current_space acc_pattern_spaces)
         in
         let is_reachable = has_guard || not is_fully_covered in
-        let unreachable = if is_reachable then [] else [idx] in
+        let acc_unreachable = if is_reachable then acc_unreachable else idx :: acc_unreachable in
         (* 只有无守卫的模式才会完全覆盖模式空间，有守卫的模式可能不匹配 *)
-        let new_acc = if has_guard then acc_patterns_with_metadata else acc_patterns_with_metadata @ [(pat, guard, ())] in
-        unreachable @ check_from_index (idx + 1) rest new_acc
+        let new_acc = if has_guard then acc_patterns_with_metadata else (pat, guard, ()) :: acc_patterns_with_metadata in
+        check_from_index (idx + 1) rest new_acc acc_unreachable
   in
-  check_from_index 0 patterns []
+  check_from_index 0 patterns [] []

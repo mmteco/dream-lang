@@ -8,7 +8,7 @@ set stage0_compiler ocaml/_build/default/bin/main.exe
 set bootstrap_dir bootstrap
 set runtime_dir runtime/c
 set llvm_flags -Wno-override-module
-set runtime_sources (find "$runtime_dir" -maxdepth 1 -type f -name '*.c' ! -name 'test_*.c' ! -name 'bytes.c' | sort)
+set runtime_sources (find "$runtime_dir/core" "$runtime_dir/wrappers" -type f -name '*.c' ! -path "$runtime_dir/core/bytes.c" | sort)
 set compiler_source "$bootstrap_dir/compiler.dm"
 set stage1_llvm "tmp/stage1.ll"
 set include_stage3 true
@@ -40,7 +40,7 @@ end
 function compile_llvm
     set output_file $argv[1]
     set llvm_file $argv[2]
-    clang $llvm_flags -O2 -flto=thin -o "$output_file" "$llvm_file" $runtime_sources -I "$runtime_dir"
+    clang $llvm_flags -O2 -flto=thin -o "$output_file" "$llvm_file" $runtime_sources -I "$runtime_dir/core" -I "$runtime_dir/wrappers"
 end
 
 function verify_bootstrap_llvm

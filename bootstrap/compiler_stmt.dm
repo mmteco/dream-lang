@@ -726,7 +726,8 @@ def parse_function_body(context: ParseContext, body_start: int, body_end: int, o
             current_index = skip_source_newlines(source, starts, match_next_index)
             current_counter = match_next_counter
         if not is_known_statement:
-            if token_kind(kinds, current_index) == TOKEN_PRINT:
+            if token_kind(kinds, current_index) == TOKEN_PRINT or token_kind(kinds, current_index) == TOKEN_EPRINT:
+                let is_stderr = token_kind(kinds, current_index) == TOKEN_EPRINT
                 let print_expression_index = current_index + 2
                 let (print_next_index, print_is_temporary, print_value, print_next_counter) = parse_expression(context, print_expression_index, output, records, variable_starts, variable_ends, variable_types, current_counter)
                 let is_print_string = false
@@ -738,14 +739,25 @@ def parse_function_body(context: ParseContext, body_start: int, body_end: int, o
                     is_print_float = true
                 if print_is_temporary == VALUE_TYPE_BOOL:
                     is_print_bool = true
+                let print_prefix = "dream_print"
+                if is_stderr:
+                    print_prefix = "dream_eprint"
                 if is_print_string:
-                    append_text(output, "call void @dream_print_string(i8* ")
+                    append_text(output, "call void @")
+                    append_text(output, print_prefix)
+                    append_text(output, "_string(i8* ")
                 if is_print_float:
-                    append_text(output, "call void @dream_print_float(double ")
+                    append_text(output, "call void @")
+                    append_text(output, print_prefix)
+                    append_text(output, "_float(double ")
                 if is_print_bool:
-                    append_text(output, "call void @dream_print_bool(i1 ")
+                    append_text(output, "call void @")
+                    append_text(output, print_prefix)
+                    append_text(output, "_bool(i1 ")
                 if not is_print_string and not is_print_float and not is_print_bool:
-                    append_text(output, "call void @dream_print_int(i32 ")
+                    append_text(output, "call void @")
+                    append_text(output, print_prefix)
+                    append_text(output, "_int(i32 ")
                 append_operand(output, print_is_temporary, print_value)
                 append_text(output, ")\n")
                 current_index = skip_source_newlines(source, starts, print_next_index + 1)

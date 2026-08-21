@@ -86,7 +86,7 @@ type instruction =
   | EnumTag of value * operand
   | EnumGet of value * ty * operand * int
   | EnumGetMulti of value * ty * ty list * operand * int * int
-  | ListAppend of operand * operand
+  | ListAppend of operand * operand * ty
   | ListSet of operand * operand * operand
   | GlobalLoad of value * ty * string
   | GlobalStore of string * operand
@@ -269,7 +269,7 @@ let instruction_operands = function
   | EnumTag (_, enum_value) -> [enum_value]
   | EnumGet (_, _, enum_value, _) -> [enum_value]
   | EnumGetMulti (_, _, _, enum_value, _, _) -> [enum_value]
-  | ListAppend (collection, value) -> [collection; value]
+  | ListAppend (collection, value, _) -> [collection; value]
   | ListSet (collection, index, value) -> [collection; index; value]
   | GlobalLoad (_, _, _) -> []
   | GlobalStore (_, value) -> [value]

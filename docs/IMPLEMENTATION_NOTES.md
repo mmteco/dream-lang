@@ -13,7 +13,7 @@
 
 ## 实现注意点(ABI/布局)
 
-1. **bytes 链接 ABI**:bootstrap 用 `bytes_wrapper.c` 的 `__c_*` ABI,避免与标准库包装函数重复导出(符号冲突)。
+1. **bytes 链接 ABI**:bootstrap 用 `wrappers/bytes.c` 的 `__c_*` ABI,避免与标准库包装函数重复导出(符号冲突)。
 2. **list[int] 仅作为固定 12 槽序列化 ABI 边界**:DIR records 用 `DmDirRecord` 结构体字面量构造;`list[DmDirRecord]` 暂不接入(列表 ABI 是 dynarray_i32,放结构体丢元素布局),待通用 boxed/generic list ABI。
 3. **函数收集器从声明提取 ABI 返回类型**:回归测试用任意函数名验证,不硬编码业务函数名。
 4. **未映射指令以 `native llvm` 记录保留**:LLVM 分支已转正式 `jump`/`branch`,暂无法表达的低层指令保留原始信息,后续逐条替换为 DreamIR 指令。

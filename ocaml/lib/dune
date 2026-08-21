@@ -4,7 +4,7 @@
  (name dream_lib)
  (modules ast error types env const_eval lexer parser exhaustiveness monomorphize default_args
           unused_vars
-          dir dir_verify dir_printer dir_lower_llvm dir_lower
+          dir dir_verify dir_printer dir_lower_llvm dir_lower_types dir_lower_stmt dir_lower
           dir_compiler
           symbol_analyzer module_loader
           tc_utils tc_generics tc_expr tc_stmt tc_defaults typeck))

@@ -61,7 +61,7 @@ let list_function =
       Dir.ListLength (2, Dir.Value 1);
       Dir.ListGet (3, Dir.Value 1, Dir.Int 0);
       Dir.ListSet (Dir.Value 1, Dir.Int 1, Dir.Int 99);
-      Dir.ListAppend (Dir.Value 1, Dir.Int 30);
+      Dir.ListAppend (Dir.Value 1, Dir.Int 30, Dir.I32);
     ];
     terminator = Dir.Return (Some (Dir.Value 3));
   } in

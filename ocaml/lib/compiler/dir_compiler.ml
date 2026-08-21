@@ -137,7 +137,7 @@ let imported_definitions program =
       definitions
     else begin
       Hashtbl.add definition_names definition.Ast.def_name ();
-      definitions @ [Ast.SDef definition]
+      Ast.SDef definition :: definitions
     end
   in
   let rec add_module definitions module_path selected_names =
@@ -165,25 +165,25 @@ let imported_definitions program =
               if Hashtbl.mem definition_names const_info.Ast.const_name then definitions
               else begin
                 Hashtbl.add definition_names const_info.Ast.const_name ();
-                definitions @ [Ast.SConst const_info]
+                Ast.SConst const_info :: definitions
               end
           | Ast.SLet let_info ->
               if Hashtbl.mem definition_names let_info.Ast.let_name then definitions
               else begin
                 Hashtbl.add definition_names let_info.Ast.let_name ();
-                definitions @ [Ast.SLet let_info]
+                Ast.SLet let_info :: definitions
               end
           | Ast.SStruct struct_info ->
               if Hashtbl.mem type_definition_names struct_info.Ast.struct_name then definitions
               else begin
                 Hashtbl.add type_definition_names struct_info.Ast.struct_name ();
-                definitions @ [Ast.SStruct struct_info]
+                Ast.SStruct struct_info :: definitions
               end
           | Ast.SEnum enum_info ->
               if Hashtbl.mem type_definition_names enum_info.Ast.enum_name then definitions
               else begin
                 Hashtbl.add type_definition_names enum_info.Ast.enum_name ();
-                definitions @ [Ast.SEnum enum_info]
+                Ast.SEnum enum_info :: definitions
               end
           | Ast.SImport (dependency_path, _, _) ->
               add_module definitions dependency_path None
@@ -203,7 +203,7 @@ let imported_definitions program =
         add_module definitions [module_name] selected_names
     | _ -> definitions
   ) [] program in
-  program @ imported
+  program @ List.rev imported
 
 let generate program =
   match Dir_lower.lower_program (imported_definitions program) with

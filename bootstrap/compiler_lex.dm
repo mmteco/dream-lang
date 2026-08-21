@@ -48,6 +48,7 @@ const TOKEN_NOT: int = 46
 const TOKEN_CONS: int = 47
 const TOKEN_RUNE: int = 48
 const TOKEN_BREAK: int = 49
+const TOKEN_EPRINT: int = 50
 
 struct ParseContext:
     src: str
@@ -65,6 +66,9 @@ struct ParseContext:
     cst_starts: list[int]
     cst_ends: list[int]
     cst_values: list[int]
+    file_packages: list[int]
+    file_starts: list[int]
+    file_ends: list[int]
 
 const VALUE_TYPE_GLOBAL_INT: int = 30
 const VALUE_TYPE_GLOBAL_STRING: int = 31
@@ -131,6 +135,61 @@ const ASCII_GREATER: int = 62
 const ASCII_BANG: int = 33
 const ASCII_PERCENT: int = 37
 const ASCII_QUESTION: int = 63
+
+const PACKAGE_STDLIB: int = 0
+const PACKAGE_BOOTSTRAP: int = 1
+const PACKAGE_USER: int = 2
+
+def classify_package(file_path: str) -> int:
+    if string_starts_with(file_path, "runtime/stdlib/"):
+        return PACKAGE_STDLIB
+    if string_starts_with(file_path, "bootstrap/"):
+        return PACKAGE_BOOTSTRAP
+    return PACKAGE_USER
+
+def get_file_at_offset(file_starts: list[int], file_ends: list[int], offset: int) -> int:
+    let file_count = len(file_starts)
+    let file_index = 0
+    while file_index < file_count:
+        if offset >= file_starts[file_index] and offset < file_ends[file_index]:
+            return file_index
+        file_index = file_index + 1
+    return -1
+
+def get_package_at_offset(context: ParseContext, offset: int) -> int:
+    let file_index = get_file_at_offset(context.file_starts, context.file_ends, offset)
+    if file_index < 0:
+        return PACKAGE_USER
+    return context.file_packages[file_index]
+
+def is_same_package(context: ParseContext, offset_a: int, offset_b: int) -> bool:
+    let package_a = get_package_at_offset(context, offset_a)
+    let package_b = get_package_at_offset(context, offset_b)
+    return package_a == package_b
+
+def is_trusted_package(package_id: int) -> bool:
+    return package_id == PACKAGE_STDLIB or package_id == PACKAGE_BOOTSTRAP
+
+def is_private_symbol(name: str) -> bool:
+    if text_length(name) == 0:
+        return false
+    return ord(name[0]) == ASCII_UNDERSCORE
+
+let access_violation_count: list[int] = [0]
+
+def report_access_violation(context: ParseContext, call_site_offset: int, callee_name: str, callee_offset: int):
+    access_violation_count[0] = access_violation_count[0] + 1
+    __c_eprint_text("Error: access violation - '")
+    __c_eprint_text(callee_name)
+    __c_eprint_text("' is not accessible from ")
+    let caller_pkg = get_package_at_offset(context, call_site_offset)
+    if caller_pkg == PACKAGE_STDLIB:
+        __c_eprint_text("stdlib")
+    elif caller_pkg == PACKAGE_BOOTSTRAP:
+        __c_eprint_text("bootstrap")
+    else:
+        __c_eprint_text("user code")
+    __c_eprint_text("\n")
 
 def is_digit(code: int) -> bool:
     if code < ASCII_DIGIT_ZERO:
@@ -578,6 +637,7 @@ def append_token(kinds: list[int], starts: list[int], ends: list[int], kind: int
 let KEYWORD_DICTIONARY = {
     "let": TOKEN_LET,
     "print": TOKEN_PRINT,
+    "eprint": TOKEN_EPRINT,
     "def": TOKEN_DEF,
     "return": TOKEN_RETURN,
     "if": TOKEN_IF,

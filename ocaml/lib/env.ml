@@ -2,6 +2,7 @@ open Types
 open Ast
 
 module StringMap = Map.Make(String)
+module StringSet = Set.Make(String)
 
 (* 接口定义 *)
 type interface_def = {
@@ -21,16 +22,16 @@ type impl_def = {
 type struct_def = {
   struct_name: string;
   struct_type_params: string list;
-  struct_fields: (string * ty) list;  (* 字段名 -> 字段类型 *)
+  struct_fields: ty StringMap.t;  (* 字段名 -> 字段类型 *)
   struct_methods: ty StringMap.t;  (* 方法名 -> 方法类型 *)
 }
 
 type env = {
   bindings: ty StringMap.t;
   parent: env option;
-  locked: string list;
+  locked: StringSet.t;
   interfaces: interface_def StringMap.t;  (* 接口名 -> 接口定义 *)
-  impls: impl_def list;  (* 所有impl块 *)
+  impls: impl_def list StringMap.t;  (* 接口名 -> impl块列表 *)
   structs: struct_def StringMap.t;  (* 结构体名 -> 结构体定义 *)
   enums: enum_def StringMap.t;  (* 枚举名 -> 枚举定义 *)
   default_params: expr option list StringMap.t;  (* 函数名 -> 默认参数列表 *)
@@ -39,9 +40,9 @@ type env = {
 let empty_env = {
   bindings = StringMap.empty;
   parent = None;
-  locked = [];
+  locked = StringSet.empty;
   interfaces = StringMap.empty;
-  impls = [];
+  impls = StringMap.empty;
   structs = StringMap.empty;
   enums = StringMap.empty;
   default_params = StringMap.empty;
@@ -50,7 +51,7 @@ let empty_env = {
 let create_child_env parent = {
   bindings = StringMap.empty;
   parent = Some parent;
-  locked = [];
+  locked = StringSet.empty;
   interfaces = parent.interfaces;  (* 继承父环境的接口定义 *)
   impls = parent.impls;  (* 继承父环境的impl块 *)
   structs = parent.structs;  (* 继承父环境的结构体定义 *)
@@ -77,10 +78,10 @@ let get_function_defaults name env =
   lookup env
 
 let lock_binding name env =
-  { env with locked = name :: env.locked }
+  { env with locked = StringSet.add name env.locked }
 
 let is_locked name env =
-  List.mem name env.locked
+  StringSet.mem name env.locked
 
 let rec find_binding name env =
   match StringMap.find_opt name env.bindings with
@@ -111,7 +112,7 @@ let merge_env env1 env2 =
   {
     bindings = StringMap.union (fun _ v1 _ -> Some v1) env1.bindings env2.bindings;
     parent = env1.parent;
-    locked = env1.locked @ env2.locked;
+    locked = StringSet.union env1.locked env2.locked;
     interfaces = env1.interfaces;
     impls = env1.impls;
     structs = env1.structs;
@@ -132,25 +133,37 @@ let rec find_interface name env =
       | Some parent -> find_interface name parent
       | None -> None
 
-(* 添加impl块到环境 *)
+(* 添加impl块到环境，按接口名索引 *)
 let add_impl impl env =
-  { env with impls = impl :: env.impls }
+  let iface_name = impl.impl_interface_name in
+  let existing = match StringMap.find_opt iface_name env.impls with
+    | Some impls -> impls
+    | None -> []
+  in
+  { env with impls = StringMap.add iface_name (impl :: existing) env.impls }
 
-(* 查找类型的impl块 *)
+(* 查找类型的impl块，按接口名索引 *)
 let find_impl_for_type target_type interface_name env =
-  List.find_opt (fun impl ->
-    impl.impl_interface_name = interface_name &&
-    is_compatible impl.impl_target_type target_type
-  ) env.impls
+  match StringMap.find_opt interface_name env.impls with
+  | None -> None
+  | Some impls ->
+      List.find_opt (fun impl ->
+        is_compatible impl.impl_target_type target_type
+      ) impls
 
 (* 查找具体类型上的静态 impl 方法。*)
 let rec find_impl_method_for_type target_type method_name env =
-  match List.find_map (fun impl ->
-    match StringMap.find_opt method_name impl.impl_methods with
-    | Some method_type when is_compatible impl.impl_target_type target_type ->
-        Some method_type
-    | _ -> None
-  ) env.impls with
+  match StringMap.fold (fun _iface_name impls acc ->
+    match acc with
+    | Some _ -> acc
+    | None ->
+        List.find_map (fun impl ->
+          match StringMap.find_opt method_name impl.impl_methods with
+          | Some method_type when is_compatible impl.impl_target_type target_type ->
+              Some method_type
+          | _ -> None
+        ) impls
+  ) env.impls None with
   | Some method_type -> Some method_type
   | None ->
       match env.parent with
@@ -230,45 +243,52 @@ let find_implicit_interfaces_for_struct struct_name env =
           acc
       ) env.interfaces []
 
-(* C Runtime 函数列表 - 统一管理所有 __c_ 函数 *)
-let c_runtime_functions = [
-  (* 进程参数 *)
-  ("__c_process_arg_count", TyFunc ([], TyInt));
-  ("__c_process_arg", TyFunc ([TyInt], TyStr));
-  ("__c_build_llvm", TyFunc ([TyStr; TyStr], TyInt));
-  (* 文件 I/O *)
-  ("__c_file_read", TyFunc ([TyStr], TyStr));
-  ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
-  ("__c_file_exists", TyFunc ([TyStr], TyBool));
-  ("__c_file_append", TyFunc ([TyStr; TyStr], TyInt));
-  ("__c_file_delete", TyFunc ([TyStr], TyBool));
-  ("__c_file_read_bytes", TyFunc ([TyStr], TyBytes));
-  ("__c_file_write_bytes", TyFunc ([TyStr; TyBytes], TyInt));
-  ("__c_file_append_bytes", TyFunc ([TyStr; TyBytes], TyInt));
+(* C Runtime 函数列表 - 使用 Hashtbl 实现 O(1) 查找 *)
+let c_runtime_functions_table =
+  let tbl = Hashtbl.create 32 in
+  let funcs = [
+    (* 进程参数 *)
+    ("__c_process_arg_count", TyFunc ([], TyInt));
+    ("__c_process_arg", TyFunc ([TyInt], TyStr));
+    ("__c_build_llvm", TyFunc ([TyStr; TyStr], TyInt));
+    (* 文件 I/O *)
+    ("__c_file_read", TyFunc ([TyStr], TyStr));
+    ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
+    ("__c_file_exists", TyFunc ([TyStr], TyBool));
+    ("__c_file_append", TyFunc ([TyStr; TyStr], TyInt));
+    ("__c_file_delete", TyFunc ([TyStr], TyBool));
+    ("__c_file_read_bytes", TyFunc ([TyStr], TyBytes));
+    ("__c_file_write_bytes", TyFunc ([TyStr; TyBytes], TyInt));
+    ("__c_file_append_bytes", TyFunc ([TyStr; TyBytes], TyInt));
 
-  (* UTF-8 编解码 *)
-  ("__c_utf8_decode_rune", TyFunc ([TyBytes; TyInt], TyTuple [TyRune; TyInt]));  (* (bytes, offset) -> (rune, bytes_read) *)
-  ("__c_utf8_encode_rune", TyFunc ([TyRune], TyBytes));  (* rune -> bytes (1-4 字节) *)
-  ("__c_utf8_rune_count", TyFunc ([TyStr], TyInt));  (* str -> rune 数量 *)
-  ("__c_utf8_rune_at", TyFunc ([TyStr; TyInt], TyRune));  (* (str, index) -> rune *)
-  ("__c_rune_to_int", TyFunc ([TyRune], TyInt));  (* rune -> int *)
-  ("__c_utf8_byte_at", TyFunc ([TyStr; TyInt], TyInt));  (* (str, byte_index) -> byte *)
-  ("__c_utf8_byte_offset", TyFunc ([TyStr; TyInt], TyInt));  (* (str, rune_index) -> byte_offset *)
-  ("__c_range_equal", TyFunc ([TyStr; TyInt; TyInt; TyInt; TyInt], TyBool));  (* 范围按 rune 比较 *)
-  ("__c_fnv_hash_range", TyFunc ([TyStr; TyInt; TyInt], TyInt));  (* 范围 FNV-1a 哈希 *)
+    (* UTF-8 编解码 *)
+    ("__c_utf8_decode_rune", TyFunc ([TyBytes; TyInt], TyTuple [TyRune; TyInt]));
+    ("__c_utf8_encode_rune", TyFunc ([TyRune], TyBytes));
+    ("__c_utf8_rune_count", TyFunc ([TyStr], TyInt));
+    ("__c_utf8_rune_at", TyFunc ([TyStr; TyInt], TyRune));
+    ("__c_rune_to_int", TyFunc ([TyRune], TyInt));
+    ("__c_utf8_byte_at", TyFunc ([TyStr; TyInt], TyInt));
+    ("__c_utf8_byte_offset", TyFunc ([TyStr; TyInt], TyInt));
+    ("__c_range_equal", TyFunc ([TyStr; TyInt; TyInt; TyInt; TyInt], TyBool));
+    ("__c_fnv_hash_range", TyFunc ([TyStr; TyInt; TyInt], TyInt));
 
-  (* bytes 操作 *)
-  ("__c_bytes_length", TyFunc ([TyBytes], TyInt));
-  ("__c_bytes_get", TyFunc ([TyBytes; TyInt], TyByte));  (* (bytes, index) -> byte *)
-  ("__c_bytes_slice", TyFunc ([TyBytes; TyInt; TyInt], TyBytes));  (* (bytes, start, end) -> bytes *)
-  ("__c_bytes_from_array", TyFunc ([TyList TyByte], TyBytes));  (* list[byte] -> bytes *)
-  ("__c_str_to_bytes", TyFunc ([TyStr], TyBytes));  (* str -> bytes *)
-  ("__c_bytes_to_str", TyFunc ([TyBytes], TyStr));  (* bytes -> str *)
-]
+    (* bytes 操作 *)
+    ("__c_bytes_length", TyFunc ([TyBytes], TyInt));
+    ("__c_bytes_get", TyFunc ([TyBytes; TyInt], TyByte));
+    ("__c_bytes_slice", TyFunc ([TyBytes; TyInt; TyInt], TyBytes));
+    ("__c_bytes_from_array", TyFunc ([TyList TyByte], TyBytes));
+    ("__c_str_to_bytes", TyFunc ([TyStr], TyBytes));
+    ("__c_bytes_to_str", TyFunc ([TyBytes], TyStr));
+  ] in
+  List.iter (fun (name, ty) -> Hashtbl.add tbl name ty) funcs;
+  tbl
+
+let c_runtime_functions =
+  Hashtbl.fold (fun name ty acc -> (name, ty) :: acc) c_runtime_functions_table []
 
 (* 检查函数是否是 C Runtime 函数 *)
 let is_c_runtime_function name =
-  List.exists (fun (fn, _) -> fn = name) c_runtime_functions
+  Hashtbl.mem c_runtime_functions_table name
 
 (* === 运算符重载支持 === *)
 
@@ -336,21 +356,24 @@ let find_binop_impl left_ty binop _right_ty env =
   match binop_to_interface_name binop with
   | None -> None  (* 不可重载的运算符 *)
   | Some interface_name ->
-      (* 查找形如 impl Interface[RightTy] for LeftTy 的实现 *)
-      List.find_opt (fun impl ->
-        impl.impl_interface_name = interface_name &&
-        is_compatible impl.impl_target_type left_ty
-      ) env.impls
+      match StringMap.find_opt interface_name env.impls with
+      | None -> None
+      | Some impls ->
+          List.find_opt (fun impl ->
+            is_compatible impl.impl_target_type left_ty
+          ) impls
 
 (* 查找一元运算符的接口实现 *)
 let find_unop_impl operand_ty unop env =
   match unop_to_interface_name unop with
   | None -> None
   | Some interface_name ->
-      List.find_opt (fun impl ->
-        impl.impl_interface_name = interface_name &&
-        is_compatible impl.impl_target_type operand_ty
-      ) env.impls
+      match StringMap.find_opt interface_name env.impls with
+      | None -> None
+      | Some impls ->
+          List.find_opt (fun impl ->
+            is_compatible impl.impl_target_type operand_ty
+          ) impls
 
 (* 获取运算符接口实现的方法类型 *)
 let get_operator_method_type impl_def method_name =
@@ -361,6 +384,7 @@ let get_operator_method_type impl_def method_name =
 let builtin_env =
   let env = empty_env in
   let env = add_binding "print" (TyFunc ([TyVar "T"], TyNone)) env in
+  let env = add_binding "eprint" (TyFunc ([TyVar "T"], TyNone)) env in
   let env = add_binding "len" (TyFunc ([TyList (TyVar "T")], TyInt)) env in
   let env = add_binding "append" (TyFunc ([TyList (TyVar "T"); TyVar "T"], TyNone)) env in
   let env = add_binding "range" (TyFunc ([TyInt], TyList TyInt)) env in

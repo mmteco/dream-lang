@@ -5,6 +5,20 @@ open Error
 open Tc_utils
 open Tc_generics
 
+let rec take n lst = match n, lst with
+  | 0, _ | _, [] -> []
+  | n, x :: xs -> x :: take (n - 1) xs
+
+let rec drop n lst = match n, lst with
+  | 0, _ -> lst
+  | _, [] -> []
+  | n, _ :: xs -> drop (n - 1) xs
+
+let has_prefix s prefix =
+  let len_s = String.length s in
+  let len_p = String.length prefix in
+  len_s >= len_p && String.sub s 0 len_p = prefix
+
 let generic_type_arguments function_type substitution =
   let rec collect seen = function
     | TyVar name when not (List.mem name seen) -> name :: seen
@@ -349,7 +363,7 @@ let rec infer_expr env = function
                (Printf.sprintf "Cannot call internal C function '%s' directly. Use the Dream API instead." func_name) in
              report_error err;
              (TyUnknown, empty_subst)
-           end else if func_name = "print" && List.length args = 1 then begin
+           end else if (func_name = "print" || func_name = "eprint") && List.length args = 1 then begin
              let (arg_type, arg_subst) = infer_expr env (List.hd args) in
              add_generic_instance func_name [apply_subst arg_subst arg_type] pos;
              (TyNone, arg_subst)
@@ -368,16 +382,6 @@ let rec infer_expr env = function
              let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
              let combined_subst = List.fold_left compose_subst func_subst arg_substs in
              let ret_type = fresh_type_var () in
-
-             let rec take n lst = match n, lst with
-               | 0, _ | _, [] -> []
-               | n, x :: xs -> x :: take (n - 1) xs
-             in
-             let rec drop n lst = match n, lst with
-               | 0, _ -> lst
-               | _, [] -> []
-               | n, _ :: xs -> drop (n - 1) xs
-             in
 
              let (use_default_params, actual_return_type) = match apply_subst combined_subst func_type with
                | TyFunc (expected_params, actual_ret_type) when List.length arg_types < List.length expected_params ->
@@ -413,11 +417,6 @@ let rec infer_expr env = function
                   add_generic_instance func_name type_args pos;
                   (apply_subst all_subst ret_type, all_subst)
               with Failure msg ->
-                let has_prefix s prefix =
-                  let len_s = String.length s in
-                  let len_p = String.length prefix in
-                  len_s >= len_p && String.sub s 0 len_p = prefix
-                in
                 if has_prefix msg "Occurs check failed" then begin
                   add_generic_instance func_name [] pos;
                   (ret_type, combined_subst)
@@ -548,7 +547,7 @@ let rec infer_expr env = function
                 report_error err;
                 (TyUnknown, obj_subst)
             | Some struct_def ->
-                (match List.assoc_opt attr struct_def.struct_fields with
+                (match Env.StringMap.find_opt attr struct_def.struct_fields with
                  | Some field_type ->
                      (field_type, obj_subst)
                  | None ->
@@ -556,12 +555,12 @@ let rec infer_expr env = function
                       | Some method_type ->
                           (method_type, obj_subst)
                       | None ->
-                          let embedded_fields = List.filter (fun (field_name, field_ty) ->
+                          let embedded_fields = Env.StringMap.fold (fun field_name field_ty acc ->
                             match field_ty with
                             | TyStruct (embedded_struct_name, _) when field_name = embedded_struct_name ->
-                                true
-                            | _ -> false
-                          ) struct_def.struct_fields in
+                                (field_name, field_ty) :: acc
+                            | _ -> acc
+                          ) struct_def.struct_fields [] in
 
                           let found_in_embedded = List.filter_map (fun (_, field_ty) ->
                             match field_ty with
@@ -569,7 +568,7 @@ let rec infer_expr env = function
                                 (match Env.find_struct embedded_struct_name env with
                                  | None -> None
                                  | Some embedded_def ->
-                                     (match List.assoc_opt attr embedded_def.struct_fields with
+                                     (match Env.StringMap.find_opt attr embedded_def.struct_fields with
                                       | Some embedded_field_type ->
                                           Some (embedded_struct_name, embedded_field_type)
                                       | None ->
@@ -747,7 +746,7 @@ let rec infer_expr env = function
                        (match Env.find_struct actual_struct_name env with
                         | Some struct_def ->
                             List.fold_left (fun env_acc (field_name, field_pat) ->
-                              match List.assoc_opt field_name struct_def.struct_fields with
+                              match Env.StringMap.find_opt field_name struct_def.struct_fields with
                               | Some field_type -> bind_pattern env_acc field_pat field_type
                               | None -> env_acc  (* 字段不存在，跳过 *)
                             ) env field_pats
@@ -855,7 +854,7 @@ let rec infer_expr env = function
        | Some (TyStruct (struct_name, _)) ->
            (match Env.find_struct struct_name env with
             | Some struct_def ->
-                (match List.assoc_opt variant_name struct_def.struct_fields with
+                (match Env.StringMap.find_opt variant_name struct_def.struct_fields with
                  | Some field_type -> field_type, empty_subst
                  | None ->
                      (match find_method_type env struct_name variant_name struct_def with
@@ -972,7 +971,7 @@ let rec infer_expr env = function
            let combined_subst = List.fold_left compose_subst empty_subst field_substs in
 
            let init_field_names = List.map fst field_inits in
-           let struct_field_names = List.map fst struct_def.struct_fields in
+           let struct_field_names = List.map fst (Env.StringMap.bindings struct_def.struct_fields) in
 
            let missing_fields = List.filter (fun name ->
              not (List.mem name init_field_names)
@@ -997,7 +996,7 @@ let rec infer_expr env = function
            end;
 
            List.iter2 (fun (field_name, _) field_type ->
-             match List.assoc_opt field_name struct_def.struct_fields with
+             match Env.StringMap.find_opt field_name struct_def.struct_fields with
              | None -> ()
              | Some expected_type ->
                  (try
@@ -1021,7 +1020,7 @@ let rec infer_expr env = function
                 report_error err;
                 (TyUnknown, obj_subst)
             | Some struct_def ->
-                (match List.assoc_opt field struct_def.struct_fields with
+                (match Env.StringMap.find_opt field struct_def.struct_fields with
                  | Some field_type ->
                      (field_type, obj_subst)
                  | None ->

@@ -45,7 +45,7 @@ ocaml/lib/ir/dir/           DreamIR 后端（唯一正式后端）
   │  dir_verify.ml    DIR 验证
   │  dir_lower_llvm.ml DIR → LLVM 文本
   ↓
-clang + runtime/c/      链接生成可执行文件
+clang + runtime/c/core + runtime/c/wrappers      链接生成可执行文件
 ```
 
 DreamIR 是类型化 CFG/SSA 中间表示：SSA 值使用稳定 ID（`%v1`），block 参数表达合流（LLVM lowering 转 `phi`），字符串/列表等以高层指令存在（`string_length`、`list_get` 等），ABI 细节由 `dir_lower_llvm.ml` 集中处理。所有 runtime 函数签名只有一个来源（`ocaml/lib/ir/dir/dir_lower.ml` 的 runtime 注册表）。
@@ -63,7 +63,7 @@ compiler_lower.dm     lower 顶向下遍历 → 结构化 DIR records（FUNCTION
   ↓
 compiler_dir.dm       dir_validate_records 验证 → dir_render_records 渲染 LLVM IR
   ↓
-clang + runtime/c/      链接生成可执行文件（runtime linker 动态扫描 runtime/c/*.c）
+clang + runtime/c/core + runtime/c/wrappers      链接生成可执行文件（runtime linker 动态扫描 runtime/c/core/*.c 和 runtime/c/wrappers/*.c）
 ```
 
 自举编译器的 lexer/表达式/语句解析仍是过渡实现（服务于 `compiler.dm` 自身的语法子集），但发射器已直接构建结构化 DIR records，与 OCaml 版本保持同一流水线方向，不再存在「先生成 LLVM 文本、再反解析为 DIR」的反向路径。新旧管线的详细进度见 [BOOTSTRAP.md](BOOTSTRAP.md)。

@@ -1,29 +1,72 @@
 %{
   open Ast
 
-  (* 从 type_expr 提取类型名称字符串 *)
-  let rec type_expr_to_string = function
-    | TInt -> "int"
-    | TFloat -> "float"
-    | TStr -> "str"
-    | TRune -> "rune"
-    | TByte -> "byte"
-    | TBytes -> "bytes"
-    | TBool -> "bool"
-    | TNone -> "None"
-    | TVar name -> name
-    | TList ty -> "list[" ^ type_expr_to_string ty ^ "]"
-    | TTuple tys -> "(" ^ String.concat ", " (List.map type_expr_to_string tys) ^ ")"
-    | TUnion tys -> String.concat " | " (List.map type_expr_to_string tys)
-    | TDict (k, v) -> "dict[" ^ type_expr_to_string k ^ ", " ^ type_expr_to_string v ^ "]"
-    | TOption ty -> "Option[" ^ type_expr_to_string ty ^ "]"
-    | TResult (ok, err) -> "Result[" ^ type_expr_to_string ok ^ ", " ^ type_expr_to_string err ^ "]"
-    | TEnum (name, _) -> name
-    | TStruct (name, _) -> name
-    | TFunc (params, ret) ->
-        "(" ^ String.concat ", " (List.map type_expr_to_string params) ^ ") -> " ^ type_expr_to_string ret
-    | TGeneric (name, _) -> name
-    | TSelf -> "Self"
+  (* 从 type_expr 提取类型名称字符串，使用 Buffer 避免中间字符串分配 *)
+  let type_expr_to_string ty =
+    let buf = Buffer.create 32 in
+    let rec aux = function
+      | TInt -> Buffer.add_string buf "int"
+      | TFloat -> Buffer.add_string buf "float"
+      | TStr -> Buffer.add_string buf "str"
+      | TRune -> Buffer.add_string buf "rune"
+      | TByte -> Buffer.add_string buf "byte"
+      | TBytes -> Buffer.add_string buf "bytes"
+      | TBool -> Buffer.add_string buf "bool"
+      | TNone -> Buffer.add_string buf "None"
+      | TVar name -> Buffer.add_string buf name
+      | TList ty ->
+          Buffer.add_string buf "list[";
+          aux ty;
+          Buffer.add_char buf ']'
+      | TTuple tys ->
+          Buffer.add_char buf '(';
+          let first = ref true in
+          List.iter (fun ty ->
+            if !first then first := false
+            else Buffer.add_string buf ", ";
+            aux ty
+          ) tys;
+          Buffer.add_char buf ')'
+      | TUnion tys ->
+          let first = ref true in
+          List.iter (fun ty ->
+            if !first then first := false
+            else Buffer.add_string buf " | ";
+            aux ty
+          ) tys
+      | TDict (k, v) ->
+          Buffer.add_string buf "dict[";
+          aux k;
+          Buffer.add_string buf ", ";
+          aux v;
+          Buffer.add_char buf ']'
+      | TOption ty ->
+          Buffer.add_string buf "Option[";
+          aux ty;
+          Buffer.add_char buf ']'
+      | TResult (ok, err) ->
+          Buffer.add_string buf "Result[";
+          aux ok;
+          Buffer.add_string buf ", ";
+          aux err;
+          Buffer.add_char buf ']'
+      | TEnum (name, _) -> Buffer.add_string buf name
+      | TStruct (name, _) -> Buffer.add_string buf name
+      | TFunc (params, ret) ->
+          Buffer.add_char buf '(';
+          let first = ref true in
+          List.iter (fun ty ->
+            if !first then first := false
+            else Buffer.add_string buf ", ";
+            aux ty
+          ) params;
+          Buffer.add_string buf ") -> ";
+          aux ret
+      | TGeneric (name, _) -> Buffer.add_string buf name
+      | TSelf -> Buffer.add_string buf "Self"
+    in
+    aux ty;
+    Buffer.contents buf
 
   let get_expr_pos = function
     | EInt (_, p) | EFloat (_, p) | EString (_, p) | ERune (_, p) | EByte (_, p) | EBool (_, p)

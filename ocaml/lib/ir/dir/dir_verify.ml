@@ -549,9 +549,9 @@ let verify module_ =
            add_error (Printf.sprintf "duplicate value %%v%d" value)
          else
            Hashtbl.add value_types value field_type
-     | ListAppend (collection, value) ->
-         verify_operand value_types collection (List I32) "list_append collection";
-         verify_operand value_types value I32 "list_append value"
+     | ListAppend (collection, value, element_type) ->
+         verify_operand value_types collection (List element_type) "list_append collection";
+         verify_operand value_types value element_type "list_append value"
      | ListSet (collection, index, value) ->
          verify_operand value_types collection (List I32) "list_set collection";
          verify_operand value_types index I32 "list_set index";

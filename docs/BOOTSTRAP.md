@@ -78,9 +78,9 @@ Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；�
 - 基础：整数、变量、四则运算、`let`、函数声明/参数/`return`/调用、`print`、字符串、列表、循环、`switch/case/default`
 - 集合：整数列表字面量/索引/赋值/推导式、`for value in list[int]`、整数 tuple 字面量/解包、一元负号
 - 结构体：整数结构体构造/乱序初始化/字段访问、作为函数参数和返回值、模式匹配字段绑定
-- bytes 基础 ABI：`str_to_bytes`/`bytes_to_str`/`bytes_from_list`/`bytes_to_list`、索引、切片（链接用 `bytes_wrapper.c` 的 `__c_*` ABI）
+- bytes 基础 ABI：`str_to_bytes`/`bytes_to_str`/`bytes_from_list`/`bytes_to_list`、索引、切片（链接用 `wrappers/bytes.c` 的 `__c_*` ABI）
 - match：`switch/case/default` 支持 int/bool/float/str；整数 `match`、通配符、`[tag, payload]` 基础 enum match（用户 enum + Some/None + Ok/Err）
-- 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/c/*.c`
+- 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/c/core/*.c` 和 `runtime/c/wrappers/*.c`
 - CLI 与格式：Stage 1/2 提供 `build`/`llvm`/`dir` CLI；宿主与 DM 统一输出正式 DreamIR 文本，typed record 仅为内部序列化 ABI，未映射指令以 `native llvm` 记录保留
 - 固定点：Stage 0 → 1 → 2 → 3 字节一致固定点，Stage 3 独立执行 `dir`/`build` 回归（`lang_full_dream.dm`、`quicksort.dm`、rune 索引、基础捕获 lambda、登记的 DIR 示例）
 

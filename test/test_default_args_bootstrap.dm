@@ -2,7 +2,7 @@ def scale(value: int, multiplier: int = 3) -> int:
     return value * multiplier
 
 def describe(name: str, prefix: str = "item: ", suffix: str = "!") -> str:
-    return string_concat(string_concat(prefix, name), suffix)
+    return prefix + name + suffix
 
 def combine(first: int, second: int = 10, third: int = 20) -> int:
     return first + second + third

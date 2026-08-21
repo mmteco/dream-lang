@@ -17,10 +17,13 @@ static bool has_suffix(const char* value, const char* suffix) {
         strcmp(value + value_length - suffix_length, suffix) == 0;
 }
 
-static bool is_runtime_source(const char* name) {
-    return has_suffix(name, ".c") &&
-        strncmp(name, "test_", 5) != 0 &&
-        strcmp(name, "bytes.c") != 0;
+static bool is_runtime_source(const char* relative_path) {
+    size_t path_length = strlen(relative_path);
+    if (path_length < 2) return false;
+    if (strcmp(relative_path + path_length - 2, ".c") != 0) return false;
+    if (strncmp(relative_path, "test_", 5) == 0) return false;
+    if (strcmp(relative_path, "core/bytes.c") == 0) return false;
+    return true;
 }
 
 static int compare_names(const void* left, const void* right) {
@@ -49,44 +52,73 @@ static char* join_path(const char* directory, const char* name) {
     return path;
 }
 
-static bool collect_runtime_sources(const char* runtime_directory, char*** names_out, size_t* count_out) {
+static bool collect_runtime_sources_from_dir(const char* runtime_directory, const char* subdir, char*** names_out, size_t* count_out, size_t* capacity_out) {
     DIR* directory = opendir(runtime_directory);
     if (directory == NULL) {
         return false;
     }
 
-    char** names = NULL;
-    size_t count = 0;
-    size_t capacity = 0;
     struct dirent* entry;
     while ((entry = readdir(directory)) != NULL) {
-        if (!is_runtime_source(entry->d_name)) {
-            continue;
-        }
-        if (count == capacity) {
-            size_t next_capacity = capacity == 0 ? 8 : capacity * 2;
-            char** next_names = realloc(names, next_capacity * sizeof(char*));
-            if (next_names == NULL) {
-                closedir(directory);
-                free_names(names, count);
-                return false;
-            }
-            names = next_names;
-            capacity = next_capacity;
-        }
-        names[count] = strdup(entry->d_name);
-        if (names[count] == NULL) {
+        char* relative_path = join_path(subdir, entry->d_name);
+        if (relative_path == NULL) {
             closedir(directory);
-            free_names(names, count);
+            free_names(*names_out, *count_out);
             return false;
         }
-        count++;
+        if (!is_runtime_source(relative_path)) {
+            free(relative_path);
+            continue;
+        }
+        if (*count_out == *capacity_out) {
+            size_t next_capacity = *capacity_out == 0 ? 8 : *capacity_out * 2;
+            char** next_names = realloc(*names_out, next_capacity * sizeof(char*));
+            if (next_names == NULL) {
+                free(relative_path);
+                closedir(directory);
+                free_names(*names_out, *count_out);
+                return false;
+            }
+            *names_out = next_names;
+            *capacity_out = next_capacity;
+        }
+        (*names_out)[*count_out] = relative_path;
+        (*count_out)++;
     }
     closedir(directory);
+    return true;
+}
 
-    qsort(names, count, sizeof(char*), compare_names);
-    *names_out = names;
-    *count_out = count;
+static bool collect_runtime_sources(const char* runtime_directory, char*** names_out, size_t* count_out) {
+    *names_out = NULL;
+    *count_out = 0;
+    size_t capacity = 0;
+
+    char* core_dir = join_path(runtime_directory, "core");
+    char* wrappers_dir = join_path(runtime_directory, "wrappers");
+
+    bool success = true;
+    if (core_dir != NULL) {
+        if (!collect_runtime_sources_from_dir(core_dir, "core", names_out, count_out, &capacity)) {
+            success = false;
+        }
+        free(core_dir);
+    }
+    if (success && wrappers_dir != NULL) {
+        if (!collect_runtime_sources_from_dir(wrappers_dir, "wrappers", names_out, count_out, &capacity)) {
+            success = false;
+        }
+        free(wrappers_dir);
+    }
+
+    if (!success) {
+        free_names(*names_out, *count_out);
+        *names_out = NULL;
+        *count_out = 0;
+        return false;
+    }
+
+    qsort(*names_out, *count_out, sizeof(char*), compare_names);
     return true;
 }
 
@@ -106,7 +138,7 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
         return 0;
     }
 
-    size_t argument_count = 11 + runtime_count;
+    size_t argument_count = 13 + runtime_count;
     char** arguments = calloc(argument_count, sizeof(char*));
     if (arguments == NULL) {
         free_names(runtime_names, runtime_count);
@@ -142,8 +174,12 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
         }
         arguments[argument_index++] = runtime_paths[index];
     }
+    char* core_include = join_path(runtime_directory, "core");
+    char* wrappers_include = join_path(runtime_directory, "wrappers");
     arguments[argument_index++] = "-I";
-    arguments[argument_index++] = (char*)runtime_directory;
+    arguments[argument_index++] = core_include != NULL ? core_include : (char*)runtime_directory;
+    arguments[argument_index++] = "-I";
+    arguments[argument_index++] = wrappers_include != NULL ? wrappers_include : (char*)runtime_directory;
     arguments[argument_index] = NULL;
 
     pid_t child_process = fork();
@@ -157,6 +193,8 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
         }
         free(runtime_paths);
         free(arguments);
+        free(core_include);
+        free(wrappers_include);
         free_names(runtime_names, runtime_count);
         return 0;
     }
@@ -167,6 +205,8 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
         free(runtime_paths[index]);
     }
     free(runtime_paths);
+    free(core_include);
+    free(wrappers_include);
     free(arguments);
     free_names(runtime_names, runtime_count);
 

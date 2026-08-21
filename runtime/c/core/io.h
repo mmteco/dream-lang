@@ -11,4 +11,10 @@ void dream_print_bool(bool value);
 void dream_print_string(const char* str);
 void dream_print_rune(uint32_t rune);
 
+void dream_eprint_int(int value);
+void dream_eprint_float(double value);
+void dream_eprint_bool(bool value);
+void dream_eprint_string(const char* str);
+void dream_eprint_rune(uint32_t rune);
+
 #endif
