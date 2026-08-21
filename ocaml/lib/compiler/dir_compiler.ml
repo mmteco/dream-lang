@@ -185,6 +185,14 @@ let imported_definitions program =
                 Hashtbl.add type_definition_names enum_info.Ast.enum_name ();
                 Ast.SEnum enum_info :: definitions
               end
+          | Ast.SInterface interface_info ->
+              if Hashtbl.mem type_definition_names interface_info.Ast.interface_name then definitions
+              else begin
+                Hashtbl.add type_definition_names interface_info.Ast.interface_name ();
+                Ast.SInterface interface_info :: definitions
+              end
+          | Ast.SImpl (impl_info, position) ->
+              Ast.SImpl (impl_info, position) :: definitions
           | Ast.SImport (dependency_path, _, _) ->
               add_module definitions dependency_path None
           | Ast.SFromImport (dependency_name, _, _) ->

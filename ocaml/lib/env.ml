@@ -151,6 +151,35 @@ let find_impl_for_type target_type interface_name env =
         is_compatible impl.impl_target_type target_type
       ) impls
 
+(* 查找同时匹配目标类型和方法参数的接口实现。*)
+let find_impl_for_method target_type interface_name method_name argument_types env =
+  let matches_impl impl =
+    is_compatible impl.impl_target_type target_type &&
+    match StringMap.find_opt method_name impl.impl_methods with
+    | Some (TyFunc (parameter_types, _)) ->
+        (match parameter_types with
+         | _ :: method_argument_types
+           when List.length method_argument_types = List.length argument_types ->
+             List.for_all2 is_compatible method_argument_types argument_types
+         | _ -> false)
+    | _ -> false
+  in
+  let rec find env =
+    match StringMap.find_opt interface_name env.impls with
+    | Some impls ->
+        (match List.find_opt matches_impl impls with
+         | Some impl -> Some impl
+         | None ->
+             match env.parent with
+             | Some parent -> find parent
+             | None -> None)
+    | None ->
+        match env.parent with
+        | Some parent -> find parent
+        | None -> None
+  in
+  find env
+
 (* 查找具体类型上的静态 impl 方法。*)
 let rec find_impl_method_for_type target_type method_name env =
   match StringMap.fold (fun _iface_name impls acc ->

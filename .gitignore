@@ -23,6 +23,8 @@ examples/*
 
 # Dream ID
 *.dir
+*.hir
+*.mir
 
 # 可执行文件和无扩展名构建输出
 test/test_*
@@ -30,8 +32,12 @@ test/test_*
 runtime/c/test_*
 !runtime/c/test_*.c
 !runtime/c/test_*.h
+bootstrap/*
+!bootstrap/*.dm
 
 # 临时文件
 *.swp
 *.swo
 .DS_Store
+
+legacy/

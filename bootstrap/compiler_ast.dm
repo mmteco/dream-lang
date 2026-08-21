@@ -866,6 +866,8 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
         let next_kind = token_kind(kinds, index + 1)
         if next_kind == TOKEN_ASSIGN:
             return ast_parse_assign_statement(context, index, ast)
+        if next_kind == TOKEN_DOT and token_kind(kinds, index + 2) == TOKEN_IDENTIFIER and token_kind(kinds, index + 3) == TOKEN_ASSIGN:
+            return ast_parse_attribute_assign_statement(context, index, ast)
         if next_kind == TOKEN_OPEN_BRACKET:
             let assign_probe_index = index + 2
             while token_kind(kinds, assign_probe_index) != TOKEN_CLOSE_BRACKET and token_kind(kinds, assign_probe_index) != TOKEN_EOF:
@@ -1005,6 +1007,25 @@ def ast_parse_assign_statement(context: ParseContext, index: int, ast: list[int]
     ast_set_arg(ast, node, 5, len(ast))
     return (value_next_index, node)
 
+def ast_parse_attribute_assign_statement(context: ParseContext, index: int, ast: list[int]) -> (int, int):
+    let kinds = context.kinds
+    let starts = context.starts
+    let ends = context.ends
+    let (target_next_index, target_node) = ast_parse_expression(context, index, ast)
+    if target_node == 0 or token_kind(kinds, target_next_index) != TOKEN_ASSIGN:
+        return (index, 0)
+    let (value_next_index, value_node) = ast_parse_expression(context, target_next_index + 1, ast)
+    if value_node == 0:
+        return (index, 0)
+    let node = ast_append_node(ast, AST_STMT_ASSIGN, token_start(starts, index), token_end(ends, index), ARGS_STMT_ASSIGN)
+    ast_set_arg(ast, node, 0, token_start(starts, index))
+    ast_set_arg(ast, node, 1, token_end(ends, index))
+    ast_set_arg(ast, node, 2, 2)
+    ast_set_arg(ast, node, 3, target_node)
+    ast_set_arg(ast, node, 4, value_node)
+    ast_set_arg(ast, node, 5, len(ast))
+    return (value_next_index, node)
+
 def ast_parse_element_assign_statement(context: ParseContext, index: int, ast: list[int]) -> (int, int):
     let starts = context.starts
     let ends = context.ends
@@ -1137,15 +1158,34 @@ def ast_parse_switch_statement(context: ParseContext, index: int, body_end: int,
         let (case_value_next_index, case_value_node) = ast_parse_expression(context, case_index + 1, ast)
         if case_value_node == 0:
             return (index, 0)
-        let (case_block_start, case_block_end) = ast_parse_block_range(context, case_value_next_index + 1, body_end)
+        let case_values: list[int] = [case_value_node]
+        let next_value_index = case_value_next_index
+        while token_kind(kinds, next_value_index) == TOKEN_COMMA:
+            let (next_value_end, next_value_node) = ast_parse_expression(context, next_value_index + 1, ast)
+            if next_value_node == 0:
+                return (index, 0)
+            append(case_values, next_value_node)
+            next_value_index = next_value_end
+        let (case_block_start, case_block_end) = ast_parse_block_range(context, next_value_index + 1, body_end)
         if case_block_end <= case_index:
             return (index, 0)
         let (_, case_block_node) = ast_parse_stmt_block(context, case_block_start, case_block_end, ast)
         if case_block_node == 0:
             return (index, 0)
-        ast_set_arg(ast, case_node, 0, case_value_node)
+        let case_block_end_node = len(ast)
+        ast_set_arg(ast, case_node, 0, case_values[0])
         ast_set_arg(ast, case_node, 1, case_block_node)
-        ast_set_arg(ast, case_node, 2, len(ast))
+        ast_set_arg(ast, case_node, 2, case_block_end_node)
+        let extra_value_index = 1
+        while extra_value_index < len(case_values):
+            let extra_case_node = ast_append_node(ast, AST_CASE, 0, 0, ARGS_CASE)
+            let (_, extra_case_block_node) = ast_parse_stmt_block(context, case_block_start, case_block_end, ast)
+            if extra_case_block_node == 0:
+                return (index, 0)
+            ast_set_arg(ast, extra_case_node, 0, case_values[extra_value_index])
+            ast_set_arg(ast, extra_case_node, 1, extra_case_block_node)
+            ast_set_arg(ast, extra_case_node, 2, len(ast))
+            extra_value_index = extra_value_index + 1
         case_index = case_block_end
     let cases_end = len(ast)
     let default_block_node = 0

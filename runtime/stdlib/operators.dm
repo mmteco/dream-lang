@@ -120,6 +120,13 @@ interface Index[K, V]:
     def index(self, key: K) -> V
 
 
+# ===== 集合追加 =====
+
+# 允许自定义容器复用 append(target, value) 语法
+interface Append[T]:
+    def append(self, value: T)
+
+
 # ===== 字符串转换 =====
 
 # 转换为字符串

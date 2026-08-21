@@ -327,9 +327,10 @@ else_opt:
 
 switch_case_list:
   | { ([], None) }
-  | CASE value = expr COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = switch_case_list
+  | CASE values = separated_nonempty_list(COMMA, expr) COLON newline_sep INDENT body = statement_list DEDENT newline_sep rest = switch_case_list
       { let (cases, default_body) = rest in
-        ((value, body) :: cases, default_body) }
+        (List.fold_right (fun value accumulated -> (value, body) :: accumulated)
+          values cases, default_body) }
   | DEFAULT COLON newline_sep INDENT body = statement_list DEDENT
       { ([], Some body) }
 
@@ -398,6 +399,10 @@ interface_member_list:
 interface_member:
   | name = IDENT COLON ty = type_expr
       { IField (name, ty, { line = 0; column = 0 }) }
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN
+      { IMethod (name, [], params, None, None, { line = 0; column = 0 }) }
+  | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
+      { IMethod (name, [], params, None, Some body, { line = 0; column = 0 }) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr
       { IMethod (name, [], params, Some ret, None, { line = 0; column = 0 }) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN ARROW ret = type_expr COLON newline_sep INDENT body = statement_list DEDENT

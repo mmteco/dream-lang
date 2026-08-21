@@ -113,6 +113,7 @@ type exported_symbol =
   | ExportedStruct of string * struct_def  (* 结构体名 * 定义 *)
   | ExportedInterface of string * interface_def  (* 接口名 * 定义 *)
   | ExportedEnum of string * enum_def  (* 枚举名 * 定义 *)
+  | ExportedImpl of impl_block * position
 
 (* 从 AST 中提取所有顶层导出的符号 *)
 let extract_exports (ast : program) : exported_symbol list =
@@ -124,6 +125,7 @@ let extract_exports (ast : program) : exported_symbol list =
     | SStruct struct_info -> [ExportedStruct (struct_info.struct_name, struct_info)]
     | SInterface interface_info -> [ExportedInterface (interface_info.interface_name, interface_info)]
     | SEnum enum_info -> [ExportedEnum (enum_info.enum_name, enum_info)]
+    | SImpl (impl_info, position) -> [ExportedImpl (impl_info, position)]
     | _ -> []
   in
   List.concat_map extract_from_stmt ast
@@ -136,6 +138,7 @@ let get_symbol_name = function
   | ExportedStruct (name, _) -> name
   | ExportedInterface (name, _) -> name
   | ExportedEnum (name, _) -> name
+  | ExportedImpl _ -> "__impl__"
 
 (* 导入符号到环境 *)
 (* 返回 (name_in_scope, symbol) 对，其中 name_in_scope 是导入后在当前作用域中的名称 *)
@@ -184,8 +187,23 @@ let import_selected_from_module module_path selections =
       (match find_and_import selections [] with
        | Error msg -> Error msg
        | Ok selected_imports ->
+           let selected_names = List.map fst selections in
+           let target_name = function
+             | TVar name
+             | TStruct (name, _) -> Some name
+             | _ -> None
+           in
+           let imported_impls = List.filter_map (function
+             | ExportedImpl (impl_info, position) ->
+                 (match target_name impl_info.impl_target with
+                  | Some name when List.mem name selected_names ->
+                      Some (ExportedImpl (impl_info, position))
+                  | _ -> None)
+             | _ -> None
+           ) exports in
            let constant_imports = List.filter_map (function
              | ExportedConst _ as symbol -> Some (import_symbol symbol None)
              | _ -> None
            ) exports in
-           Ok (selected_imports @ constant_imports))
+           let imported_impls = List.map (fun symbol -> import_symbol symbol None) imported_impls in
+           Ok (selected_imports @ imported_impls @ constant_imports))

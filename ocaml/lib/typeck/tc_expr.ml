@@ -377,6 +377,33 @@ let rec infer_expr env = function
                       (ty_to_string actual_type)) in
                   report_error err;
                   (TyUnknown, arg_subst))
+           end else if func_name = "append" && List.length args = 2 then begin
+             let (collection_type, collection_subst) = infer_expr env (List.nth args 0) in
+             let value_env = apply_subst_to_env collection_subst env in
+             let (value_type, value_subst) = infer_expr value_env (List.nth args 1) in
+             let combined_subst = compose_subst value_subst collection_subst in
+             let collection_type = apply_subst combined_subst collection_type in
+             let value_type = apply_subst combined_subst value_type in
+             (match collection_type with
+              | TyList element_type ->
+                  (try
+                     let element_subst = unify element_type value_type in
+                     (TyNone, compose_subst element_subst combined_subst)
+                   with Failure msg ->
+                     let err = make_error (TypeError msg) pos
+                       (Printf.sprintf "append value type mismatch: %s" msg) in
+                     report_error err;
+                     (TyUnknown, combined_subst))
+              | target_type ->
+                  (match Env.find_impl_for_method target_type "Append" "append"
+                           [value_type] env with
+                   | Some _ -> (TyNone, combined_subst)
+                   | None ->
+                       let err = make_error (TypeError "Append implementation not found") pos
+                         (Printf.sprintf "append does not support %s with value %s"
+                           (ty_to_string target_type) (ty_to_string value_type)) in
+                       report_error err;
+                       (TyUnknown, combined_subst)))
            end else begin
              let (func_type, func_subst) = infer_expr env func in
              let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in

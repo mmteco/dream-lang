@@ -76,20 +76,27 @@ let rec lower_method_call context function_builder environment object_value meth
     | _ -> fail_at position "method call requires a struct value"
   in
   let method_key = struct_name ^ "." ^ method_name in
-  let method_binding = match Hashtbl.find_opt context.method_signatures method_key with
-    | Some binding -> binding
-    | None -> fail_at position ("unknown struct method " ^ method_key)
+  let lowered_arguments = List.map
+    (lower_expr context function_builder environment) arguments in
+  let method_binding = match Hashtbl.find_all context.method_signatures method_key with
+    | [] -> fail_at position ("unknown struct method " ^ method_key)
+    | bindings ->
+        let is_matching binding =
+          match binding.signature.parameter_types with
+          | _ :: parameter_types ->
+              List.length parameter_types = List.length lowered_arguments &&
+              List.for_all2 (fun expected actual -> Dir.equal_ty expected actual.ty)
+                parameter_types lowered_arguments
+          | [] -> false
+        in
+        (match List.find_opt is_matching bindings with
+         | Some binding -> binding
+         | None -> fail_at position ("no matching overload for method " ^ method_key))
   in
   let expected_argument_types = match method_binding.signature.parameter_types with
     | _ :: parameter_types -> parameter_types
     | [] -> fail_at position ("method " ^ method_key ^ " has no self parameter")
   in
-  let lowered_arguments = List.map
-    (lower_expr context function_builder environment) arguments in
-  if List.length lowered_arguments <> List.length expected_argument_types then
-    fail_at position (Printf.sprintf "method %s expects %d arguments, got %d"
-      method_key (List.length expected_argument_types)
-      (List.length lowered_arguments));
   let coerced_arguments = List.map2 (fun actual expected ->
     coerce_value context function_builder position expected actual
   ) lowered_arguments expected_argument_types in
@@ -462,15 +469,25 @@ and lower_expr context function_builder environment expression =
       { operand = Value value; ty = List element_type }
   | ECall (EVar ("append", _), [collection; item], position) ->
       let lowered_collection = lower_expr context function_builder environment collection in
-      let lowered_item = lower_expr context function_builder environment item in
       let element_type = match lowered_collection.ty with
         | List element_type -> element_type
-        | actual_type -> fail_at position (Printf.sprintf
-            "append collection: expected list, got %s" (Dir.ty_to_string actual_type))
+        | _ -> I32
       in
-      expect_type position element_type lowered_item.ty "append value";
-      emit function_builder (ListAppend (lowered_collection.operand, lowered_item.operand, element_type));
-      { operand = Int 0; ty = Unit }
+      (match lowered_collection.ty with
+       | List _ ->
+           let lowered_item = lower_expr context function_builder environment item in
+           expect_type position element_type lowered_item.ty "append value";
+           emit function_builder (ListAppend (lowered_collection.operand, lowered_item.operand, element_type));
+           { operand = Int 0; ty = Unit }
+       | Struct _ ->
+           lower_method_call context function_builder environment lowered_collection
+             "append" [item] position
+       | Interface _ ->
+           lower_interface_call context function_builder environment lowered_collection
+             "append" [item] position
+       | actual_type -> fail_at position (Printf.sprintf
+           "append collection: expected list or Append implementation, got %s"
+           (Dir.ty_to_string actual_type)))
   | ECall (EVar ("text_length", _), [argument], position) ->
       let lowered_argument = lower_expr context function_builder environment argument in
       expect_type position Str lowered_argument.ty "text_length argument";
@@ -2043,8 +2060,12 @@ let lower_program program =
     let resolve_enum name = resolve_enum_type [] name in
     let resolve_interface name = resolve_interface_type name in
     let resolve_named name =
-      try resolve_struct name with Lower_error _ ->
-        try resolve_enum name with Lower_error _ -> resolve_interface name
+      try resolve_struct name with Lower_error struct_error ->
+        try resolve_enum name with Lower_error enum_error ->
+          try resolve_interface name with Lower_error interface_error ->
+            raise (Lower_error ("unknown named type " ^ name ^
+              "; struct=" ^ struct_error ^ "; enum=" ^ enum_error ^
+              "; interface=" ^ interface_error))
     in
     let signatures = Hashtbl.create 32 in
     let method_signatures = Hashtbl.create 32 in
@@ -2094,8 +2115,12 @@ let lower_program program =
                   if type_params <> [] then
                     raise (Lower_error ("generic impl method is not supported in DIR: " ^
                       target_name ^ "." ^ method_name));
+                  let type_suffix = match impl_block.impl_type_params with
+                    | [] -> ""
+                    | type_params -> "_" ^ String.concat "_" type_params
+                  in
                   let function_name = "__dir_impl_" ^ interface_name ^ "_" ^
-                    target_name ^ "_" ^ method_name in
+                    target_name ^ "_" ^ method_name ^ type_suffix in
                   Some (target_name, method_name, function_name, {
                     def_name = function_name;
                     def_name_pos = position;

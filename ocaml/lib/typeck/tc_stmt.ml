@@ -26,6 +26,38 @@ let imported_const_type env const_info =
             | None -> TyUnknown)
        | _ -> TyUnknown)
 
+let add_imported_impl env impl_info =
+  match impl_info.impl_interface with
+  | None -> env
+  | Some interface_name ->
+      let target_type = resolve_type_expr env impl_info.impl_target in
+      let method_type = function
+        | ImplMethod (method_name, _, parameters, return_type, _, _) ->
+            let parameter_types = List.mapi (fun index (parameter_name, type_expression, _) ->
+              if index = 0 && parameter_name = "self" then
+                target_type
+              else
+                match type_expression with
+                | Some type_expression -> resolve_type_expr env type_expression
+                | None -> fresh_type_var ()) parameters in
+            let result_type = match return_type with
+              | Some type_expression -> resolve_type_expr env type_expression
+              | None -> TyNone
+            in
+            Some (method_name, TyFunc (parameter_types, result_type))
+        | ImplAssocType _
+        | ImplAssocConst _ -> None
+      in
+      let methods = List.filter_map method_type impl_info.impl_members in
+      let impl_def = {
+        Env.impl_interface_name = interface_name;
+        Env.impl_target_type = target_type;
+        Env.impl_methods = List.fold_left (fun methods (name, method_type) ->
+          Env.StringMap.add name method_type methods
+        ) Env.StringMap.empty methods;
+      } in
+      Env.add_impl impl_def env
+
 (* 语句类型检查 *)
 let rec check_statement env = function
   | SExpr (e, _) ->
@@ -668,6 +700,12 @@ let rec check_statement env = function
                  } in
                  Env.add_interface name iface_def acc_env
              | Module_loader.ExportedStruct (_original_name, struct_info) ->
+                 let resolve_imported_type type_expression =
+                   match type_expression with
+                   | TVar type_name when type_name = struct_info.struct_name ->
+                       TyStruct (struct_info.struct_name, [])
+                   | _ -> resolve_type_expr acc_env type_expression
+                 in
                  let field_list = List.filter_map (function
                    | SField field -> Some field
                    | SMethod _ -> None
@@ -681,7 +719,7 @@ let rec check_statement env = function
                           | TVar type_name -> type_name
                           | _ -> "_invalid_")
                    in
-                   (field_name, type_expr_to_ty field.field_type)
+                   (field_name, resolve_imported_type field.field_type)
                  ) field_list in
 
                  let struct_fields = List.fold_left (fun acc (name, ty) ->
@@ -700,11 +738,11 @@ let rec check_statement env = function
                        TyStruct (struct_info.struct_name, [])
                      else
                        match pty_opt with
-                       | Some t -> type_expr_to_ty t
+                       | Some t -> resolve_imported_type t
                        | None -> fresh_type_var ()
                    ) params in
                    let ret_type = match ret_ty_opt with
-                     | Some t -> type_expr_to_ty t
+                     | Some t -> resolve_imported_type t
                      | None -> TyNone
                    in
                    let method_type = TyFunc (param_types, ret_type) in
@@ -720,6 +758,8 @@ let rec check_statement env = function
                  let acc_env_with_struct = Env.add_struct name struct_def acc_env in
                  let struct_type = TyStruct (name, []) in
                  add_binding name struct_type acc_env_with_struct
+             | Module_loader.ExportedImpl (impl_info, _) ->
+                 add_imported_impl acc_env impl_info
              | Module_loader.ExportedEnum (_original_name, enum_info) ->
                  let enum_type = TyEnum (enum_info.enum_name, []) in
                  add_binding name enum_type (Env.add_enum name enum_info acc_env)
@@ -766,6 +806,12 @@ let rec check_statement env = function
                  } in
                  Env.add_interface name iface_def acc_env
              | Module_loader.ExportedStruct (_original_name, struct_info) ->
+                 let resolve_imported_type type_expression =
+                   match type_expression with
+                   | TVar type_name when type_name = struct_info.struct_name ->
+                       TyStruct (struct_info.struct_name, [])
+                   | _ -> resolve_type_expr acc_env type_expression
+                 in
                  let field_list = List.filter_map (function
                    | SField field -> Some field
                    | SMethod _ -> None
@@ -779,7 +825,7 @@ let rec check_statement env = function
                           | TVar type_name -> type_name
                           | _ -> "_invalid_")
                    in
-                   (field_name, type_expr_to_ty field.field_type)
+                   (field_name, resolve_imported_type field.field_type)
                  ) field_list in
 
                  let struct_fields = List.fold_left (fun acc (name, ty) ->
@@ -798,11 +844,11 @@ let rec check_statement env = function
                        TyStruct (struct_info.struct_name, [])
                      else
                        match pty_opt with
-                       | Some t -> type_expr_to_ty t
+                       | Some t -> resolve_imported_type t
                        | None -> fresh_type_var ()
                    ) params in
                    let ret_type = match ret_ty_opt with
-                     | Some t -> type_expr_to_ty t
+                     | Some t -> resolve_imported_type t
                      | None -> TyNone
                    in
                    let method_type = TyFunc (param_types, ret_type) in
@@ -818,6 +864,8 @@ let rec check_statement env = function
                  let acc_env_with_struct = Env.add_struct name struct_def acc_env in
                  let struct_type = TyStruct (name, []) in
                  add_binding name struct_type acc_env_with_struct
+             | Module_loader.ExportedImpl (impl_info, _) ->
+                 add_imported_impl acc_env impl_info
              | Module_loader.ExportedEnum (_original_name, enum_info) ->
                  let enum_type = TyEnum (enum_info.enum_name, []) in
                  add_binding name enum_type (Env.add_enum name enum_info acc_env)

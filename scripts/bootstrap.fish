@@ -248,6 +248,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_bytes_dir.dm tmp/dream_bootstrap_bytes 98 2 bc 120 2
     check_bootstrapped_example test/test_scalar_match_dir.dm tmp/dream_bootstrap_scalar_match 20 1 2 3
     check_bootstrapped_example test/test_switch_basic_types_dir.dm tmp/dream_bootstrap_switch_basic_types 25 1 1
+    check_bootstrapped_example test/test_switch_multi_case.dm tmp/dream_bootstrap_switch_multi_case 10 10 20 0
     # TODO: ? 操作符在 Dream 编译器中生成的 IR 有 return 后还有代码的问题
     # 需要修复 ? 操作符的控制流生成
     # check_bootstrapped_example test/test_try_dir.dm tmp/dream_bootstrap_try 42 -1
