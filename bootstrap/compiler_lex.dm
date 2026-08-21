@@ -734,19 +734,38 @@ def lex(source: str, kinds: list[int], starts: list[int], ends: list[int]) -> in
             index = index + closing_step
             handled = true
         if not handled and code == ASCII_SINGLE_QUOTE:
-            let rune_start = index + 1
-            index = index + 1
-            while index < source_length and source[index] != '\'':
-                let rune_step = 1
-                if source[index] == '\\' and index + 1 < source_length:
-                    rune_step = 2
-                index = index + rune_step
-            append_token(kinds, starts, ends, TOKEN_RUNE, rune_start, index)
-            let rune_closing_step = 0
-            if index < source_length:
-                rune_closing_step = 1
-            index = index + rune_closing_step
-            handled = true
+            let is_triple_string = false
+            if index + 2 < source_length:
+                if source[index + 1] == '\'' and source[index + 2] == '\'':
+                    is_triple_string = true
+            if is_triple_string:
+                let string_start = index + 3
+                index = string_start
+                let string_closed = false
+                while index < source_length and not string_closed:
+                    if index + 2 < source_length:
+                        if source[index] == '\'' and source[index + 1] == '\'' and source[index + 2] == '\'':
+                            string_closed = true
+                    if not string_closed:
+                        index = index + 1
+                append_token(kinds, starts, ends, TOKEN_STRING, string_start, index)
+                if string_closed:
+                    index = index + 3
+                handled = true
+            if not is_triple_string:
+                let rune_start = index + 1
+                index = index + 1
+                while index < source_length and source[index] != '\'':
+                    let rune_step = 1
+                    if source[index] == '\\' and index + 1 < source_length:
+                        rune_step = 2
+                    index = index + rune_step
+                append_token(kinds, starts, ends, TOKEN_RUNE, rune_start, index)
+                let rune_closing_step = 0
+                if index < source_length:
+                    rune_closing_step = 1
+                index = index + rune_closing_step
+                handled = true
         if not handled:
             switch code:
                 case ASCII_PLUS:

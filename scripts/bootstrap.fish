@@ -28,13 +28,14 @@ set cli_dir_host_file tmp/dream_bootstrap_host.dir
 set cli_dir_stage1_file tmp/dream_bootstrap_stage1.dir
 set cli_dir_stage2_file tmp/dream_bootstrap_stage2.dir
 set cli_dir_stage3_file tmp/dream_bootstrap_stage3.dir
+set ast_output_file tmp/dream_bootstrap_ast.ast
 
 mkdir -p tmp
 printf '' > "$request_source_file"
 printf '' > "$request_output_file"
 
 function cleanup_bootstrap_request --on-event fish_exit
-    rm -f "$request_source_file" "$request_output_file" "$cli_output_file" "$cli_binary_file" "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file" "$cli_dir_stage3_file"
+    rm -f "$request_source_file" "$request_output_file" "$cli_output_file" "$cli_binary_file" "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file" "$cli_dir_stage3_file" "$ast_output_file"
 end
 
 function compile_llvm
@@ -58,6 +59,45 @@ function check_dir_lowering
     set failure_markers (rg '^; DIR validation failed' "$llvm_file")
     if test (count $lowering_matches) -eq 0; or test (count $failure_markers) -ne 0
         echo "错误: $stage_name 未成功生成独立 DIR lowering" >&2
+        exit 1
+    end
+end
+
+function check_bootstrapped_ast
+    set source_file $argv[1]
+    set compiler tmp/stage1
+    "$compiler" ast "$source_file" -o "$ast_output_file" >/dev/null
+    or exit 1
+    if rg -q 'AST validation failed|unknown kind' "$ast_output_file"
+        echo "错误: AST validation failed: $source_file" >&2
+        exit 1
+    end
+    for expected_kind in $argv[2..-1]
+        if not rg -q " $expected_kind " "$ast_output_file"
+            echo "错误: AST 缺少节点类型 $expected_kind: $source_file" >&2
+            exit 1
+        end
+    end
+end
+
+function check_bootstrapped_return_expression
+    set source_file $argv[1]
+    set compiler tmp/stage1
+    "$compiler" ast "$source_file" -o "$ast_output_file" >/dev/null
+    or exit 1
+    if not rg -q 'stmt_return s6: [1-9][0-9]* ' "$ast_output_file"
+        echo "错误: return 未解析为带表达式的 AST: $source_file" >&2
+        exit 1
+    end
+end
+
+function check_bootstrapped_eprint
+    set source_file $argv[1]
+    set compiler tmp/stage1
+    "$compiler" ast "$source_file" -o "$ast_output_file" >/dev/null
+    or exit 1
+    if not rg -q 'expr_print s5: [0-9]+ 1$' "$ast_output_file"
+        echo "错误: eprint 未解析为 stderr print AST: $source_file" >&2
         exit 1
     end
 end
@@ -245,6 +285,10 @@ mv "$bootstrap_dir/compiler" "tmp/stage1"
 or exit 1
 compile_llvm "tmp/stage1" "$stage1_llvm"
 or exit 1
+check_bootstrapped_ast test/test_pratt_ast_dir.dm expr_unary expr_logical expr_cond expr_call expr_index
+check_bootstrapped_return_expression test/test_pratt_ast_dir.dm
+check_bootstrapped_ast examples/lang_full_dream.dm expr_attr expr_binary expr_bool expr_builtin_enum expr_call expr_cond expr_dict expr_float expr_index expr_lambda expr_list expr_list_comp expr_logical expr_match expr_method_call expr_print expr_rune expr_slice expr_string expr_struct expr_tuple expr_unary expr_var pat_bool pat_builtin pat_cons pat_enum pat_float pat_int pat_list pat_rune pat_string pat_struct pat_var pat_wildcard m_case stmt_assign stmt_break stmt_case stmt_elif stmt_expr stmt_for stmt_if stmt_let stmt_let_tuple stmt_return stmt_switch stmt_while
+check_bootstrapped_eprint examples/lang_full_dream.dm
 "tmp/stage1" llvm "$compiler_source" -o "$cli_output_file"
 or exit 1
 "tmp/stage1" llvm "$compiler_source" -o "tmp/stage2.ll"

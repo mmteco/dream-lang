@@ -328,6 +328,14 @@ def lower_expr_unary(context: ParseContext, ast: list[int], node: int, variable_
         else:
             dir_append_native_compare(records, DIR_TYPE_I32, DIR_PREDICATE_EQ, un_result, lower_operand_kind(un_type), un_value, DIR_NATIVE_OPERAND_IMMEDIATE, 0)
         return (un_result, VALUE_TYPE_BOOL, un_result)
+    if un_operator == TOKEN_PLUS:
+        return (un_next, un_type, un_value)
+    if un_operator == TOKEN_MINUS:
+        if un_type == VALUE_TYPE_FLOAT:
+            dir_append_native_operation_text(records, DIR_OPCODE_SUB, DIR_TYPE_F64, un_result, DIR_NATIVE_OPERAND_FLOAT_TEXT, 0, "0.0", lower_operand_kind(un_type), un_value, "")
+            return (un_result, VALUE_TYPE_FLOAT, un_result)
+        dir_append_native_operation(records, DIR_OPCODE_SUB, DIR_TYPE_I32, un_result, DIR_NATIVE_OPERAND_IMMEDIATE, 0, lower_operand_kind(un_type), un_value)
+        return (un_result, VALUE_TYPE_INT, un_result)
     return (un_next, un_type, un_value)
 
 def lower_expr_logical(context: ParseContext, ast: list[int], node: int, variable_starts: list[int], variable_ends: list[int], variable_types: list[int], counter: int, records: list[int]) -> (int, int, int):

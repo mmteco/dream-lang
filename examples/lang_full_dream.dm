@@ -1,5 +1,5 @@
 # dream-test: dir
-# Dream 语言导览：覆盖当前可运行的主要语法。
+# Dream 语言导览：覆盖自举编译器当前支持的表达式、语句和模式语法。
 from bytes import str_to_bytes, bytes_to_str
 
 const BASE: int = 3
@@ -12,9 +12,26 @@ struct Point:
 enum Status:
     Ready(int)
     Failed(str)
+    Idle
+
+let shared_counter = 0
+let shared_label = "shared"
 
 def increment(value: int) -> int:
     return value + 1
+
+def identity[T](value: T) -> T:
+    return value
+
+def add_default(value: int, extra: int = 5) -> int:
+    return value + extra
+
+def pair_values(value: int) -> (int, int):
+    return (value, value + 1)
+
+def debug_value(value: int) -> int:
+    eprint(value)
+    return value
 
 def classify(value: int) -> int:
     if value < 0:
@@ -42,7 +59,20 @@ def safe_divide(left: int, right: int) -> Result[int, str]:
     return Ok(value + 1)
 
 def main():
+    # 标量、布尔、逻辑、比较、优先级与一元运算
+    let bool_value = true
+    let false_value = false
+    let remainder = 17 % 5
+    let positive_remainder = +remainder
+    let inverted = not false_value
+    let logical_value = bool_value and not false_value or false
+    let comparison_value = remainder != 0 and remainder <= 4
+
     let numbers: list[int] = [1, 2, 3, 4]
+    let empty_numbers = []
+    let middle_numbers = numbers[1:3]
+    let prefix_numbers = numbers[:2]
+    let suffix_numbers = numbers[2:]
     let selected = [value for value in numbers if value > 1]
     print(len(selected))
     print(selected[0])
@@ -57,6 +87,8 @@ def main():
     print(values[1])
     print(values[2])
     print(len(values))
+    let named_values = {"one": 1, "two": 2}
+    let named_value = named_values["one"]
 
     let pair = (BASE, DOUBLE_BASE)
     let (left, right) = pair
@@ -66,14 +98,81 @@ def main():
     print(p.x + p.y)
     print(p.x)
 
+    # Match：标量、字符串、布尔、列表、结构体、守卫与通配符
+    let integer_match = match remainder:
+        2: 1
+        _: 0
+    let variable_match = match remainder:
+        current: current
+    let text_match = match "ready":
+        "ready": 1
+        _: 0
+    let bool_match = match bool_value:
+        true: 1
+        false: 0
+    let float_match = match 1.5:
+        1.5: 1
+        _: 0
+    let rune_match = match 'A':
+        'A': 1
+        _: 0
+    let list_match = match numbers:
+        [first, second, third, fourth]: first + fourth
+        _: 0
+    let cons_match = match numbers:
+        head :: tail: head + len(tail)
+        _: 0
+    let struct_match = match p:
+        Point{x: left, y: right}: left + right
+        _: 0
+
     let status = Status.Ready(42)
     let status_value = match status:
         Status.Ready(value) if value > 40: value
         Status.Ready(value): value + 1
         Status.Failed(_): -1
+        Status.Idle: 0
     print(status_value)
+    let idle_status = Status.Idle
+
+    # 全局变量、泛型、默认参数、函数值与元组返回
+    shared_counter = shared_counter + 1
+    let shared_snapshot = shared_label
+    let generic_value = identity(7)
+    let default_value = add_default(10)
+    let explicit_default_value = add_default(10, 20)
+    let returned_pair = pair_values(3)
+    let function_value = increment
+
+    # 覆盖项参与语义检查，但不改变示例输出。
+    identity(positive_remainder)
+    identity(inverted)
+    identity(logical_value)
+    identity(comparison_value)
+    identity(empty_numbers)
+    identity(middle_numbers)
+    identity(prefix_numbers)
+    identity(suffix_numbers)
+    identity(named_value)
+    identity(integer_match)
+    identity(variable_match)
+    identity(text_match)
+    identity(bool_match)
+    identity(float_match)
+    identity(rune_match)
+    identity(list_match)
+    identity(cons_match)
+    identity(struct_match)
+    identity(idle_status)
+    identity(shared_snapshot)
+    identity(generic_value)
+    identity(default_value)
+    identity(explicit_default_value)
+    identity(returned_pair)
 
     let optional = Some(7)
+    let no_optional = None
+    identity(no_optional)
     let optional_value = match optional:
         Some(value): value
         None: 0
@@ -108,7 +207,6 @@ def main():
     print(selected_by_if)
     print(classify(-1))
     print(sum_until(5))
-    let function_value = increment
     let closure = lambda (value: int) -> value + 1
     print(function_value(41))
     print(closure(1))

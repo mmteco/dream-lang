@@ -119,6 +119,14 @@ const ARGS_PAIR: int = 2
 const ARGS_PAT_CONS: int = 4
 const ARGS_PAT_STRUCT: int = 6
 
+const EXPR_BINDING_NONE: int = 0
+const EXPR_BINDING_COND: int = 5
+const EXPR_BINDING_OR: int = 10
+const EXPR_BINDING_AND: int = 20
+const EXPR_BINDING_COMPARE: int = 30
+const EXPR_BINDING_ADD: int = 40
+const EXPR_BINDING_MULTIPLY: int = 50
+
 def ast_kind_name(kind: int) -> str:
     switch kind:
         case AST_EXPR_INT:
@@ -387,16 +395,195 @@ def ast_set_arg(ast: list[int], node: int, argument_index: int, value: int):
     let target_index = node + 3 + argument_index
     ast[target_index] = value
 
+def ast_node_index_is_valid(ast: list[int], node: int) -> bool:
+    if node <= 0 or node >= len(ast):
+        return false
+    let cursor = 1
+    while cursor < node:
+        let cursor_size = ast_node_size(ast_node_kind(ast, cursor))
+        if cursor_size == 0 or cursor + cursor_size > node:
+            return false
+        cursor = cursor + cursor_size
+    if cursor != node:
+        return false
+    let node_size = ast_node_size(ast_node_kind(ast, node))
+    return node_size >= AST_HEADER_SIZE and node + node_size <= len(ast)
+
 def ast_range_is_walkable(ast: list[int], start: int, end: int) -> bool:
+    if start == 0 and end == 0:
+        return true
+    if start <= 0 or end < start or end > len(ast):
+        return false
+    if not ast_node_index_is_valid(ast, start):
+        return false
     let node = start
     while node < end:
-        if ast_node_size(ast_node_kind(ast, node)) == 0:
+        let node_size = ast_node_size(ast_node_kind(ast, node))
+        if node_size == 0 or node + node_size > len(ast):
             return false
-        let next = ast_next_node(ast, node)
+        let next = node + node_size
         if next <= node:
             return false
         node = next
     return node == end
+
+def ast_optional_range_is_walkable(ast: list[int], start: int, end: int) -> bool:
+    if start == 0:
+        return end >= 0 and end <= len(ast)
+    return ast_range_is_walkable(ast, start, end)
+
+def ast_child_is_valid(ast: list[int], node: int) -> bool:
+    if node == AST_NODE_INVALID:
+        return true
+    return ast_node_index_is_valid(ast, node)
+
+def ast_required_child_is_valid(ast: list[int], node: int) -> bool:
+    if node == AST_NODE_INVALID:
+        return false
+    return ast_node_index_is_valid(ast, node)
+
+def ast_validate_child_array(ast: list[int], node: int, count_argument: int, first_argument: int, max_count: int) -> bool:
+    let child_count = ast_node_arg(ast, node, count_argument)
+    if child_count < 0 or child_count > max_count:
+        return false
+    let child_index = 0
+    while child_index < child_count:
+        if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, first_argument + child_index)):
+            return false
+        child_index = child_index + 1
+    return true
+
+def ast_validate_node_children(ast: list[int], node: int) -> bool:
+    let kind = ast_node_kind(ast, node)
+    switch kind:
+        case AST_EXPR_CALL:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_validate_child_array(ast, node, 1, 3, 20)
+        case AST_EXPR_METHOD_CALL:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_validate_child_array(ast, node, 3, 5, 8)
+        case AST_EXPR_ATTR:
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0))
+        case AST_EXPR_BINARY:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_LEFT)):
+                return false
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_RIGHT))
+        case AST_EXPR_LOGICAL:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_LEFT)):
+                return false
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_RIGHT))
+        case AST_EXPR_UNARY:
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_OPERAND))
+        case AST_EXPR_COND:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_COND)):
+                return false
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_THEN)):
+                return false
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_ELSE))
+        case AST_EXPR_LIST:
+            return ast_validate_child_array(ast, node, 0, 1, 13)
+        case AST_EXPR_TUPLE:
+            return ast_validate_child_array(ast, node, 0, 1, 13)
+        case AST_EXPR_DICT:
+            if not ast_validate_child_array(ast, node, 0, 1, 20):
+                return false
+            let pair_count = ast_node_arg(ast, node, 0)
+            let pair_index = 0
+            while pair_index < pair_count:
+                if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 21 + pair_index)):
+                    return false
+                pair_index = pair_index + 1
+            return true
+        case AST_EXPR_STRUCT:
+            return ast_validate_child_array(ast, node, 4, 5, 21)
+        case AST_EXPR_INDEX:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 1))
+        case AST_EXPR_SLICE:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 1)):
+                return false
+            return ast_child_is_valid(ast, ast_node_arg(ast, node, 2))
+        case AST_EXPR_LAMBDA:
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2))
+        case AST_EXPR_LIST_COMP:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 3)):
+                return false
+            return ast_child_is_valid(ast, ast_node_arg(ast, node, 6))
+        case AST_EXPR_MATCH:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
+        case AST_EXPR_PRINT:
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0))
+        case AST_STMT_LET:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 4)):
+                return false
+            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 6))
+        case AST_STMT_LET_TUPLE:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2)):
+                return false
+            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 3))
+        case AST_STMT_ASSIGN:
+            if ast_node_arg(ast, node, 2) != 0 and not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 3)):
+                return false
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 4)):
+                return false
+            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 5))
+        case AST_STMT_IF:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            if not ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2)):
+                return false
+            if not ast_range_is_walkable(ast, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4)):
+                return false
+            return ast_optional_range_is_walkable(ast, ast_node_arg(ast, node, 5), ast_node_arg(ast, node, 6))
+        case AST_ELIF:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
+        case AST_STMT_WHILE:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
+        case AST_STMT_FOR:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2)):
+                return false
+            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4))
+        case AST_STMT_SWITCH:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            if not ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2)):
+                return false
+            return ast_optional_range_is_walkable(ast, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4))
+        case AST_CASE:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 1)):
+                return false
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2))
+        case AST_STMT_RETURN:
+            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 2))
+        case AST_STMT_EXPR:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 1))
+        case AST_M_CASE:
+            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+                return false
+            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 1)):
+                return false
+            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2))
+        default:
+            return true
 
 def ast_validate_program(ast: list[int]) -> bool:
     if len(ast) == 0:
@@ -409,7 +596,26 @@ def ast_validate_program(ast: list[int]) -> bool:
         if node_size == 0:
             return false
         node = node + node_size
-    return node == len(ast)
+    if node != len(ast):
+        return false
+    node = 1
+    while node < len(ast):
+        if not ast_validate_node_children(ast, node):
+            __c_eprint_text("AST validation failed node=")
+            __c_eprint_int(node)
+            __c_eprint_text(" kind=")
+            __c_eprint_int(ast_node_kind(ast, node))
+            __c_eprint_text(" args=")
+            let diagnostic_argument_index = 0
+            while diagnostic_argument_index < ast_node_size(ast_node_kind(ast, node)) - AST_HEADER_SIZE:
+                if diagnostic_argument_index > 0:
+                    __c_eprint_text(",")
+                __c_eprint_int(ast_node_arg(ast, node, diagnostic_argument_index))
+                diagnostic_argument_index = diagnostic_argument_index + 1
+            __c_eprint_text("\n")
+            return false
+        node = node + ast_node_size(ast_node_kind(ast, node))
+    return true
 
 def ast_parse_primary(context: ParseContext, index: int, ast: list[int]) -> (int, int):
     let source = context.src
@@ -423,9 +629,6 @@ def ast_parse_primary(context: ParseContext, index: int, ast: list[int]) -> (int
     if kind == TOKEN_RUNE:
         let rune_value = parse_rune_literal(source, token_start(starts, index), token_end(ends, index))
         return (index + 1, ast_append_leaf(ast, AST_EXPR_RUNE, token_start(starts, index), token_end(ends, index), rune_value))
-    if kind == TOKEN_MINUS and token_kind(kinds, index + 1) == TOKEN_INTEGER:
-        let negative_value = 0 - parse_integer(source, token_start(starts, index + 1), token_end(ends, index + 1))
-        return (index + 2, ast_append_leaf(ast, AST_EXPR_INT, token_start(starts, index), token_end(ends, index + 1), negative_value))
     if kind == TOKEN_FLOAT:
         return (index + 1, ast_append_node(ast, AST_EXPR_FLOAT, token_start(starts, index), token_end(ends, index), 0))
     if kind == TOKEN_STRING:
@@ -448,7 +651,7 @@ def ast_parse_primary(context: ParseContext, index: int, ast: list[int]) -> (int
         if token_kind(kinds, index + 1) == TOKEN_OPEN_BRACE:
             return ast_parse_struct_literal(context, index, ast)
         let var_node = ast_append_node(ast, AST_EXPR_VAR, identifier_name_start, identifier_name_end, 0)
-        return ast_parse_postfix(context, var_node, index + 1, ast)
+        return (index + 1, var_node)
     if kind == TOKEN_IF:
         let (cond_next_index, cond_node) = ast_parse_expression(context, index + 1, ast)
         if cond_node == 0:
@@ -511,123 +714,126 @@ def ast_parse_primary(context: ParseContext, index: int, ast: list[int]) -> (int
         return (index, 0)
     return (index, 0)
 
+def ast_infix_binding_power(operator: int) -> (int, int):
+    if operator == TOKEN_OR:
+        return (EXPR_BINDING_OR, EXPR_BINDING_OR + 1)
+    if operator == TOKEN_AND:
+        return (EXPR_BINDING_AND, EXPR_BINDING_AND + 1)
+    if operator == TOKEN_LESS or operator == TOKEN_EQUAL or operator == TOKEN_NOT_EQUAL or operator == TOKEN_LESS_EQUAL or operator == TOKEN_GREATER_EQUAL or operator == TOKEN_GREATER:
+        return (EXPR_BINDING_COMPARE, EXPR_BINDING_COMPARE + 1)
+    if operator == TOKEN_PLUS or operator == TOKEN_MINUS:
+        return (EXPR_BINDING_ADD, EXPR_BINDING_ADD + 1)
+    if operator == TOKEN_MULTIPLY or operator == TOKEN_DIVIDE or operator == TOKEN_MODULO:
+        return (EXPR_BINDING_MULTIPLY, EXPR_BINDING_MULTIPLY + 1)
+    return (EXPR_BINDING_NONE, EXPR_BINDING_NONE)
+
+def ast_append_binary_node(ast: list[int], operator: int, left_node: int, right_node: int) -> int:
+    let node = ast_append_node(ast, AST_EXPR_BINARY, 0, 0, ARGS_BINARY)
+    ast_set_arg(ast, node, ARG_OPERATOR, operator)
+    ast_set_arg(ast, node, ARG_LEFT, left_node)
+    ast_set_arg(ast, node, ARG_RIGHT, right_node)
+    return node
+
+def ast_append_logical_node(ast: list[int], operator: int, left_node: int, right_node: int) -> int:
+    let node = ast_append_node(ast, AST_EXPR_LOGICAL, 0, 0, ARGS_BINARY)
+    ast_set_arg(ast, node, ARG_OPERATOR, operator)
+    ast_set_arg(ast, node, ARG_LEFT, left_node)
+    ast_set_arg(ast, node, ARG_RIGHT, right_node)
+    return node
+
+def ast_append_unary_node(ast: list[int], operator: int, operand_node: int) -> int:
+    let node = ast_append_node(ast, AST_EXPR_UNARY, 0, 0, ARGS_UNARY)
+    ast_set_arg(ast, node, ARG_OPERATOR, operator)
+    ast_set_arg(ast, node, ARG_OPERAND, operand_node)
+    return node
+
 def ast_parse_unary(context: ParseContext, index: int, ast: list[int]) -> (int, int):
-    let kinds = context.kinds
-    if token_kind(kinds, index) == TOKEN_NOT:
+    let operator = token_kind(context.kinds, index)
+    if operator == TOKEN_NOT or operator == TOKEN_PLUS or operator == TOKEN_MINUS:
         let (next_index, operand_node) = ast_parse_unary(context, index + 1, ast)
         if operand_node == 0 or next_index <= index:
             return (index, 0)
-        let node = ast_append_node(ast, AST_EXPR_UNARY, 0, 0, ARGS_UNARY)
-        ast_set_arg(ast, node, ARG_OPERATOR, TOKEN_NOT)
-        ast_set_arg(ast, node, ARG_OPERAND, operand_node)
-        return (next_index, node)
-    return ast_parse_primary(context, index, ast)
+        return (next_index, ast_append_unary_node(ast, operator, operand_node))
+    let (primary_next_index, primary_node) = ast_parse_primary(context, index, ast)
+    if primary_node == 0:
+        return (index, 0)
+    return ast_parse_postfix(context, primary_node, primary_next_index, ast)
 
-def ast_parse_term(context: ParseContext, index: int, ast: list[int]) -> (int, int):
+def ast_has_ternary_colon(context: ParseContext, index: int) -> bool:
+    let kinds = context.kinds
+    let cursor = index
+    let paren_depth = 0
+    let bracket_depth = 0
+    let brace_depth = 0
+    let scanning = true
+    while scanning and token_kind(kinds, cursor) != TOKEN_EOF:
+        let kind = token_kind(kinds, cursor)
+        if kind == TOKEN_NEWLINE and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+            scanning = false
+        if kind == TOKEN_OPEN_PAREN:
+            paren_depth = paren_depth + 1
+        if kind == TOKEN_CLOSE_PAREN and paren_depth > 0:
+            paren_depth = paren_depth - 1
+        if kind == TOKEN_OPEN_BRACKET:
+            bracket_depth = bracket_depth + 1
+        if kind == TOKEN_CLOSE_BRACKET and bracket_depth > 0:
+            bracket_depth = bracket_depth - 1
+        if kind == TOKEN_OPEN_BRACE:
+            brace_depth = brace_depth + 1
+        if kind == TOKEN_CLOSE_BRACE and brace_depth > 0:
+            brace_depth = brace_depth - 1
+        if kind == TOKEN_COLON and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+            return true
+        cursor = cursor + 1
+    return false
+
+def ast_parse_expression_bp(context: ParseContext, index: int, min_binding_power: int, ast: list[int]) -> (int, int):
     let kinds = context.kinds
     let (first_index, first_node) = ast_parse_unary(context, index, ast)
     if first_node == 0:
         return (index, 0)
-    let current_index = first_index
-    let current_node = first_node
-    while token_kind(kinds, current_index) == TOKEN_MULTIPLY or token_kind(kinds, current_index) == TOKEN_DIVIDE or token_kind(kinds, current_index) == TOKEN_MODULO:
-        let operator = token_kind(kinds, current_index)
-        let (next_index, next_node) = ast_parse_unary(context, current_index + 1, ast)
-        if next_node == 0 or next_index <= current_index:
-            return (current_index, 0)
-        let node = ast_append_node(ast, AST_EXPR_BINARY, 0, 0, ARGS_BINARY)
-        ast_set_arg(ast, node, ARG_OPERATOR, operator)
-        ast_set_arg(ast, node, ARG_LEFT, current_node)
-        ast_set_arg(ast, node, ARG_RIGHT, next_node)
-        current_index = next_index
-        current_node = node
-    return (current_index, current_node)
 
-def ast_parse_additive(context: ParseContext, index: int, ast: list[int]) -> (int, int):
-    let kinds = context.kinds
-    let (first_index, first_node) = ast_parse_term(context, index, ast)
-    if first_node == 0:
-        return (index, 0)
     let current_index = first_index
     let current_node = first_node
-    while token_kind(kinds, current_index) == TOKEN_PLUS or token_kind(kinds, current_index) == TOKEN_MINUS:
+    let parsing = true
+    while parsing:
         let operator = token_kind(kinds, current_index)
-        let (next_index, next_node) = ast_parse_term(context, current_index + 1, ast)
-        if next_node == 0 or next_index <= current_index:
-            return (current_index, 0)
-        let node = ast_append_node(ast, AST_EXPR_BINARY, 0, 0, ARGS_BINARY)
-        ast_set_arg(ast, node, ARG_OPERATOR, operator)
-        ast_set_arg(ast, node, ARG_LEFT, current_node)
-        ast_set_arg(ast, node, ARG_RIGHT, next_node)
-        current_index = next_index
-        current_node = node
-    return (current_index, current_node)
-
-def ast_parse_comparison(context: ParseContext, index: int, ast: list[int]) -> (int, int):
-    let kinds = context.kinds
-    let (first_index, first_node) = ast_parse_additive(context, index, ast)
-    if first_node == 0:
-        return (index, 0)
-    let current_index = first_index
-    let current_node = first_node
-    while token_kind(kinds, current_index) == TOKEN_LESS or token_kind(kinds, current_index) == TOKEN_EQUAL or token_kind(kinds, current_index) == TOKEN_NOT_EQUAL or token_kind(kinds, current_index) == TOKEN_LESS_EQUAL or token_kind(kinds, current_index) == TOKEN_GREATER_EQUAL or token_kind(kinds, current_index) == TOKEN_GREATER:
-        let operator = token_kind(kinds, current_index)
-        let (next_index, next_node) = ast_parse_additive(context, current_index + 1, ast)
-        if next_node == 0 or next_index <= current_index:
-            return (current_index, 0)
-        let node = ast_append_node(ast, AST_EXPR_BINARY, 0, 0, ARGS_BINARY)
-        ast_set_arg(ast, node, ARG_OPERATOR, operator)
-        ast_set_arg(ast, node, ARG_LEFT, current_node)
-        ast_set_arg(ast, node, ARG_RIGHT, next_node)
-        current_index = next_index
-        current_node = node
-    return (current_index, current_node)
-
-def ast_parse_logical(context: ParseContext, index: int, ast: list[int]) -> (int, int):
-    let kinds = context.kinds
-    let (first_index, first_node) = ast_parse_comparison(context, index, ast)
-    if first_node == 0:
-        return (index, 0)
-    let current_index = first_index
-    let current_node = first_node
-    while token_kind(kinds, current_index) == TOKEN_AND or token_kind(kinds, current_index) == TOKEN_OR:
-        let operator = token_kind(kinds, current_index)
-        let (next_index, next_node) = ast_parse_comparison(context, current_index + 1, ast)
-        if next_node == 0 or next_index <= current_index:
-            return (current_index, 0)
-        let node = ast_append_node(ast, AST_EXPR_LOGICAL, 0, 0, ARGS_BINARY)
-        ast_set_arg(ast, node, ARG_OPERATOR, operator)
-        ast_set_arg(ast, node, ARG_LEFT, current_node)
-        ast_set_arg(ast, node, ARG_RIGHT, next_node)
-        current_index = next_index
-        current_node = node
+        if operator == TOKEN_QUESTION:
+            if not ast_has_ternary_colon(context, current_index + 1):
+                parsing = false
+            if parsing and EXPR_BINDING_COND < min_binding_power:
+                parsing = false
+            if parsing:
+                let (then_index, then_node) = ast_parse_expression_bp(context, current_index + 1, 0, ast)
+                if then_node == 0 or token_kind(kinds, then_index) != TOKEN_COLON:
+                    return (index, 0)
+                let (else_index, else_node) = ast_parse_expression_bp(context, then_index + 1, EXPR_BINDING_COND, ast)
+                if else_node == 0:
+                    return (index, 0)
+                let conditional_node = ast_append_node(ast, AST_EXPR_COND, 0, 0, ARGS_COND)
+                ast_set_arg(ast, conditional_node, ARG_COND, current_node)
+                ast_set_arg(ast, conditional_node, ARG_THEN, then_node)
+                ast_set_arg(ast, conditional_node, ARG_ELSE, else_node)
+                ast_set_arg(ast, conditional_node, ARG_IS_EXPRESSION, 1)
+                current_index = else_index
+                current_node = conditional_node
+        if parsing and operator != TOKEN_QUESTION:
+            let (left_binding_power, right_binding_power) = ast_infix_binding_power(operator)
+            if left_binding_power < min_binding_power or left_binding_power == EXPR_BINDING_NONE:
+                parsing = false
+            else:
+                let (next_index, next_node) = ast_parse_expression_bp(context, current_index + 1, right_binding_power, ast)
+                if next_node == 0 or next_index <= current_index:
+                    return (index, 0)
+                if operator == TOKEN_AND or operator == TOKEN_OR:
+                    current_node = ast_append_logical_node(ast, operator, current_node, next_node)
+                else:
+                    current_node = ast_append_binary_node(ast, operator, current_node, next_node)
+                current_index = next_index
     return (current_index, current_node)
 
 def ast_parse_expression(context: ParseContext, index: int, ast: list[int]) -> (int, int):
-    let kinds = context.kinds
-    let (first_index, first_node) = ast_parse_logical(context, index, ast)
-    if first_node == 0:
-        return (index, 0)
-    let current_index = first_index
-    let current_node = first_node
-    if token_kind(kinds, current_index) == TOKEN_QUESTION:
-        let ternary_colon_index = current_index + 1
-        while token_kind(kinds, ternary_colon_index) != TOKEN_COLON and token_kind(kinds, ternary_colon_index) != TOKEN_NEWLINE and token_kind(kinds, ternary_colon_index) != TOKEN_EOF:
-            ternary_colon_index = ternary_colon_index + 1
-        if token_kind(kinds, ternary_colon_index) == TOKEN_COLON:
-            let (then_next_index, then_node) = ast_parse_expression(context, current_index + 1, ast)
-            if then_node == 0:
-                return (index, 0)
-            let (else_next_index, else_node) = ast_parse_expression(context, ternary_colon_index + 1, ast)
-            if else_node == 0:
-                return (index, 0)
-            let node = ast_append_node(ast, AST_EXPR_COND, 0, 0, ARGS_COND)
-            ast_set_arg(ast, node, ARG_COND, current_node)
-            ast_set_arg(ast, node, ARG_THEN, then_node)
-            ast_set_arg(ast, node, ARG_ELSE, else_node)
-            ast_set_arg(ast, node, ARG_IS_EXPRESSION, 1)
-            return (else_next_index, node)
-    return (current_index, current_node)
+    return ast_parse_expression_bp(context, index, 0, ast)
 
 def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: list[int]) -> (int, int):
     let source = context.src
@@ -1526,6 +1732,16 @@ def ast_parse_match_statement(context: ParseContext, index: int, body_end: int, 
     ast_set_arg(ast, match_stmt_node, 1, len(ast))
     return (match_next_index, match_stmt_node)
 
+def ast_token_is_docstring(context: ParseContext, index: int) -> bool:
+    let source = context.src
+    let starts = context.starts
+    if token_kind(context.kinds, index) != TOKEN_STRING:
+        return false
+    let token_start_position = token_start(starts, index)
+    if token_start_position < 3:
+        return false
+    return source[token_start_position - 3:token_start_position] == "'''"
+
 def ast_parse_stmt_block(context: ParseContext, body_start: int, body_end: int, ast: list[int]) -> (int, int):
     let source = context.src
     let kinds = context.kinds
@@ -1533,14 +1749,16 @@ def ast_parse_stmt_block(context: ParseContext, body_start: int, body_end: int, 
     let current_index = skip_source_newlines(source, starts, body_start)
     let block_start = len(ast)
     while current_index < body_end and token_kind(kinds, current_index) != TOKEN_EOF:
-        let (next_index, node) = ast_parse_statement(context, current_index, body_end, ast)
-        if node == 0:
-            current_index = current_index + 1
-        elif next_index > current_index:
-            current_index = skip_source_newlines(source, starts, next_index)
+        if ast_token_is_docstring(context, current_index):
+            current_index = skip_source_newlines(source, starts, current_index + 1)
         else:
-            # 解析成功但未推进:强制前移,避免死循环
-            current_index = current_index + 1
+            let (next_index, node) = ast_parse_statement(context, current_index, body_end, ast)
+            if node == 0:
+                return (current_index, 0)
+            if next_index > current_index:
+                current_index = skip_source_newlines(source, starts, next_index)
+            else:
+                current_index = current_index + 1
     return (current_index, block_start)
 
 def ast_parse_block_range(context: ParseContext, start_index: int, body_end: int) -> (int, int):
