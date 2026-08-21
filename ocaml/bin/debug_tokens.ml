@@ -39,6 +39,8 @@ let tok_to_string = function
   | Parser.LBRACE -> "LBRACE"
   | Parser.RBRACE -> "RBRACE"
   | Parser.ASSIGN -> "ASSIGN"
+  | Parser.FIELD_ASSIGN (object_name, field_name) ->
+      Printf.sprintf "FIELD_ASSIGN(%s.%s)" object_name field_name
   | Parser.LT -> "LT"
   | Parser.GT -> "GT"
   | Parser.LTE -> "LTE"

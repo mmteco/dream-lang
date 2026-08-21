@@ -69,6 +69,7 @@ type token =
   | OR
   | NOT
   | ASSIGN
+  | FIELD_ASSIGN of string * string
   | ARROW
   | PIPE
   | UNDERSCORE

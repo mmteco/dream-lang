@@ -3,6 +3,8 @@ from text_buffer import TextBuffer
 const COMPILE_OUTPUT_AST: int = 0
 const COMPILE_OUTPUT_HIR: int = 1
 const COMPILE_OUTPUT_MIR: int = 2
+const COMPILE_OUTPUT_LIR: int = 3
+const COMPILE_OUTPUT_LLVM: int = 4
 
 def module_path(module_name: str) -> str:
     switch module_name:
@@ -16,6 +18,10 @@ def module_path(module_name: str) -> str:
             return "bootstrap/compiler_hir_model.dm"
         case "compiler_mir_model":
             return "bootstrap/compiler_mir_model.dm"
+        case "compiler_lir_model":
+            return "bootstrap/compiler_lir_model.dm"
+        case "compiler_llvm_emit":
+            return "bootstrap/compiler_llvm_emit.dm"
         case "compiler_main":
             return "bootstrap/compiler_main.dm"
     let with_prefix = string_concat("runtime/stdlib/", module_name)
@@ -33,7 +39,7 @@ def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
         module_start = module_end + 1
     return false
 
-def append_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int], file_ends: list[int]) -> str:
+def append_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: TextBuffer) -> str:
     let imported_path = module_path(module_name)
     let module_source = read_text_file(imported_path)
     let start_offset = text_length(imported_source)
@@ -42,9 +48,11 @@ def append_imported_module(imported_source: str, module_name: str, file_packages
     append(file_packages, classify_package(imported_path))
     append(file_starts, start_offset)
     append(file_ends, end_offset)
+    append(file_paths, imported_path)
+    append(file_paths, "\n")
     return new_source
 
-def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int], file_ends: list[int]) -> str:
+def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: TextBuffer) -> str:
     let imported_source = ""
     let loaded_modules = ""
     let scan_source = source
@@ -63,7 +71,7 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
                 if token_kind(import_kinds, module_index) == TOKEN_IDENTIFIER:
                     let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends, module_index)]
                     if not module_is_loaded(loaded_modules, module_name):
-                        imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends)
+                        imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends, file_paths)
                         loaded_modules = string_concat(loaded_modules, string_concat(module_name, "\n"))
                         found_new_module = true
             token_index = token_index + 1
@@ -77,15 +85,35 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         append(file_packages, classify_package(source_path))
         append(file_starts, user_source_start)
         append(file_ends, text_length(final_source))
+        append(file_paths, source_path)
+        append(file_paths, "\n")
         return final_source
     append(file_packages, classify_package(source_path))
     append(file_starts, 0)
     append(file_ends, text_length(source))
+    append(file_paths, source_path)
+    append(file_paths, "\n")
     return source
 
 def write_text_buffer(path: str, output: TextBuffer) -> int:
     let bytes = __c_bytes_from_array(output.data)
     return __c_file_write_bytes(path, bytes)
+
+def compiler_debug_start() -> int:
+    if __c_debug_on():
+        return __c_time_ms()
+    return 0
+
+def compiler_debug_checkpoint(label: str, previous_time: int) -> int:
+    if not __c_debug_on():
+        return previous_time
+    let current_time = __c_time_ms()
+    __c_eprint_text("[timing] ")
+    __c_eprint_text(label)
+    __c_eprint_text(" ")
+    __c_eprint_int(current_time - previous_time)
+    __c_eprint_text("ms\n")
+    return current_time
 
 struct AstCompilation:
     nodes: list[int]
@@ -176,15 +204,19 @@ def write_ast_output(output_path: str, source: str, function_starts: list[int], 
 
 def compile_source(source_path: str, output_path: str, output_mode: int):
     access_violation_count[0] = 0
+    let phase_time = compiler_debug_start()
     let raw_source = read_text_file(source_path)
     let file_packages = []
     let file_starts: list[int] = []
     let file_ends: list[int] = []
-    let source = load_imported_source(raw_source, source_path, file_packages, file_starts, file_ends)
+    let file_paths = TextBuffer{data: []}
+    let source = load_imported_source(raw_source, source_path, file_packages, file_starts, file_ends, file_paths)
+    phase_time = compiler_debug_checkpoint("load", phase_time)
     let kinds = []
     let starts = []
     let ends = []
     lex(source, kinds, starts, ends)
+    phase_time = compiler_debug_checkpoint("lex", phase_time)
     let function_starts = []
     let function_ends = []
     let function_bodies = []
@@ -203,6 +235,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
     collect_declared_types(source, kinds, starts, ends)
     collect_functions(source, kinds, starts, ends, function_starts, function_ends, function_bodies, function_body_ends, function_param_offsets, function_param_counts, parameter_starts, parameter_ends, parameter_types, function_return_types, parameter_default_indexes)
     collect_constants(source, kinds, starts, ends, constant_starts, constant_ends, constant_values, constant_types)
+    phase_time = compiler_debug_checkpoint("collect", phase_time)
     let parse_context = ParseContext{src: source, kinds: kinds, starts: starts, ends: ends, fn_starts: function_starts, fn_ends: function_ends, param_offsets: function_param_offsets, param_counts: function_param_counts, param_starts: parameter_starts, param_ends: parameter_ends, ret_types: function_return_types, pd: parameter_default_indexes, cst_starts: constant_starts, cst_ends: constant_ends, cst_values: constant_values, file_packages: file_packages, file_starts: file_starts, file_ends: file_ends}
     let global_let_name_starts = []
     let global_let_name_ends = []
@@ -210,27 +243,53 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
     let global_let_expression_indexes = []
     collect_global_lets(source, kinds, starts, ends, global_let_name_starts, global_let_name_ends, global_let_collected_types, global_let_expression_indexes)
     let ast_compilation = build_ast_compilation(parse_context, function_bodies, function_body_ends, global_let_expression_indexes)
+    phase_time = compiler_debug_checkpoint("ast", phase_time)
     if not ast_compilation.is_valid:
         write_ast_validation_error(output_path, ast_compilation)
         return
     if output_mode == COMPILE_OUTPUT_AST:
         write_ast_output(output_path, source, function_starts, function_ends, ast_compilation)
         return
-    let hir_program = hir_model_build_program(ast_compilation.nodes, ast_compilation.function_nodes_start, ast_compilation.function_nodes_end, ast_compilation.global_nodes)
+    let hir_program = hir_model_build_program(ast_compilation.nodes, ast_compilation.function_nodes_start, ast_compilation.function_nodes_end, ast_compilation.global_nodes, function_starts, function_ends, function_param_offsets, function_param_counts, parameter_starts, parameter_ends, parameter_types, function_return_types, parameter_default_indexes)
+    phase_time = compiler_debug_checkpoint("hir-build", phase_time)
+    if not hir_validate_semantics(hir_program, source):
+        let hir_output = TextBuffer{data: []}
+        append(hir_output, "HIR semantic validation failed\n")
+        write_text_buffer(output_path, hir_output)
+        return
+    phase_time = compiler_debug_checkpoint("hir-validate", phase_time)
+    let hir_diagnostic_context = HirDiagnosticContext{ast: ast_compilation.nodes, source: source, source_path: source_path, file_paths: file_paths.to_str(), file_starts: file_starts, file_ends: file_ends, function_name_starts: function_starts, function_name_ends: function_ends}
+    hir_report_unreachable(hir_diagnostic_context, ast_compilation.function_nodes_start, ast_compilation.function_nodes_end)
     if output_mode == COMPILE_OUTPUT_HIR:
         let hir_output = TextBuffer{data: []}
         if not hir_model_dump_program(hir_program, hir_output):
             append(hir_output, "HIR validation failed\n")
         write_text_buffer(output_path, hir_output)
+        compiler_debug_checkpoint("hir-dump", phase_time)
         return
-    elif output_mode == COMPILE_OUTPUT_MIR:
-        let mir_program = mir_model_build_program(hir_program)
+    let mir_program = mir_model_build_program(hir_program, source)
+    let optimized_mir_program = mir_optimize_program(mir_program)
+    if output_mode == COMPILE_OUTPUT_MIR:
         let mir_output = TextBuffer{data: []}
-        if not mir_validate_program(mir_program) or not mir_dump_program(mir_program, mir_output):
+        if not mir_validate_program(optimized_mir_program) or not mir_dump_program(optimized_mir_program, mir_output):
             append(mir_output, "MIR validation failed\n")
         write_text_buffer(output_path, mir_output)
         return
-    __c_eprint_text("error: only ast, hir, and mir outputs are supported\n")
+    elif output_mode == COMPILE_OUTPUT_LIR:
+        let lir_program = lir_model_build_program(optimized_mir_program)
+        let lir_output = TextBuffer{data: []}
+        if not mir_validate_program(optimized_mir_program) or not lir_validate_program(lir_program) or not lir_dump_program(lir_program, lir_output):
+            append(lir_output, "LIR validation failed\n")
+        write_text_buffer(output_path, lir_output)
+        return
+    elif output_mode == COMPILE_OUTPUT_LLVM:
+        let lir_program = lir_model_build_program(optimized_mir_program)
+        let llvm_output = TextBuffer{data: []}
+        if not mir_validate_program(optimized_mir_program) or not lir_validate_program(lir_program) or not llvm_lower_lir(lir_program, llvm_output):
+            append(llvm_output, "; LLVM lowering failed\n")
+        write_text_buffer(output_path, llvm_output)
+        return
+    __c_eprint_text("error: only ast, hir, mir, lir, and llvm outputs are supported\n")
 
 def main():
     let argument_count = process_arg_count()
@@ -242,8 +301,12 @@ def main():
             compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_HIR)
         elif command_name == "mir":
             compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_MIR)
+        elif command_name == "lir":
+            compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_LIR)
+        elif command_name == "llvm":
+            compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_LLVM)
         else:
-            __c_eprint_text("error: use ast, hir, or mir\n")
+            __c_eprint_text("error: use ast, hir, mir, lir, or llvm\n")
         return
-    let usage = " ast <input.dm> -o <output> | hir <input.dm> -o <output> | mir <input.dm> -o <output>"
+    let usage = " ast <input.dm> -o <output> | hir <input.dm> -o <output> | mir <input.dm> -o <output> | lir <input.dm> -o <output> | llvm <input.dm> -o <output>"
     print(string_concat("用法: ", string_concat(process_arg(0), usage)))

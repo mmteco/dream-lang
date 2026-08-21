@@ -72,6 +72,7 @@ const AST_HEADER_START: int = 1
 const AST_HEADER_END: int = 2
 const AST_HEADER_SIZE: int = 3
 const AST_NODE_INVALID: int = 0  # 解析失败/无节点的哨兵值
+let ast_valid_node_offsets: list[int] = []
 const AST_POOL_DUMMY: int = 0    # 池首占位节点(kind=0)
 
 # 二元/一元/条件表达式节点参数索引
@@ -370,6 +371,10 @@ def ast_stmt_next_node(ast: list[int], node: int) -> int:
             return ast_node_arg(ast, node, 4)
         case AST_STMT_RETURN:
             return ast_node_arg(ast, node, 2)
+        case AST_ELIF:
+            return ast_node_arg(ast, node, 2)
+        case AST_CASE:
+            return ast_node_arg(ast, node, 2)
         case AST_STMT_EXPR:
             return ast_node_arg(ast, node, 1)
         default:
@@ -395,19 +400,27 @@ def ast_set_arg(ast: list[int], node: int, argument_index: int, value: int):
     let target_index = node + 3 + argument_index
     ast[target_index] = value
 
+def ast_prepare_validation_index(ast: list[int]) -> bool:
+    ast_valid_node_offsets = []
+    let index = 0
+    while index < len(ast):
+        append(ast_valid_node_offsets, 0)
+        index = index + 1
+    let node = 1
+    while node < len(ast):
+        let node_size = ast_node_size(ast_node_kind(ast, node))
+        if node_size < AST_HEADER_SIZE or node + node_size > len(ast):
+            return false
+        ast_valid_node_offsets[node] = 1
+        node = node + node_size
+    return node == len(ast)
+
 def ast_node_index_is_valid(ast: list[int], node: int) -> bool:
     if node <= 0 or node >= len(ast):
         return false
-    let cursor = 1
-    while cursor < node:
-        let cursor_size = ast_node_size(ast_node_kind(ast, cursor))
-        if cursor_size == 0 or cursor + cursor_size > node:
-            return false
-        cursor = cursor + cursor_size
-    if cursor != node:
+    if len(ast_valid_node_offsets) != len(ast):
         return false
-    let node_size = ast_node_size(ast_node_kind(ast, node))
-    return node_size >= AST_HEADER_SIZE and node + node_size <= len(ast)
+    return ast_valid_node_offsets[node] == 1
 
 def ast_range_is_walkable(ast: list[int], start: int, end: int) -> bool:
     if start == 0 and end == 0:
@@ -590,15 +603,9 @@ def ast_validate_program(ast: list[int]) -> bool:
         return false
     if ast[0] != 0:
         return false
-    let node = 1
-    while node < len(ast):
-        let node_size = ast_node_size(ast_node_kind(ast, node))
-        if node_size == 0:
-            return false
-        node = node + node_size
-    if node != len(ast):
+    if not ast_prepare_validation_index(ast):
         return false
-    node = 1
+    let node = 1
     while node < len(ast):
         if not ast_validate_node_children(ast, node):
             __c_eprint_text("AST validation failed node=")
@@ -848,7 +855,7 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
     if token_kind_value == TOKEN_RETURN:
         return ast_parse_return_statement(context, index, body_end, ast)
     if token_kind_value == TOKEN_BREAK:
-        let break_node = ast_append_node(ast, AST_STMT_BREAK, 0, 0, 0)
+        let break_node = ast_append_node(ast, AST_STMT_BREAK, token_start(starts, index), token_end(ends, index), 0)
         return (break_node, index + 1)
     if token_kind_value == TOKEN_IF:
         return ast_parse_if_statement(context, index, body_end, ast)
@@ -950,7 +957,7 @@ def ast_parse_let_tuple_statement(context: ParseContext, index: int, body_end: i
 
 def ast_parse_return_statement(context: ParseContext, index: int, body_end: int, ast: list[int]) -> (int, int):
     let kinds = context.kinds
-    let return_node = ast_append_node(ast, AST_STMT_RETURN, 0, 0, ARGS_STMT_RETURN)
+    let return_node = ast_append_node(ast, AST_STMT_RETURN, token_start(context.starts, index), token_end(context.ends, index), ARGS_STMT_RETURN)
     let return_value_node = 0
     let return_tuple_flag = 0
     let return_next_index = index + 1

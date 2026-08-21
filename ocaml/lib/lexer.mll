@@ -599,7 +599,29 @@ and read_byte_literal = parse
           next_tokens ((tok, start_pos, end_pos) :: acc) (tok = NEWLINE)
       end
     in
-    next_tokens [] true
+    let raw_tokens = next_tokens [] true in
+    let field_assignment_name = function
+      | IDENT name -> Some name
+      | SELF -> Some "self"
+      | _ -> None
+    in
+    let rec rewrite_field_assignments tokens =
+      match tokens with
+      | ((object_token, start_pos, _) as object_item) ::
+        ((DOT, _, _) as dot_item) ::
+        ((IDENT field_name, _, _) as field_item) ::
+        ((ASSIGN, _, end_pos) as assign_item) :: rest ->
+          (match field_assignment_name object_token with
+           | Some object_name ->
+               (FIELD_ASSIGN (object_name, field_name), start_pos, end_pos) ::
+               rewrite_field_assignments rest
+           | None ->
+               object_item :: rewrite_field_assignments
+                 (dot_item :: field_item :: assign_item :: rest))
+      | token :: rest -> token :: rewrite_field_assignments rest
+      | [] -> []
+    in
+    rewrite_field_assignments raw_tokens
 
   (* 保留旧的接口用于向后兼容 *)
   let tokenize_string source =

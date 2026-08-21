@@ -78,8 +78,7 @@ let compile_to_dir input_file output_file =
   | None ->
       failwith "DIR compiler did not produce DreamIR text"
 
-let compile_to_exe output_ll =
-  let output_exe = Filename.remove_extension output_ll in
+let compile_to_exe_at ?(optimized=true) output_ll output_exe =
   let runtime_files = [
     "runtime/c/core/memory.c";
     "runtime/c/core/dynarray.c";
@@ -101,9 +100,10 @@ let compile_to_exe output_ll =
     "runtime/c/wrappers/compiler.c"
   ] in
   let runtime_args = String.concat " " runtime_files in
+  let optimization_flags = if optimized then "-O2 -flto=thin " else "" in
   let compile_cmd = Printf.sprintf
-    "clang -Wno-unused-command-line-argument -Wno-override-module -o %s %s %s -I runtime/c/core -I runtime/c/wrappers"
-    (Filename.quote output_exe) (Filename.quote output_ll) runtime_args in
+    "clang -Wno-unused-command-line-argument -Wno-override-module %s-o %s %s %s -I runtime/c/core -I runtime/c/wrappers"
+    optimization_flags (Filename.quote output_exe) (Filename.quote output_ll) runtime_args in
   let exit_code = Sys.command compile_cmd in
   if exit_code = 0 then begin
     output_exe
@@ -112,10 +112,29 @@ let compile_to_exe output_ll =
     exit 1
   end
 
-let build_command input_file =
+let compile_to_exe ?(optimized=true) output_ll =
+  let output_exe = Filename.remove_extension output_ll in
+  compile_to_exe_at ~optimized output_ll output_exe
+
+let remove_temporary_file path =
+  try Sys.remove path with
+  | Sys_error _ -> ()
+
+let compile_ir_to_exe ?(optimized=true) output_exe llvm_ir =
+  let temporary_ll = Filename.temp_file "dream-build-" ".ll" in
+  write_file temporary_ll llvm_ir;
   try
-    let output_ll = compile_to_llvm input_file in
-    let output_exe = compile_to_exe output_ll in
+    let result = compile_to_exe_at ~optimized temporary_ll output_exe in
+    Sys.remove temporary_ll;
+    result
+  with exn ->
+    remove_temporary_file temporary_ll;
+    raise exn
+
+let build_command ?(optimized=true) input_file output_exe =
+  try
+    let llvm_ir, _ = compile_program_to_ir input_file in
+    ignore (compile_ir_to_exe ~optimized output_exe llvm_ir);
     Printf.printf "Build complete: %s\n" output_exe
   with
   | Sys_error msg ->
@@ -211,7 +230,7 @@ let print_usage () =
   Printf.printf "Pipeline: DreamIR -> LLVM\n";
   Printf.printf "\n";
   Printf.printf "Commands:\n";
-  Printf.printf "  build    Compile the source file to executable\n";
+  Printf.printf "  build [--dev] <file.dm> [-o output]  Compile the source file to executable\n";
   Printf.printf "  dir      Compile and output canonical DreamIR\n";
   Printf.printf "  run      Compile and run the source file\n";
   Printf.printf "  lsp      Analyze symbols and output JSON for LSP\n";
@@ -239,14 +258,49 @@ let () =
     Sys.argv.(first_argument)
   in
 
+  let parse_build_arguments () =
+    let input_file = ref None in
+    let output_file = ref None in
+    let optimized = ref true in
+    let argument_index = ref 2 in
+    let invalid_arguments () =
+      Printf.eprintf "Error: build accepts [--dev] <file.dm> [-o output]\n";
+      exit 2
+    in
+    while !argument_index < Array.length Sys.argv do
+      let argument = Sys.argv.(!argument_index) in
+      if argument = "--dev" then
+        optimized := false
+      else if argument = "-o" then begin
+        incr argument_index;
+        if !argument_index >= Array.length Sys.argv || !output_file <> None then
+          invalid_arguments ();
+        output_file := Some Sys.argv.(!argument_index)
+      end else if !input_file = None then
+        input_file := Some argument
+      else
+        invalid_arguments ();
+      incr argument_index
+    done;
+    match !input_file with
+    | None -> invalid_arguments ()
+    | Some source_file ->
+        let executable = match !output_file with
+          | Some path when path <> "" -> path
+          | Some _ -> invalid_arguments ()
+          | None -> Filename.remove_extension source_file
+        in
+        source_file, executable, !optimized
+  in
+
   match command with
   | "build" ->
-      let input_file = parse_input_file 2 in
+      let input_file, output_exe, optimized = parse_build_arguments () in
       if not (Filename.check_suffix input_file ".dm") then begin
         Printf.eprintf "Error: Input file must have .dm extension\n";
         exit 1
       end;
-      build_command input_file
+      build_command ~optimized input_file output_exe
 
   | "dir" ->
       let input_file = parse_input_file 2 in

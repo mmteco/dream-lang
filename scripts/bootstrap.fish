@@ -8,9 +8,9 @@ set stage0_compiler ocaml/_build/default/bin/main.exe
 set bootstrap_dir bootstrap
 set runtime_dir runtime/c
 set llvm_flags -Wno-override-module
+set stage1_binary tmp/stage1
 set runtime_sources (find "$runtime_dir/core" "$runtime_dir/wrappers" -type f -name '*.c' ! -path "$runtime_dir/core/bytes.c" | sort)
 set compiler_source "$bootstrap_dir/compiler.dm"
-set stage1_llvm "tmp/stage1.ll"
 set include_stage3 true
 if test (count $argv) -gt 0
     if test "$argv[1]" = '--skip-stage3'
@@ -45,7 +45,7 @@ function compile_llvm
 end
 
 function verify_bootstrap_llvm
-    set llvm_files "$stage1_llvm" "tmp/stage2.ll"
+    set llvm_files "tmp/stage2.ll"
     if test (count $argv) -gt 0; and test "$argv[1]" = '--with-stage3'
         set -a llvm_files "tmp/stage3.ll"
     end
@@ -65,7 +65,7 @@ end
 
 function check_bootstrapped_ast
     set source_file $argv[1]
-    set compiler tmp/stage1
+    set compiler $stage1_binary
     "$compiler" ast "$source_file" -o "$ast_output_file" >/dev/null
     or exit 1
     if rg -q 'AST validation failed|unknown kind' "$ast_output_file"
@@ -82,7 +82,7 @@ end
 
 function check_bootstrapped_return_expression
     set source_file $argv[1]
-    set compiler tmp/stage1
+    set compiler $stage1_binary
     "$compiler" ast "$source_file" -o "$ast_output_file" >/dev/null
     or exit 1
     if not rg -q 'stmt_return s6: [1-9][0-9]* ' "$ast_output_file"
@@ -93,7 +93,7 @@ end
 
 function check_bootstrapped_eprint
     set source_file $argv[1]
-    set compiler tmp/stage1
+    set compiler $stage1_binary
     "$compiler" ast "$source_file" -o "$ast_output_file" >/dev/null
     or exit 1
     if not rg -q 'expr_print s5: [0-9]+ 1$' "$ast_output_file"
@@ -169,7 +169,7 @@ function check_bootstrapped_build
     rm -f "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file" "$cli_dir_stage3_file"
     "$stage0_compiler" dir test/test_const_dir.dm -o "$cli_dir_host_file" >/dev/null
     or exit 1
-    "tmp/stage1" dir test/test_const_dir.dm -o "$cli_dir_stage1_file"
+    "$stage1_binary" dir test/test_const_dir.dm -o "$cli_dir_stage1_file"
     or exit 1
     "tmp/stage2" dir test/test_const_dir.dm -o "$cli_dir_stage2_file"
     or exit 1
@@ -190,7 +190,7 @@ function check_bootstrapped_build
         end
     end
     rm -f "$cli_binary_file"
-    "tmp/stage1" build test/test_string_add_dir.dm -o "$cli_binary_file"
+    "$stage1_binary" build test/test_string_add_dir.dm -o "$cli_binary_file"
     or exit 1
     set cli_output ("$cli_binary_file" | string split \n)
     if test (count $cli_output) -ne 3; or test "$cli_output[1]" != 'dream language'; or test "$cli_output[2]" != 'hello world'; or test "$cli_output[3]" != '[hello]'
@@ -278,21 +278,15 @@ function check_bootstrapped_build
     end
 end
 
-$stage0_compiler build "$compiler_source" >/dev/null
-or exit 1
-mv "$bootstrap_dir/compiler.ll" "$stage1_llvm"
-or exit 1
-mv "$bootstrap_dir/compiler" "tmp/stage1"
-or exit 1
-compile_llvm "tmp/stage1" "$stage1_llvm"
+$stage0_compiler build "$compiler_source" -o "$stage1_binary" >/dev/null
 or exit 1
 check_bootstrapped_ast test/test_pratt_ast_dir.dm expr_unary expr_logical expr_cond expr_call expr_index
 check_bootstrapped_return_expression test/test_pratt_ast_dir.dm
 check_bootstrapped_ast examples/lang_full_dream.dm expr_attr expr_binary expr_bool expr_builtin_enum expr_call expr_cond expr_dict expr_float expr_index expr_lambda expr_list expr_list_comp expr_logical expr_match expr_method_call expr_print expr_rune expr_slice expr_string expr_struct expr_tuple expr_unary expr_var pat_bool pat_builtin pat_cons pat_enum pat_float pat_int pat_list pat_rune pat_string pat_struct pat_var pat_wildcard m_case stmt_assign stmt_break stmt_case stmt_elif stmt_expr stmt_for stmt_if stmt_let stmt_let_tuple stmt_return stmt_switch stmt_while
 check_bootstrapped_eprint examples/lang_full_dream.dm
-"tmp/stage1" llvm "$compiler_source" -o "$cli_output_file"
+"$stage1_binary" llvm "$compiler_source" -o "$cli_output_file"
 or exit 1
-"tmp/stage1" llvm "$compiler_source" -o "tmp/stage2.ll"
+"$stage1_binary" llvm "$compiler_source" -o "tmp/stage2.ll"
 or exit 1
 cmp "$cli_output_file" "tmp/stage2.ll"
 or exit 1
@@ -302,7 +296,7 @@ or exit 1
 compile_llvm "tmp/stage2" "tmp/stage2.ll"
 or exit 1
 
-"tmp/stage1" llvm bootstrap/sample_functions.dm -o "tmp/sample_functions.ll"
+"$stage1_binary" llvm bootstrap/sample_functions.dm -o "tmp/sample_functions.ll"
 or exit 1
 
 compile_llvm "tmp/sample_functions" "tmp/sample_functions.ll"

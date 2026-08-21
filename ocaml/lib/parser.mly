@@ -98,7 +98,9 @@
 %token AMP CARET TILDE SHL SHR
 %token EQ NEQ LT GT LTE GTE
 %token AND OR NOT
-%token ASSIGN ARROW PIPE UNDERSCORE
+%token ASSIGN
+%token <string * string> FIELD_ASSIGN
+%token ARROW PIPE UNDERSCORE
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
 %token COMMA COLON SEMICOLON DOT QUESTION CONS
 %token INDENT DEDENT NEWLINE
@@ -302,8 +304,10 @@ statement:
           enum_variants = variants;
           enum_pos = make_position $startpos;
         } }
-  | obj = expr DOT field = IDENT ASSIGN value = expr
-      { SFieldAssign (obj, field, value, get_expr_pos obj) }
+  | target = FIELD_ASSIGN value = expr
+      { let (object_name, field_name) = target in
+        let object_expression = EVar (object_name, make_position $startpos) in
+        SFieldAssign (object_expression, field_name, value, make_position $startpos) }
   | IMPORT modules = separated_list(DOT, IDENT)
       { SImport (modules, None, { line = 0; column = 0 }) }
   | IMPORT modules = separated_list(DOT, IDENT) AS alias = IDENT
