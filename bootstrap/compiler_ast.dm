@@ -866,6 +866,12 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
         let next_kind = token_kind(kinds, index + 1)
         if next_kind == TOKEN_ASSIGN:
             return ast_parse_assign_statement(context, index, ast)
+        if next_kind == TOKEN_DOT and token_kind(kinds, index + 2) == TOKEN_IDENTIFIER and token_kind(kinds, index + 3) == TOKEN_OPEN_BRACKET:
+            let assign_probe_index = index + 4
+            while token_kind(kinds, assign_probe_index) != TOKEN_CLOSE_BRACKET and token_kind(kinds, assign_probe_index) != TOKEN_EOF:
+                assign_probe_index = assign_probe_index + 1
+            if token_kind(kinds, assign_probe_index) == TOKEN_CLOSE_BRACKET and token_kind(kinds, assign_probe_index + 1) == TOKEN_ASSIGN:
+                return ast_parse_attribute_element_assign_statement(context, index, ast)
         if next_kind == TOKEN_DOT and token_kind(kinds, index + 2) == TOKEN_IDENTIFIER and token_kind(kinds, index + 3) == TOKEN_ASSIGN:
             return ast_parse_attribute_assign_statement(context, index, ast)
         if next_kind == TOKEN_OPEN_BRACKET:
@@ -1021,6 +1027,25 @@ def ast_parse_attribute_assign_statement(context: ParseContext, index: int, ast:
     ast_set_arg(ast, node, 0, token_start(starts, index))
     ast_set_arg(ast, node, 1, token_end(ends, index))
     ast_set_arg(ast, node, 2, 2)
+    ast_set_arg(ast, node, 3, target_node)
+    ast_set_arg(ast, node, 4, value_node)
+    ast_set_arg(ast, node, 5, len(ast))
+    return (value_next_index, node)
+
+def ast_parse_attribute_element_assign_statement(context: ParseContext, index: int, ast: list[int]) -> (int, int):
+    let kinds = context.kinds
+    let starts = context.starts
+    let ends = context.ends
+    let (target_next_index, target_node) = ast_parse_expression(context, index, ast)
+    if target_node == 0 or token_kind(kinds, target_next_index) != TOKEN_ASSIGN:
+        return (index, 0)
+    let (value_next_index, value_node) = ast_parse_expression(context, target_next_index + 1, ast)
+    if value_node == 0:
+        return (index, 0)
+    let node = ast_append_node(ast, AST_STMT_ASSIGN, token_start(starts, index), token_end(ends, index), ARGS_STMT_ASSIGN)
+    ast_set_arg(ast, node, 0, token_start(starts, index))
+    ast_set_arg(ast, node, 1, token_end(ends, index))
+    ast_set_arg(ast, node, 2, 3)
     ast_set_arg(ast, node, 3, target_node)
     ast_set_arg(ast, node, 4, value_node)
     ast_set_arg(ast, node, 5, len(ast))
@@ -1794,6 +1819,12 @@ def ast_parse_stmt_block(context: ParseContext, body_start: int, body_end: int, 
         else:
             let (next_index, node) = ast_parse_statement(context, current_index, body_end, ast)
             if node == 0:
+                __c_eprint_text("AST statement token=")
+                __c_eprint_int(current_index)
+                __c_eprint_text(" text=")
+                let diagnostic_start = token_start(starts, current_index)
+                __c_eprint_text(source[diagnostic_start:diagnostic_start + 160])
+                __c_eprint_text("\n")
                 return (current_index, 0)
             if next_index > current_index:
                 current_index = skip_source_newlines(source, starts, next_index)
@@ -1834,6 +1865,16 @@ def ast_build_program(context: ParseContext, ast: list[int], fn_ast_starts: list
     while function_index < len(fn_starts):
         let (block_end_index, block_start) = ast_build_function(context, function_index, ast, function_bodies, function_body_ends)
         if block_start == 0:
+            __c_eprint_text("AST parse function=")
+            __c_eprint_int(function_index)
+            __c_eprint_text(" token=")
+            __c_eprint_int(function_bodies[function_index])
+            __c_eprint_text(" source=")
+            __c_eprint_int(token_start(context.starts, function_bodies[function_index]))
+            __c_eprint_text(" text=")
+            let diagnostic_start = token_start(context.starts, function_bodies[function_index])
+            __c_eprint_text(context.src[diagnostic_start:diagnostic_start + 240])
+            __c_eprint_text("\n")
             return false
         append(fn_ast_starts, block_start)
         append(fn_ast_ends, len(ast))

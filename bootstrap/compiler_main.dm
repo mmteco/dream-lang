@@ -223,8 +223,8 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
             append(hir_output, "HIR validation failed\n")
         write_text_buffer(output_path, hir_output)
         return
-    if output_mode == COMPILE_OUTPUT_MIR:
-        let mir_program = mir_model_build_program(hir_program.records)
+    elif output_mode == COMPILE_OUTPUT_MIR:
+        let mir_program = mir_model_build_program(hir_program)
         let mir_output = TextBuffer{data: []}
         if not mir_validate_program(mir_program) or not mir_dump_program(mir_program, mir_output):
             append(mir_output, "MIR validation failed\n")
