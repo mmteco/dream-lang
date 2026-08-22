@@ -101,6 +101,7 @@ and fill_statement defaults stmt =
       SWhile (fill_expr defaults condition,
         List.map (fill_statement defaults) body, pos)
   | SBreak pos -> SBreak pos
+  | SContinue pos -> SContinue pos
   | SFor (pattern, iterable, body, pos) ->
       SFor (pattern, fill_expr defaults iterable,
         List.map (fill_statement defaults) body, pos)

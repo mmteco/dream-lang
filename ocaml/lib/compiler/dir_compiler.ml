@@ -78,6 +78,7 @@ and called_names_statement statement =
   | Ast.SWhile (condition, body, _) ->
       StringSet.union (called_names_expr condition) (called_names_statements body)
   | Ast.SBreak _ -> StringSet.empty
+  | Ast.SContinue _ -> StringSet.empty
   | Ast.SFor (_, iterable, body, _) ->
       StringSet.union (called_names_expr iterable) (called_names_statements body)
   | Ast.SAssign (_, expression, _) -> called_names_expr expression
@@ -130,6 +131,7 @@ let imported_definitions program =
   let visited_modules = Hashtbl.create 16 in
   let is_runtime_wrapper name =
     name = "str_to_bytes" || name = "bytes_to_str"
+    || name = "bytes_get" || name = "bytes_slice"
   in
   let add_definition definitions definition =
     if is_runtime_wrapper definition.Ast.def_name ||

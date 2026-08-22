@@ -31,6 +31,7 @@ type token =
   | FOR
   | WHILE
   | BREAK
+  | CONTINUE
   | RETURN
   | IMPORT
   | FROM
@@ -293,6 +294,7 @@ and statement =
   | SDef of def_stmt
   | SReturn of expr option * position
   | SBreak of position
+  | SContinue of position
   | SIf of expr * statement list * (expr * statement list) list * statement list option * position
   | SWhile of expr * statement list * position
   | SFor of pattern * expr * statement list * position

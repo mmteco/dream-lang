@@ -265,6 +265,7 @@ let rec substitute_statement ctx type_params type_args stmt =
         pos
       )
   | SBreak pos -> SBreak pos
+  | SContinue pos -> SContinue pos
   | SWhile (cond, body, pos) ->
       SWhile (
         substitute_expr ctx type_params type_args cond,
@@ -379,6 +380,7 @@ let rec rewrite_statement generic_instances generic_funcs stmt =
         pos
       )
   | SBreak pos -> SBreak pos
+  | SContinue pos -> SContinue pos
   | SWhile (cond, body, pos) ->
       SWhile (
         rewrite_generic_calls generic_instances generic_funcs cond,

@@ -85,6 +85,7 @@
         ("for", FOR);
         ("while", WHILE);
         ("break", BREAK);
+        ("continue", CONTINUE);
         ("return", RETURN);
         ("import", IMPORT);
         ("from", FROM);

@@ -1,4 +1,4 @@
-from compiler_mir_model import MirProgram, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset, MIR_RECORD_MODULE, MIR_RECORD_TYPE, MIR_RECORD_GLOBAL, MIR_RECORD_EXTERN, MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR, MIR_FUNCTION_ENTRY, MIR_TYPE_UNKNOWN, MIR_TYPE_UNIT, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_TYPE_F64, MIR_TYPE_STR, MIR_TYPE_BYTES, MIR_TYPE_PTR, MIR_TYPE_LIST, MIR_TYPE_DICT, MIR_TYPE_TUPLE, MIR_TYPE_STRUCT, MIR_TYPE_ENUM, MIR_TYPE_INTERFACE, MIR_TYPE_UNION, MIR_TYPE_FUNCTION, MIR_TYPE_CLOSURE, MIR_TYPE_DYNAMIC, MIR_TYPE_MAX, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK, MIR_OPERAND_TYPE, MIR_OPERAND_SYMBOL, MIR_OP_CONST, MIR_OP_LOCAL, MIR_OP_BINARY, MIR_OP_UNARY, MIR_OP_CALL, MIR_OP_SELECT, MIR_OP_LIST, MIR_OP_DICT, MIR_OP_TUPLE, MIR_OP_INDEX, MIR_OP_SLICE, MIR_OP_FIELD, MIR_OP_STRUCT, MIR_OP_ENUM, MIR_OP_PRINT, MIR_OP_CAST, MIR_OP_SEQUENCE, MIR_OP_ASSIGN, MIR_OP_CLOSURE, MIR_OP_RUNTIME, MIR_OP_MAX, MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH, MIR_TERM_RETURN, MIR_TERM_UNREACHABLE, MIR_TERM_MAX
+from compiler_mir_model import MirProgram, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset, MIR_RECORD_MODULE, MIR_RECORD_TYPE, MIR_RECORD_GLOBAL, MIR_RECORD_EXTERN, MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR, MIR_FUNCTION_ENTRY, MIR_EXTERNAL_BASE, MIR_TYPE_UNKNOWN, MIR_TYPE_UNIT, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_TYPE_F64, MIR_TYPE_STR, MIR_TYPE_BYTES, MIR_TYPE_PTR, MIR_TYPE_LIST, MIR_TYPE_DICT, MIR_TYPE_TUPLE, MIR_TYPE_STRUCT, MIR_TYPE_ENUM, MIR_TYPE_INTERFACE, MIR_TYPE_UNION, MIR_TYPE_FUNCTION, MIR_TYPE_CLOSURE, MIR_TYPE_DYNAMIC, MIR_TYPE_MAX, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK, MIR_OPERAND_TYPE, MIR_OPERAND_SYMBOL, MIR_OP_CONST, MIR_OP_LOCAL, MIR_OP_BINARY, MIR_OP_UNARY, MIR_OP_CALL, MIR_OP_SELECT, MIR_OP_LIST, MIR_OP_DICT, MIR_OP_TUPLE, MIR_OP_INDEX, MIR_OP_SLICE, MIR_OP_FIELD, MIR_OP_STRUCT, MIR_OP_ENUM, MIR_OP_PRINT, MIR_OP_CAST, MIR_OP_SEQUENCE, MIR_OP_ASSIGN, MIR_OP_CLOSURE, MIR_OP_RUNTIME, MIR_OP_MAX, MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH, MIR_TERM_RETURN, MIR_TERM_UNREACHABLE, MIR_TERM_MAX
 from text_buffer import TextBuffer
 
 let lir_value_type_cache: list[int] = []
@@ -43,6 +43,7 @@ const LIR_RECORD_INSTRUCTION: int = 8
 const LIR_RECORD_TERMINATOR: int = 9
 const LIR_RECORD_MAX: int = LIR_RECORD_TERMINATOR
 const LIR_FUNCTION_ENTRY: int = MIR_FUNCTION_ENTRY
+const LIR_EXTERNAL_BASE: int = MIR_EXTERNAL_BASE
 
 const LIR_TYPE_VOID: int = 1
 const LIR_TYPE_I1: int = 2
@@ -51,7 +52,13 @@ const LIR_TYPE_F64: int = 4
 const LIR_TYPE_PTR: int = 5
 const LIR_TYPE_AGGREGATE: int = 6
 const LIR_TYPE_DYNAMIC: int = 7
-const LIR_TYPE_MAX: int = LIR_TYPE_DYNAMIC
+const LIR_TYPE_STR: int = 8
+const LIR_TYPE_LIST: int = 9
+const LIR_TYPE_BYTES: int = 10
+const LIR_TYPE_DICT: int = 11
+const LIR_TYPE_TUPLE: int = 12
+const LIR_TYPE_STRUCT: int = 13
+const LIR_TYPE_MAX: int = LIR_TYPE_STRUCT
 
 const LIR_OPERAND_VALUE: int = 1
 const LIR_OPERAND_IMMEDIATE: int = 2
@@ -81,7 +88,9 @@ const LIR_OP_ENUM_PAYLOAD: int = 17
 const LIR_OP_CLOSURE: int = 18
 const LIR_OP_CAST: int = 19
 const LIR_OP_BOUNDS_CHECK: int = 20
-const LIR_OP_MAX: int = LIR_OP_BOUNDS_CHECK
+const LIR_OP_GLOBAL_LOAD: int = 21
+const LIR_OP_GLOBAL_STORE: int = 22
+const LIR_OP_MAX: int = LIR_OP_GLOBAL_STORE
 
 const LIR_RUNTIME_NONE: int = 0
 const LIR_RUNTIME_PRINT: int = 1
@@ -163,6 +172,12 @@ def lir_build_default_layouts() -> list[int]:
     lir_append_layout(layouts, LIR_TYPE_PTR, 8, 8, -1, -1, 0)
     lir_append_layout(layouts, LIR_TYPE_AGGREGATE, 8, 8, -1, -1, 0)
     lir_append_layout(layouts, LIR_TYPE_DYNAMIC, 8, 8, -1, -1, 0)
+    lir_append_layout(layouts, LIR_TYPE_STR, 8, 8, -1, -1, 0)
+    lir_append_layout(layouts, LIR_TYPE_LIST, 8, 8, -1, -1, 0)
+    lir_append_layout(layouts, LIR_TYPE_BYTES, 8, 8, -1, -1, 0)
+    lir_append_layout(layouts, LIR_TYPE_DICT, 8, 8, -1, -1, 0)
+    lir_append_layout(layouts, LIR_TYPE_TUPLE, 8, 8, -1, -1, 0)
+    lir_append_layout(layouts, LIR_TYPE_STRUCT, 8, 8, -1, -1, 0)
     return layouts
 
 def lir_append_record(records: list[int], record: LirRecord):
@@ -198,12 +213,22 @@ def lir_type_from_mir(type_tag: int) -> int:
         return LIR_TYPE_DYNAMIC
     if type_tag == MIR_TYPE_DYNAMIC:
         return LIR_TYPE_DYNAMIC
-    if type_tag == MIR_TYPE_STR or type_tag == MIR_TYPE_BYTES or type_tag == MIR_TYPE_PTR:
+    if type_tag == MIR_TYPE_STR:
+        return LIR_TYPE_STR
+    if type_tag == MIR_TYPE_BYTES:
+        return LIR_TYPE_BYTES
+    if type_tag == MIR_TYPE_PTR:
         return LIR_TYPE_PTR
-    if type_tag == MIR_TYPE_LIST or type_tag == MIR_TYPE_DICT or type_tag == MIR_TYPE_ENUM:
+    if type_tag == MIR_TYPE_LIST:
+        return LIR_TYPE_LIST
+    if type_tag == MIR_TYPE_DICT:
+        return LIR_TYPE_DICT
+    if type_tag == MIR_TYPE_TUPLE:
+        return LIR_TYPE_TUPLE
+    if type_tag == MIR_TYPE_STRUCT:
+        return LIR_TYPE_STRUCT
+    if type_tag == MIR_TYPE_ENUM:
         return LIR_TYPE_PTR
-    if type_tag == MIR_TYPE_TUPLE or type_tag == MIR_TYPE_STRUCT:
-        return LIR_TYPE_AGGREGATE
     if type_tag == MIR_TYPE_INTERFACE or type_tag == MIR_TYPE_UNION or type_tag == MIR_TYPE_CLOSURE:
         return LIR_TYPE_PTR
     if type_tag == MIR_TYPE_FUNCTION:
@@ -243,6 +268,10 @@ def lir_opcode_from_mir(opcode: int) -> int:
         return LIR_OP_COPY
     if opcode == MIR_OP_RUNTIME:
         return LIR_OP_RUNTIME_CALL
+    if opcode == MIR_OP_GLOBAL_LOAD:
+        return LIR_OP_GLOBAL_LOAD
+    if opcode == MIR_OP_GLOBAL_STORE:
+        return LIR_OP_GLOBAL_STORE
     return LIR_OP_RUNTIME_CALL
 
 def lir_runtime_from_mir(opcode: int) -> int:
@@ -252,6 +281,12 @@ def lir_runtime_from_mir(opcode: int) -> int:
         return LIR_RUNTIME_DICT_NEW
     if opcode == MIR_OP_TUPLE:
         return LIR_RUNTIME_TUPLE_NEW
+    if opcode == MIR_OP_STRUCT:
+        return LIR_RUNTIME_STRUCT_NEW
+    if opcode == MIR_OP_FIELD:
+        return LIR_RUNTIME_TUPLE_GET
+    if opcode == MIR_OP_ENUM:
+        return LIR_RUNTIME_ENUM_NEW
     if opcode == MIR_OP_INDEX:
         return LIR_RUNTIME_LIST_GET
     if opcode == MIR_OP_SLICE:
@@ -339,6 +374,8 @@ def lir_lower_mir_record(mir: MirProgram, record_id: int, records: list[int], va
         target_auxiliary_count = auxiliary_count
     if record_kind == MIR_RECORD_INSTRUCTION:
         let runtime_id = lir_runtime_from_mir(mir.records[source_offset + 3])
+        if mir.records[source_offset + 3] == MIR_OP_RUNTIME:
+            runtime_id = mir.records[source_offset + 8]
         if target_opcode == LIR_OP_RUNTIME_CALL and runtime_id == LIR_RUNTIME_NONE:
             runtime_id = 31
         if runtime_id != LIR_RUNTIME_NONE:
@@ -373,6 +410,16 @@ def lir_model_build_program(mir: MirProgram) -> LirProgram:
 def lir_value_cache_index(function_index: int, value: int) -> int:
     return function_index * lir_value_cache_width[0] + value
 
+def lir_resize_int_list(target: list[int], size: int, fill_value: int):
+    # 原地扩缩并统一填充；不用 "= []" 重绑定全局列表，自举发射器对该形态有误译
+    let index = 0
+    while index < size:
+        if index < len(target):
+            target[index] = fill_value
+        else:
+            append(target, fill_value)
+        index = index + 1
+
 def lir_prepare_value_cache(program: LirProgram):
     let maximum_function = -1
     let maximum_value = -1
@@ -391,32 +438,19 @@ def lir_prepare_value_cache(program: LirProgram):
     if width < 1:
         width = 1
     lir_value_cache_width[0] = width
-    lir_value_type_cache = []
-    lir_block_parameter_cache = []
-    lir_block_parameter_start_cache = []
-    lir_block_parameter_count_cache = []
-    lir_block_parameter_inferred_cache = []
-    lir_block_parameter_has_incoming_cache = []
-    lir_block_parameter_mismatch_cache = []
     let cache_size = (maximum_function + 1) * width
     let block_width = maximum_block + 1
     if block_width < 1:
         block_width = 1
     lir_block_cache_width[0] = block_width
     let block_cache_size = (maximum_function + 1) * block_width
-    let cache_index = 0
-    while cache_index < cache_size:
-        append(lir_value_type_cache, 0)
-        append(lir_block_parameter_cache, -1)
-        append(lir_block_parameter_inferred_cache, LIR_TYPE_DYNAMIC)
-        append(lir_block_parameter_has_incoming_cache, 0)
-        append(lir_block_parameter_mismatch_cache, 0)
-        cache_index = cache_index + 1
-    cache_index = 0
-    while cache_index < block_cache_size:
-        append(lir_block_parameter_start_cache, -1)
-        append(lir_block_parameter_count_cache, 0)
-        cache_index = cache_index + 1
+    lir_resize_int_list(lir_value_type_cache, cache_size, 0)
+    lir_resize_int_list(lir_block_parameter_cache, cache_size, -1)
+    lir_resize_int_list(lir_block_parameter_inferred_cache, cache_size, LIR_TYPE_DYNAMIC)
+    lir_resize_int_list(lir_block_parameter_has_incoming_cache, cache_size, 0)
+    lir_resize_int_list(lir_block_parameter_mismatch_cache, cache_size, 0)
+    lir_resize_int_list(lir_block_parameter_start_cache, block_cache_size, -1)
+    lir_resize_int_list(lir_block_parameter_count_cache, block_cache_size, 0)
     record_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
@@ -441,7 +475,6 @@ def lir_value_type_in_function(records: list[int], function_index: int, value: i
         let value_index = lir_value_cache_index(function_index, value)
         if value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_type_cache[value_index] != 0:
             return lir_value_type_cache[value_index]
-        return LIR_TYPE_DYNAMIC
     let record_id = 0
     while record_id < lir_record_count(records):
         let offset = lir_record_offset(record_id)
@@ -454,7 +487,8 @@ def lir_value_type_in_function(records: list[int], function_index: int, value: i
 def lir_value_exists(records: list[int], function_index: int, value: int) -> bool:
     if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
         let value_index = lir_value_cache_index(function_index, value)
-        return value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_type_cache[value_index] != 0
+        if value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_type_cache[value_index] != 0:
+            return true
     let record_id = 0
     while record_id < lir_record_count(records):
         let offset = lir_record_offset(record_id)
@@ -516,7 +550,10 @@ def lir_merge_block_parameter_type(program: LirProgram, term_offset: int, target
     if cache_index < 0 or cache_index >= len(lir_block_parameter_inferred_cache):
         return
     let incoming_type = lir_edge_argument_type(program, term_offset, argument_index, target_block)
+    # void（无结果调用）与 dynamic 都不参与块参数类型统一
     if incoming_type == LIR_TYPE_DYNAMIC:
+        return
+    if incoming_type == LIR_TYPE_VOID:
         return
     if lir_block_parameter_has_incoming_cache[cache_index] == 0:
         lir_block_parameter_inferred_cache[cache_index] = incoming_type
@@ -567,12 +604,19 @@ def lir_infer_block_parameter_types(program: LirProgram):
             let function_index = program.records[offset + 1]
             let result_value = program.records[offset + 5]
             let value_index = lir_value_cache_index(function_index, result_value)
-            if value_index >= 0 and value_index < len(lir_block_parameter_inferred_cache) and lir_block_parameter_has_incoming_cache[value_index] == 1 and lir_block_parameter_mismatch_cache[value_index] == 0:
-                let inferred_type = lir_block_parameter_inferred_cache[value_index]
-                program.records[offset + 4] = inferred_type
-                if value_index < len(lir_value_type_cache):
-                    lir_value_type_cache[value_index] = inferred_type
+            # 多重 and 展开为嵌套判断：自举发射器对长 and 链有误译
+            if value_index >= 0:
+                if value_index < len(lir_block_parameter_inferred_cache):
+                    if lir_block_parameter_has_incoming_cache[value_index] == 1:
+                        if lir_block_parameter_mismatch_cache[value_index] == 0:
+                            let inferred_type = lir_block_parameter_inferred_cache[value_index]
+                            # 不经 struct 字段链做元素赋值：自举发射器对该形态有写丢失
+                            let record_values = program.records
+                            record_values[offset + 4] = inferred_type
+                            if value_index < len(lir_value_type_cache):
+                                lir_value_type_cache[value_index] = inferred_type
         record_id = record_id + 1
+    let probe_slot = 18 * lir_value_cache_width[0] + 287
 
 def lir_validation_error(record_id: int, reason: str) -> bool:
     __c_eprint_text("LIR validation failed record=")

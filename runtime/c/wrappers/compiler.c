@@ -122,7 +122,24 @@ static bool collect_runtime_sources(const char* runtime_directory, char*** names
     return true;
 }
 
-int __c_build_llvm(const char* llvm_path, const char* output_path) {
+static bool run_compiler(char** arguments) {
+    pid_t child_process = fork();
+    if (child_process == 0) {
+        execvp(arguments[0], arguments);
+        _exit(127);
+    }
+    if (child_process < 0) {
+        return false;
+    }
+
+    int child_status = 0;
+    if (waitpid(child_process, &child_status, 0) != child_process) {
+        return false;
+    }
+    return WIFEXITED(child_status) && WEXITSTATUS(child_status) == 0;
+}
+
+int __c_build_llvm(const char* llvm_path, const char* output_path, bool optimized) {
     if (llvm_path == NULL || output_path == NULL) {
         return 0;
     }
@@ -149,8 +166,12 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
     arguments[argument_index++] = "clang";
     arguments[argument_index++] = "-Wno-unused-command-line-argument";
     arguments[argument_index++] = "-Wno-override-module";
-    arguments[argument_index++] = "-O2";
-    arguments[argument_index++] = "-flto=thin";
+    size_t optimization_index = 0;
+    if (optimized) {
+        optimization_index = argument_index;
+        arguments[argument_index++] = "-O2";
+        arguments[argument_index++] = "-flto=thin";
+    }
     arguments[argument_index++] = "-o";
     arguments[argument_index++] = (char*)output_path;
     arguments[argument_index++] = (char*)llvm_path;
@@ -182,25 +203,11 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
     arguments[argument_index++] = wrappers_include != NULL ? wrappers_include : (char*)runtime_directory;
     arguments[argument_index] = NULL;
 
-    pid_t child_process = fork();
-    if (child_process == 0) {
-        execvp(arguments[0], arguments);
-        _exit(127);
+    bool compile_succeeded = run_compiler(arguments);
+    if (!compile_succeeded && optimized) {
+        fprintf(stderr, "warning: clang -O2 + ThinLTO failed, may have bug in code.\n");
+        return 1;
     }
-    if (child_process < 0) {
-        for (size_t index = 0; index < runtime_count; index++) {
-            free(runtime_paths[index]);
-        }
-        free(runtime_paths);
-        free(arguments);
-        free(core_include);
-        free(wrappers_include);
-        free_names(runtime_names, runtime_count);
-        return 0;
-    }
-
-    int child_status = 0;
-    bool wait_succeeded = waitpid(child_process, &child_status, 0) == child_process;
     for (size_t index = 0; index < runtime_count; index++) {
         free(runtime_paths[index]);
     }
@@ -210,7 +217,7 @@ int __c_build_llvm(const char* llvm_path, const char* output_path) {
     free(arguments);
     free_names(runtime_names, runtime_count);
 
-    if (!wait_succeeded || !WIFEXITED(child_status) || WEXITSTATUS(child_status) != 0) {
+    if (!compile_succeeded) {
         return 0;
     }
     return remove(llvm_path) == 0 ? 1 : 0;

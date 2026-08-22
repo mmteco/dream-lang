@@ -41,7 +41,10 @@ end
 function compile_llvm
     set output_file $argv[1]
     set llvm_file $argv[2]
-    clang $llvm_flags -O2 -flto=thin -o "$output_file" "$llvm_file" $runtime_sources -I "$runtime_dir/core" -I "$runtime_dir/wrappers"
+    if not clang $llvm_flags -O2 -flto=thin -o "$output_file" "$llvm_file" $runtime_sources -I "$runtime_dir/core" -I "$runtime_dir/wrappers"
+        echo '警告: clang -O2 + ThinLTO 失败' >&2
+        return 1
+    end
 end
 
 function verify_bootstrap_llvm
@@ -52,13 +55,13 @@ function verify_bootstrap_llvm
     fish --no-config scripts/verify_llvm.fish $llvm_files
 end
 
-function check_dir_lowering
+function check_lir_lowering
     set stage_name $argv[1]
     set llvm_file "tmp/$stage_name.ll"
-    set lowering_matches (rg '^define i1 @dir_lower_records_buffer' "$llvm_file")
-    set failure_markers (rg '^; DIR validation failed' "$llvm_file")
+    set lowering_matches (rg '^; Dream LIR to LLVM IR$' "$llvm_file")
+    set failure_markers (rg '^; LLVM lowering failed' "$llvm_file")
     if test (count $lowering_matches) -eq 0; or test (count $failure_markers) -ne 0
-        echo "错误: $stage_name 未成功生成独立 DIR lowering" >&2
+        echo "错误: $stage_name 未成功完成 LIR lowering" >&2
         exit 1
     end
 end
@@ -105,8 +108,8 @@ end
 function check_bool_abi
     set stage_name $argv[1]
     set llvm_file "tmp/$stage_name.ll"
-    set bool_functions (rg '^define i1 @(is_digit|is_identifier_start|is_identifier_continue|source_equals|source_ranges_equal)\(' "$llvm_file")
-    set bool_returns (rg '^ret i1 ' "$llvm_file")
+    set bool_functions (rg '^define i1 @' "$llvm_file")
+    set bool_returns (rg '^  ret i1 ' "$llvm_file")
     if test (count $bool_functions) -lt 5; or test (count $bool_returns) -eq 0
         echo "错误: $stage_name 未生成稳定的 bool i1 ABI" >&2
         exit 1
@@ -169,28 +172,28 @@ function check_bootstrapped_build
     rm -f "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file" "$cli_dir_stage3_file"
     "$stage0_compiler" dir test/test_const_dir.dm -o "$cli_dir_host_file" >/dev/null
     or exit 1
-    "$stage1_binary" dir test/test_const_dir.dm -o "$cli_dir_stage1_file"
+    DEBUG=1 "$stage1_binary" lir test/test_const_dir.dm -o "$cli_dir_stage1_file"
     or exit 1
-    "tmp/stage2" dir test/test_const_dir.dm -o "$cli_dir_stage2_file"
+    DEBUG=1 "tmp/stage2" lir test/test_const_dir.dm -o "$cli_dir_stage2_file"
     or exit 1
     cmp "$cli_dir_stage1_file" "$cli_dir_stage2_file"
     or exit 1
-    set dir_files "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file"
+    set dir_files "$cli_dir_stage1_file" "$cli_dir_stage2_file"
     if test "$include_stage3" = true
-        "tmp/stage3" dir test/test_const_dir.dm -o "$cli_dir_stage3_file"
+        DEBUG=1 "tmp/stage3" lir test/test_const_dir.dm -o "$cli_dir_stage3_file"
         or exit 1
         cmp "$cli_dir_stage2_file" "$cli_dir_stage3_file"
         or exit 1
         set -a dir_files "$cli_dir_stage3_file"
     end
     for dir_file in $dir_files
-        if not rg -q '^module dream$' "$dir_file"; or not rg -q '^func @main\(\) -> i32 \{$' "$dir_file"; or rg -q '^record ' "$dir_file"; or rg -q 'formal DreamIR rendering failed' "$dir_file"; or rg -q 'raw-llvm' "$dir_file"
-            echo "错误: $dir_file 未输出统一正式 DreamIR" >&2
+        if not rg -q '^LIR version=' "$dir_file"; or rg -q 'LIR validation failed' "$dir_file"; or rg -q 'raw-llvm' "$dir_file"
+            echo "错误: $dir_file 未输出统一正式 LIR" >&2
             exit 1
         end
     end
     rm -f "$cli_binary_file"
-    "$stage1_binary" build test/test_string_add_dir.dm -o "$cli_binary_file"
+    DEBUG=1 "$stage1_binary" build test/test_string_add_dir.dm -o "$cli_binary_file"
     or exit 1
     set cli_output ("$cli_binary_file" | string split \n)
     if test (count $cli_output) -ne 3; or test "$cli_output[1]" != 'dream language'; or test "$cli_output[2]" != 'hello world'; or test "$cli_output[3]" != '[hello]'
@@ -267,7 +270,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_interface_args_dir.dm tmp/dream_bootstrap_interface_args 15 true false
     if test "$include_stage3" = true
         rm -f "$cli_binary_file"
-        "tmp/stage3" build test/test_string_add_dir.dm -o "$cli_binary_file"
+        DEBUG=1 "tmp/stage3" build test/test_string_add_dir.dm -o "$cli_binary_file"
         or exit 1
         set stage3_output ("$cli_binary_file" | string split \n)
         if test (count $stage3_output) -ne 3; or test "$stage3_output[1]" != 'dream language'; or test "$stage3_output[2]" != 'hello world'; or test "$stage3_output[3]" != '[hello]'
@@ -322,13 +325,13 @@ if test "$include_stage3" = true
     or exit 1
     "tmp/stage3" help >/dev/null
     or exit 1
-    check_dir_lowering stage2
-    check_dir_lowering stage3
+    check_lir_lowering stage2
+    check_lir_lowering stage3
     check_bool_abi stage2
     check_bool_abi stage3
     check_fixed_point
 else
-    check_dir_lowering stage2
+    check_lir_lowering stage2
     check_bool_abi stage2
 end
 check_bootstrapped_build

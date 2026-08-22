@@ -234,7 +234,7 @@ let tuple_element_load buffer result_name element_type raw_name =
       Printf.bprintf buffer "  %s = inttoptr i64 %s to %s\n"
         result_name raw_name (llvm_ty element_type)
 
-let render_instruction string_literals value_types buffer instruction =
+let render_instruction string_literals value_types buffer _instruction_label instruction =
   let operand = render_operand string_literals in
   (match instruction with
    | Binop (value, result_type, operation, left, right) ->
@@ -567,7 +567,9 @@ let render_instruction string_literals value_types buffer instruction =
             Printf.bprintf buffer "  call void @append_f64(%%dynarray_i32* %s, double %s)\n"
               (operand collection) (operand value)
         | Str | Tuple _ ->
-            let elem_int_name = Printf.sprintf "%%dir_append_elem_%s" (operand value) in
+            let elem_int_name = match value with
+              | Value n -> Printf.sprintf "%%dir_append_elem_v%d" n
+              | _ -> failwith "list append element must be a value" in
             tuple_element_store buffer elem_int_name element_type (operand value);
             Printf.bprintf buffer "  call void @append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
               (operand collection) elem_int_name
@@ -744,7 +746,10 @@ let render_function string_literals (function_def : Dir.function_def) =
           (value_name value) (llvm_ty parameter_type)
           (String.concat ", " incoming_values)
     ) block.params;
-    List.iter (render_instruction string_literals value_types buffer) block.instructions;
+    List.iteri (fun instruction_index ->
+      render_instruction string_literals value_types buffer
+        (Printf.sprintf "%s_%d" block.label instruction_index)
+    ) block.instructions;
     render_terminator string_literals value_types block.label function_def.return_type buffer block.terminator
   ) function_def.blocks;
   Buffer.add_string buffer "}\n";

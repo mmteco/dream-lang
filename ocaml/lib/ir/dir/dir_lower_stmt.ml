@@ -122,8 +122,13 @@ and lower_while context function_builder environment condition body position =
   let previous_break_stack = !(context.break_labels) in
   context.break_labels :=
     (exit_label, List.map (fun (name, _, ty) -> (name, ty)) body_params) :: previous_break_stack;
+  let previous_continue_stack = !(context.continue_labels) in
+  context.continue_labels :=
+    (condition_label, List.map (fun (name, _, ty) -> (name, ty)) condition_params, None)
+      :: previous_continue_stack;
   lower_statements context function_builder body_environment body;
   context.break_labels := previous_break_stack;
+  context.continue_labels := previous_continue_stack;
   if not (is_terminated function_builder) then
     terminate function_builder (Jump (condition_label,
       List.map (fun (name, _, _) ->
@@ -161,7 +166,8 @@ and lower_for context function_builder environment pattern iterable body positio
   ) condition_bindings in
   let condition_index = fresh_value function_builder in
   let body_index = fresh_value function_builder in
-  List.iter (create_block function_builder) [condition_label; body_label; exit_label];
+  let step_label = fresh_label function_builder "for_step" in
+  List.iter (create_block function_builder) [condition_label; body_label; exit_label; step_label];
   let initial_arguments = List.map (fun (_, value) -> value.operand) loop_bindings in
   terminate function_builder (Jump (condition_label, initial_arguments @ [Dir.Int 0]));
   switch_to function_builder condition_label;
@@ -214,16 +220,32 @@ and lower_for context function_builder environment pattern iterable body positio
   let previous_break_stack = !(context.break_labels) in
   context.break_labels :=
     (exit_label, List.map (fun (name, _, ty) -> (name, ty)) body_bindings) :: previous_break_stack;
+  let previous_continue_stack = !(context.continue_labels) in
+  context.continue_labels :=
+    (step_label, List.map (fun (name, _, ty) -> (name, ty)) condition_bindings, Some body_index)
+      :: previous_continue_stack;
   lower_statements context function_builder body_environment body;
   context.break_labels := previous_break_stack;
+  context.continue_labels := previous_continue_stack;
   if not (is_terminated function_builder) then begin
-    let next_index = fresh_value function_builder in
-    emit function_builder (Dir.Binop (next_index, Dir.I32, Dir.Add, Dir.Value body_index, Dir.Int 1));
-    let next_values = List.map (fun (name, _, _) ->
+    let back_values = List.map (fun (name, _, _) ->
       (Hashtbl.find body_environment name).operand
     ) body_bindings in
-    terminate function_builder (Jump (condition_label, next_values @ [Value next_index]))
+    terminate function_builder (Jump (step_label, back_values @ [Dir.Value body_index]))
   end;
+  switch_to function_builder step_label;
+  let step_bindings = List.map (fun (name, _, ty) ->
+    (name, fresh_value function_builder, ty)
+  ) condition_bindings in
+  let step_index = fresh_value function_builder in
+  set_block_params function_builder step_label
+    (List.map (fun (_, value, ty) -> (value, ty)) step_bindings @
+     [(step_index, Dir.I32)]);
+  let step_next = fresh_value function_builder in
+  emit function_builder (Dir.Binop (step_next, Dir.I32, Dir.Add,
+    Dir.Value step_index, Dir.Int 1));
+  let step_named_values = List.map (fun (_, value, _) -> Dir.Value value) step_bindings in
+  terminate function_builder (Jump (condition_label, step_named_values @ [Dir.Value step_next]));
   switch_to function_builder exit_label;
   set_block_params function_builder exit_label
     (List.map (fun (_, value, ty) -> (value, ty)) exit_bindings);
@@ -283,6 +305,21 @@ and lower_statement context function_builder environment statement =
            ) param_names in
            release_interface_boxes function_builder;
            terminate function_builder (Jump (exit_label, arguments)))
+  | SContinue position ->
+      (match !(context.continue_labels) with
+       | [] -> fail_at position "continue outside of loop"
+       | (target_label, param_names, index_value) :: _ ->
+           let arguments = List.map (fun (name, _) ->
+             match Hashtbl.find_opt environment name with
+             | Some value -> value.operand
+             | None -> fail_at position ("unknown variable " ^ name)
+           ) param_names in
+           let arguments = match index_value with
+             | None -> arguments
+             | Some current_index -> arguments @ [Dir.Value current_index]
+           in
+           release_interface_boxes function_builder;
+           terminate function_builder (Jump (target_label, arguments)))
   | SAssign (name, expression, position) ->
       (match Hashtbl.find_opt environment name with
        | Some previous_value ->

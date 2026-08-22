@@ -507,15 +507,17 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, Str, "__c_process_arg",
         [I32], [lowered_index.operand]));
       { operand = Value value; ty = Str }
-  | ECall (EVar ("build_llvm", _), [llvm_path; output_path], position)
-  | ECall (EVar ("__c_build_llvm", _), [llvm_path; output_path], position) ->
+  | ECall (EVar ("build_llvm", _), [llvm_path; output_path; optimized], position)
+  | ECall (EVar ("__c_build_llvm", _), [llvm_path; output_path; optimized], position) ->
       let lowered_llvm_path = lower_expr context function_builder environment llvm_path in
       let lowered_output_path = lower_expr context function_builder environment output_path in
+      let lowered_optimized = lower_expr context function_builder environment optimized in
       expect_type position Str lowered_llvm_path.ty "__c_build_llvm LLVM path";
       expect_type position Str lowered_output_path.ty "__c_build_llvm output path";
+      expect_type position Bool lowered_optimized.ty "__c_build_llvm optimized flag";
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, I32, "__c_build_llvm",
-        [Str; Str], [lowered_llvm_path.operand; lowered_output_path.operand]));
+        [Str; Str; Bool], [lowered_llvm_path.operand; lowered_output_path.operand; lowered_optimized.operand]));
       if match expression with ECall (EVar ("build_llvm", _), _, _) -> true | _ -> false then
         let status = fresh_value function_builder in
         emit function_builder (Compare (status, Ne, Value value, Int 0));
@@ -647,6 +649,27 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, Str, "__c_bytes_to_str",
         [Bytes], [lowered_bytes.operand]));
       { operand = Value value; ty = Str }
+  | ECall (EVar ("bytes_get", _), [buf; idx], position) ->
+      let lowered_bytes = lower_expr context function_builder environment buf in
+      let lowered_index = lower_expr context function_builder environment idx in
+      expect_type position Bytes lowered_bytes.ty "__c_bytes_get bytes";
+      expect_type position I32 lowered_index.ty "__c_bytes_get index";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_bytes_get",
+        [Bytes; I32], [lowered_bytes.operand; lowered_index.operand]));
+      { operand = Value value; ty = I32 }
+  | ECall (EVar ("bytes_slice", _), [buf; from_idx; to_idx], position) ->
+      let lowered_bytes = lower_expr context function_builder environment buf in
+      let lowered_start = lower_expr context function_builder environment from_idx in
+      let lowered_finish = lower_expr context function_builder environment to_idx in
+      expect_type position Bytes lowered_bytes.ty "__c_bytes_slice bytes";
+      expect_type position I32 lowered_start.ty "__c_bytes_slice start";
+      expect_type position I32 lowered_finish.ty "__c_bytes_slice end";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Bytes, "__c_bytes_slice",
+        [Bytes; I32; I32],
+        [lowered_bytes.operand; lowered_start.operand; lowered_finish.operand]));
+      { operand = Value value; ty = Bytes }
   | ECall (EVar (name, _), arguments, position)
     when (match Hashtbl.find_opt environment name with
           | Some { ty = Func _; _ } -> true
@@ -1902,6 +1925,7 @@ let runtime_externs = [
   { name = "__c_eprint_int"; parameters = [I32]; return_type = Unit };
   { name = "__c_range_equal"; parameters = [Str; I32; I32; I32; I32]; return_type = Bool };
   { name = "__c_fnv_hash_range"; parameters = [Str; I32; I32]; return_type = I32 };
+  { name = "__c_range_equals_cstr"; parameters = [Str; I32; I32; Str]; return_type = Bool };
   { name = "string_is_whitespace"; parameters = [I32]; return_type = Bool };
   { name = "union_create_int"; parameters = [I32]; return_type = Union [I32] };
   { name = "union_create_float"; parameters = [F64]; return_type = Union [F64] };
@@ -1925,7 +1949,7 @@ let runtime_externs = [
   { name = "__c_file_write"; parameters = [Str; Str]; return_type = I32 };
   { name = "__c_file_exists"; parameters = [Str]; return_type = Bool };
   { name = "__c_file_delete"; parameters = [Str]; return_type = Bool };
-  { name = "__c_build_llvm"; parameters = [Str; Str]; return_type = I32 };
+  { name = "__c_build_llvm"; parameters = [Str; Str; Bool]; return_type = I32 };
   { name = "__c_file_read_bytes"; parameters = [Str]; return_type = Bytes };
   { name = "__c_file_write_bytes"; parameters = [Str; Bytes]; return_type = I32 };
   { name = "__c_bytes_length"; parameters = [Bytes]; return_type = I32 };
@@ -2190,6 +2214,7 @@ let lower_program program =
       global_inits = ref [];
       globals = ref [];
       break_labels = ref [];
+      continue_labels = ref [];
     } in
     let top_level = List.filter (function
       | SDef _

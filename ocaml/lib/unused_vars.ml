@@ -89,6 +89,7 @@ and stmt_vars acc = function
   | SWhile (cond, body, _) ->
       List.fold_left stmt_vars (expr_vars acc cond) body
   | SBreak _ -> acc
+  | SContinue _ -> acc
   | SFor (_, iterable, body, _) ->
       List.fold_left stmt_vars (expr_vars acc iterable) body
   | SAssign (_, value, _) -> expr_vars acc value
@@ -124,6 +125,7 @@ let rec collect_let_bindings acc = function
       (match else_opt with Some b -> List.fold_left collect_let_bindings acc b | None -> acc)
   | SWhile (_, body, _) -> List.fold_left collect_let_bindings acc body
   | SBreak _ -> acc
+  | SContinue _ -> acc
   | SFor (_, _, body, _) -> List.fold_left collect_let_bindings acc body
   | _ -> acc
 

@@ -1,4 +1,5 @@
-from compiler_mir_model import MirProgram, MirRecord, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset, mir_append_record, mir_append_operand, MIR_RECORD_MODULE, MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK, MIR_OPERAND_TYPE, MIR_OP_CONST, MIR_OP_BINARY, MIR_OP_UNARY, MIR_OP_SELECT, MIR_OP_CAST, MIR_OP_LOCAL, MIR_OP_SEQUENCE, MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH
+from compiler_mir_model import MirProgram, MirRecord, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset, mir_append_record, mir_append_operand, MIR_RECORD_MODULE, MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK, MIR_OPERAND_TYPE, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_OP_CONST, MIR_OP_BINARY, MIR_OP_UNARY, MIR_OP_SELECT, MIR_OP_CAST, MIR_OP_LOCAL, MIR_OP_SEQUENCE, MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH
+from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_AND, IR_OPERATOR_OR
 
 def mir_opt_max_result(program: MirProgram) -> int:
     let maximum = -1
@@ -54,57 +55,57 @@ def mir_opt_read_constant(program: MirProgram, record_offset: int, operand_index
     return false
 
 def mir_opt_binary(operator: int, left: int, right: int, result_type: int, result: list[int]) -> bool:
-    if operator == 5:
+    if operator == IR_OPERATOR_ADD:
         result[0] = left + right
         return true
-    if operator == 6:
+    if operator == IR_OPERATOR_SUB:
         result[0] = left - right
         return true
-    if operator == 7:
+    if operator == IR_OPERATOR_MUL:
         result[0] = left * right
         return true
-    if operator == 8 and right != 0:
+    if operator == IR_OPERATOR_DIV and right != 0:
         result[0] = left / right
         return true
-    if operator == 36 and right != 0:
+    if operator == IR_OPERATOR_MOD and right != 0:
         result[0] = left % right
         return true
-    if operator == 18:
+    if operator == IR_OPERATOR_LT:
         result[0] = 0
         if left < right:
             result[0] = 1
         return true
-    if operator == 33:
+    if operator == IR_OPERATOR_GT:
         result[0] = 0
         if left > right:
             result[0] = 1
         return true
-    if operator == 31:
+    if operator == IR_OPERATOR_LE:
         result[0] = 0
         if left <= right:
             result[0] = 1
         return true
-    if operator == 32:
+    if operator == IR_OPERATOR_GE:
         result[0] = 0
         if left >= right:
             result[0] = 1
         return true
-    if operator == 29:
+    if operator == IR_OPERATOR_EQ:
         result[0] = 0
         if left == right:
             result[0] = 1
         return true
-    if operator == 30:
+    if operator == IR_OPERATOR_NE:
         result[0] = 0
         if left != right:
             result[0] = 1
         return true
-    if operator == 34:
+    if operator == IR_OPERATOR_AND:
         result[0] = 0
         if left != 0 and right != 0:
             result[0] = 1
         return true
-    if operator == 35:
+    if operator == IR_OPERATOR_OR:
         result[0] = 0
         if left != 0 or right != 0:
             result[0] = 1
@@ -183,7 +184,7 @@ def mir_opt_constant_fold(program: MirProgram) -> MirProgram:
             constant_keys = []
             constant_types = []
             constant_results = []
-        if record_kind == MIR_RECORD_INSTRUCTION and opcode == MIR_OP_CONST:
+        if record_kind == MIR_RECORD_INSTRUCTION and opcode == MIR_OP_CONST and (type_tag == MIR_TYPE_BOOL or type_tag == MIR_TYPE_I32):
             let immediate: list[int] = [0]
             if mir_opt_read_constant(program, source_offset, 0, constant_flags, constant_values, immediate):
                 folded = true
@@ -378,4 +379,6 @@ def mir_opt_remove_unreachable(program: MirProgram) -> MirProgram:
     return MirProgram{records: records, values: values}
 
 def mir_optimize_program(program: MirProgram) -> MirProgram:
-    return program
+    let records = program.records
+    let values = program.values
+    return MirProgram{records: records, values: values}

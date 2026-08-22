@@ -279,7 +279,7 @@ let c_runtime_functions_table =
     (* 进程参数 *)
     ("__c_process_arg_count", TyFunc ([], TyInt));
     ("__c_process_arg", TyFunc ([TyInt], TyStr));
-    ("__c_build_llvm", TyFunc ([TyStr; TyStr], TyInt));
+    ("__c_build_llvm", TyFunc ([TyStr; TyStr; TyBool], TyInt));
     (* 文件 I/O *)
     ("__c_file_read", TyFunc ([TyStr], TyStr));
     ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
@@ -300,6 +300,7 @@ let c_runtime_functions_table =
     ("__c_utf8_byte_offset", TyFunc ([TyStr; TyInt], TyInt));
     ("__c_range_equal", TyFunc ([TyStr; TyInt; TyInt; TyInt; TyInt], TyBool));
     ("__c_fnv_hash_range", TyFunc ([TyStr; TyInt; TyInt], TyInt));
+    ("__c_range_equals_cstr", TyFunc ([TyStr; TyInt; TyInt; TyStr], TyBool));
 
     (* bytes 操作 *)
     ("__c_bytes_length", TyFunc ([TyBytes], TyInt));

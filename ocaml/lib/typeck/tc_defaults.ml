@@ -98,6 +98,7 @@ and fill_default_params_stmt env stmt =
   | SWhile (cond, body, pos) ->
       SWhile (fill_default_params env cond, List.map (fill_default_params_stmt env) body, pos)
   | SBreak pos -> SBreak pos
+  | SContinue pos -> SContinue pos
   | SFor (pat, iter, body, pos) ->
       SFor (pat, fill_default_params env iter, List.map (fill_default_params_stmt env) body, pos)
   | SImpl (impl_block, pos) ->

@@ -81,6 +81,8 @@ const VALUE_TYPE_GLOBAL_DICT_STRING_INT: int = 37
 const VALUE_TYPE_GLOBAL_DICT_STRING_STRING: int = 38
 const VALUE_TYPE_UNKNOWN: int = 39
 const VALUE_TYPE_LIST_STRING: int = 40
+const VALUE_TYPE_LIST_INT: int = 41
+const VALUE_TYPE_STRUCT: int = 42
 
 
 const VALUE_TYPE_IMMEDIATE: int = 0
@@ -448,35 +450,49 @@ def append_token(kinds: list[int], starts: list[int], ends: list[int], kind: int
     append(starts, start)
     append(ends, end)
 
-let KEYWORD_DICTIONARY = {
-    "let": TOKEN_LET,
-    "print": TOKEN_PRINT,
-    "eprint": TOKEN_EPRINT,
-    "def": TOKEN_DEF,
-    "return": TOKEN_RETURN,
-    "if": TOKEN_IF,
-    "elif": TOKEN_ELIF,
-    "else": TOKEN_ELSE,
-    "while": TOKEN_WHILE,
-    "break": TOKEN_BREAK,
-    "for": TOKEN_FOR,
-    "switch": TOKEN_SWITCH,
-    "case": TOKEN_CASE,
-    "default": TOKEN_DEFAULT,
-    "const": TOKEN_CONST,
-    "and": TOKEN_AND,
-    "or": TOKEN_OR,
-    "not": TOKEN_NOT,
-    "true": TOKEN_TRUE,
-    "false": TOKEN_FALSE,
-}
-
 def keyword_kind(source: str, start: int, end: int) -> int:
     let word = source[start:end]
-    let kind = KEYWORD_DICTIONARY[word]
-    if kind == TOKEN_EOF:
-        return TOKEN_IDENTIFIER
-    return kind
+    if word == "let":
+        return TOKEN_LET
+    if word == "print":
+        return TOKEN_PRINT
+    if word == "eprint":
+        return TOKEN_EPRINT
+    if word == "def":
+        return TOKEN_DEF
+    if word == "return":
+        return TOKEN_RETURN
+    if word == "if":
+        return TOKEN_IF
+    if word == "elif":
+        return TOKEN_ELIF
+    if word == "else":
+        return TOKEN_ELSE
+    if word == "while":
+        return TOKEN_WHILE
+    if word == "break":
+        return TOKEN_BREAK
+    if word == "for":
+        return TOKEN_FOR
+    if word == "switch":
+        return TOKEN_SWITCH
+    if word == "case":
+        return TOKEN_CASE
+    if word == "default":
+        return TOKEN_DEFAULT
+    if word == "const":
+        return TOKEN_CONST
+    if word == "and":
+        return TOKEN_AND
+    if word == "or":
+        return TOKEN_OR
+    if word == "not":
+        return TOKEN_NOT
+    if word == "true":
+        return TOKEN_TRUE
+    if word == "false":
+        return TOKEN_FALSE
+    return TOKEN_IDENTIFIER
 
 def lex(source: str, kinds: list[int], starts: list[int], ends: list[int]) -> int:
     let index = 0
@@ -492,7 +508,10 @@ def lex(source: str, kinds: list[int], starts: list[int], ends: list[int]) -> in
             index = index + 1
             handled = true
         if not handled and code == ASCII_HASH:
+            let comment_at_line_start = index == 0 or source[index - 1] == '\n'
             while index < source_length and source[index] != '\n':
+                index = index + 1
+            if comment_at_line_start and index < source_length:
                 index = index + 1
             handled = true
         if not handled and is_digit(code):
@@ -749,12 +768,110 @@ def enclosing_method_prefix(source: str, kinds: list[int], starts: list[int], en
         scan_index = scan_index - 1
     return ""
 
+def enclosing_self_struct_declaration(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> int:
+    let function_token_index = 0
+    let function_token_found = false
+    while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
+        if token_start(starts, function_token_index) == function_name_start:
+            function_token_found = true
+        function_token_index = function_token_index + 1
+    let scan_index = function_token_index - 1
+    while scan_index >= 0:
+        if line_indent(source, token_start(starts, scan_index)) == 0:
+            let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
+            if declaration_name == "struct" and token_kind(kinds, scan_index + 1) == TOKEN_IDENTIFIER:
+                return find_struct_declaration_index(source, token_start(starts, scan_index + 1), token_end(ends, scan_index + 1))
+            if declaration_name == "impl":
+                let interface_index = scan_index + 1
+                let target_keyword_index = interface_index + 1
+                while token_kind(kinds, target_keyword_index) != TOKEN_COLON and token_kind(kinds, target_keyword_index) != TOKEN_EOF:
+                    let target_keyword = source[token_start(starts, target_keyword_index):token_end(ends, target_keyword_index)]
+                    if target_keyword == "for" and token_kind(kinds, target_keyword_index + 1) == TOKEN_IDENTIFIER:
+                        return find_struct_declaration_index(source, token_start(starts, target_keyword_index + 1), token_end(ends, target_keyword_index + 1))
+                    target_keyword_index = target_keyword_index + 1
+                return -1
+            if declaration_name == "interface" or declaration_name == "def":
+                return -1
+        scan_index = scan_index - 1
+    return -1
+
 def function_symbol_name(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int, function_name_end: int) -> str:
     let method_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_name_start)
     if text_length(method_prefix) == 0:
         return source[function_name_start:function_name_end]
     let function_name = source[function_name_start:function_name_end]
     return string_concat(method_prefix, function_name)
+
+# 反查函数名所在 impl 行的接口泛型类型码；不在 impl 区段内返回 -1
+def enclosing_impl_interface_type(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> int:
+    let function_token_index = 0
+    let function_token_found = false
+    while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
+        if token_start(starts, function_token_index) == function_name_start:
+            function_token_found = true
+        function_token_index = function_token_index + 1
+    let scan_index = function_token_index - 1
+    while scan_index >= 0:
+        if line_indent(source, token_start(starts, scan_index)) == 0:
+            let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
+            if declaration_name == "impl":
+                let inner_start = -1
+                let inner_end = -1
+                let token_index = scan_index + 1
+                let bracket_depth = 0
+                let interface_done = false
+                while token_kind(kinds, token_index) != TOKEN_COLON and token_kind(kinds, token_index) != TOKEN_EOF and not interface_done:
+                    let token_text = source[token_start(starts, token_index):token_end(ends, token_index)]
+                    if token_text == "for":
+                        if inner_start >= 0 and inner_end > inner_start:
+                            interface_done = true
+                        else:
+                            return -1
+                    elif token_kind(kinds, token_index) == TOKEN_OPEN_BRACKET:
+                        bracket_depth = bracket_depth + 1
+                    elif token_kind(kinds, token_index) == TOKEN_CLOSE_BRACKET and bracket_depth > 0:
+                        if inner_start >= 0:
+                            inner_end = token_start(starts, token_index)
+                            bracket_depth = 0
+                    elif bracket_depth > 0 and inner_start < 0:
+                        inner_start = token_start(starts, token_index)
+                    token_index = token_index + 1
+                if inner_start < 0 or inner_end <= inner_start:
+                    return -1
+                let inner_text = source[inner_start:inner_end]
+                if inner_text == "str":
+                    return 0
+                if inner_text == "int":
+                    return 1
+                if inner_text == "byte":
+                    return 2
+                if inner_text == "bool":
+                    return 3
+                if inner_text == "float":
+                    return 4
+                if inner_text == "bytes":
+                    return 5
+                return -1
+            if declaration_name == "struct" or declaration_name == "interface" or declaration_name == "def":
+                return -1
+        scan_index = scan_index - 1
+    return -1
+
+# 收集所有 impl 区段内 append 方法的分发表：结构体声明下标、接口泛型类型码、函数索引
+def collect_impl_functions(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], function_ends: list[int], impl_func_indexes: list[int], impl_func_decls: list[int], impl_func_interface_types: list[int]):
+    let function_index = 0
+    while function_index < len(function_starts):
+        let function_name_start = function_starts[function_index]
+        let function_name_end = function_ends[function_index]
+        if source[function_name_start:function_name_end] == "append":
+            let declaration_index = enclosing_self_struct_declaration(source, kinds, starts, ends, function_name_start)
+            if declaration_index >= 0:
+                let interface_type = enclosing_impl_interface_type(source, kinds, starts, ends, function_name_start)
+                if interface_type >= 0:
+                    append(impl_func_indexes, function_index)
+                    append(impl_func_decls, declaration_index)
+                    append(impl_func_interface_types, interface_type)
+        function_index = function_index + 1
 
 def function_has_body(source: str, kinds: list[int], starts: list[int], body_start: int, body_end: int, function_name_start: int) -> bool:
     let definition_indent = line_indent(source, function_name_start)
@@ -996,6 +1113,101 @@ def collect_declared_types(source: str, kinds: list[int], starts: list[int], end
                     append(INTERFACE_DECLARATION_ENDS, token_end(ends, declaration_name_index))
         token_index = token_index + 1
 
+const STRUCT_FIELD_INT: int = 1
+const STRUCT_FIELD_BOOL: int = 2
+const STRUCT_FIELD_PTR: int = 3
+const STRUCT_FIELD_FLOAT: int = 4
+const STRUCT_FIELD_STR: int = 5
+const STRUCT_FIELD_LIST_INT: int = 6
+const STRUCT_FIELD_LIST_STR: int = 7
+
+let STRUCT_FIELD_DECLARATIONS = []
+let STRUCT_FIELD_NAME_STARTS = []
+let STRUCT_FIELD_NAME_ENDS = []
+let STRUCT_FIELD_SLOTS = []
+let STRUCT_FIELD_KINDS = []
+let STRUCT_FIELD_TYPE_DECLS = []
+
+def struct_field_kind_from_type(source: str, kinds: list[int], starts: list[int], ends: list[int], type_index: int) -> int:
+    if token_kind(kinds, type_index) != TOKEN_IDENTIFIER:
+        return STRUCT_FIELD_PTR
+    let type_start = token_start(starts, type_index)
+    let type_end = token_end(ends, type_index)
+    if source_equals(source, type_start, type_end, "str"):
+        return STRUCT_FIELD_STR
+    if source_equals(source, type_start, type_end, "list") and token_kind(kinds, type_index + 1) == TOKEN_OPEN_BRACKET:
+        let element_index = type_index + 2
+        if source_equals(source, token_start(starts, element_index), token_end(ends, element_index), "str"):
+            return STRUCT_FIELD_LIST_STR
+        return STRUCT_FIELD_LIST_INT
+    if source_equals(source, type_start, type_end, "int") or source_equals(source, type_start, type_end, "rune") or source_equals(source, type_start, type_end, "byte"):
+        return STRUCT_FIELD_INT
+    if source_equals(source, type_start, type_end, "bool"):
+        return STRUCT_FIELD_BOOL
+    if source_equals(source, type_start, type_end, "float"):
+        return STRUCT_FIELD_FLOAT
+    return STRUCT_FIELD_PTR
+
+def struct_field_slot_width(field_kind: int) -> int:
+    if field_kind == STRUCT_FIELD_PTR or field_kind == STRUCT_FIELD_FLOAT or field_kind == STRUCT_FIELD_STR or field_kind == STRUCT_FIELD_LIST_INT or field_kind == STRUCT_FIELD_LIST_STR:
+        return 2
+    return 1
+
+def struct_field_type_declaration(source: str, starts: list[int], ends: list[int], type_index: int) -> int:
+    let type_start = token_start(starts, type_index)
+    let type_end = token_end(ends, type_index)
+    while type_end > type_start and source[type_end - 1] == '?':
+        type_end = type_end - 1
+    if type_end <= type_start:
+        return -1
+    return find_struct_declaration_index(source, type_start, type_end)
+
+def collect_struct_fields(source: str, kinds: list[int], starts: list[int], ends: list[int]):
+    STRUCT_FIELD_DECLARATIONS = []
+    STRUCT_FIELD_NAME_STARTS = []
+    STRUCT_FIELD_NAME_ENDS = []
+    STRUCT_FIELD_SLOTS = []
+    STRUCT_FIELD_KINDS = []
+    STRUCT_FIELD_TYPE_DECLS = []
+    let declaration_index = 0
+    while declaration_index < len(STRUCT_DECLARATION_TOKENS):
+        let cursor = STRUCT_DECLARATION_TOKENS[declaration_index] + 1
+        while token_kind(kinds, cursor) != TOKEN_NEWLINE and token_kind(kinds, cursor) != TOKEN_EOF:
+            cursor = cursor + 1
+        cursor = cursor + 1
+        let slot_index = 0
+        let scanning = true
+        while scanning and token_kind(kinds, cursor) != TOKEN_EOF:
+            while token_kind(kinds, cursor) == TOKEN_NEWLINE:
+                cursor = cursor + 1
+            if token_kind(kinds, cursor) == TOKEN_EOF:
+                scanning = false
+            elif line_indent(source, token_start(starts, cursor)) == 0:
+                scanning = false
+            elif token_kind(kinds, cursor) == TOKEN_IDENTIFIER and token_kind(kinds, cursor + 1) == TOKEN_COLON:
+                let field_kind = struct_field_kind_from_type(source, kinds, starts, ends, cursor + 2)
+                append(STRUCT_FIELD_DECLARATIONS, declaration_index)
+                append(STRUCT_FIELD_NAME_STARTS, token_start(starts, cursor))
+                append(STRUCT_FIELD_NAME_ENDS, token_end(ends, cursor))
+                append(STRUCT_FIELD_SLOTS, slot_index)
+                append(STRUCT_FIELD_KINDS, field_kind)
+                append(STRUCT_FIELD_TYPE_DECLS, struct_field_type_declaration(source, starts, ends, cursor + 2))
+                slot_index = slot_index + struct_field_slot_width(field_kind)
+                while token_kind(kinds, cursor) != TOKEN_NEWLINE and token_kind(kinds, cursor) != TOKEN_EOF:
+                    cursor = cursor + 1
+            else:
+                while token_kind(kinds, cursor) != TOKEN_NEWLINE and token_kind(kinds, cursor) != TOKEN_EOF:
+                    cursor = cursor + 1
+        declaration_index = declaration_index + 1
+
+def find_struct_declaration_index(source: str, name_start: int, name_end: int) -> int:
+    let declaration_index = 0
+    while declaration_index < len(STRUCT_DECLARATION_STARTS):
+        if source_ranges_equal(source, STRUCT_DECLARATION_STARTS[declaration_index], STRUCT_DECLARATION_ENDS[declaration_index], name_start, name_end):
+            return declaration_index
+        declaration_index = declaration_index + 1
+    return -1
+
 def source_type_is_struct(source: str, kinds: list[int], starts: list[int], ends: list[int], type_start: int, type_end: int) -> bool:
     let declaration_index = 0
     while declaration_index < len(STRUCT_DECLARATION_STARTS):
@@ -1012,21 +1224,23 @@ def source_type_is_interface(source: str, kinds: list[int], starts: list[int], e
         declaration_index = declaration_index + 1
     return false
 
-let TYPE_DICTIONARY = {
-    "str": VALUE_TYPE_STRING,
-    "list": VALUE_TYPE_LIST,
-    "dict": VALUE_TYPE_DICT_INT_INT,
-    "bytes": VALUE_TYPE_BYTES,
-    "bool": VALUE_TYPE_BOOL,
-    "float": VALUE_TYPE_FLOAT,
-    "int": VALUE_TYPE_INT,
-    "rune": VALUE_TYPE_INT,
-    "byte": VALUE_TYPE_INT,
-}
-
 def parameter_type_from_range(source: str, kinds: list[int], starts: list[int], ends: list[int], type_start: int, type_end: int) -> int:
     let type_name = source[type_start:type_end]
-    let found_type = TYPE_DICTIONARY[type_name]
+    let found_type = 0
+    if type_name == "str":
+        found_type = VALUE_TYPE_STRING
+    elif type_name == "list":
+        found_type = VALUE_TYPE_LIST
+    elif type_name == "dict":
+        found_type = VALUE_TYPE_DICT_INT_INT
+    elif type_name == "bytes":
+        found_type = VALUE_TYPE_BYTES
+    elif type_name == "bool":
+        found_type = VALUE_TYPE_BOOL
+    elif type_name == "float":
+        found_type = VALUE_TYPE_FLOAT
+    elif type_name == "int" or type_name == "rune" or type_name == "byte":
+        found_type = VALUE_TYPE_INT
     if found_type == 0:
         if source_type_is_interface(source, kinds, starts, ends, type_start, type_end):
             return VALUE_TYPE_INTERFACE
@@ -1042,17 +1256,18 @@ def get_parameter_type(source: str, kinds: list[int], starts: list[int], ends: l
         let element_index = index + 2
         if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source[token_start(starts, element_index):token_end(ends, element_index)] == "str":
             return VALUE_TYPE_LIST_STRING
+        return VALUE_TYPE_LIST_INT
     if parameter_type != 0:
         return parameter_type
     if source_type_is_struct(source, kinds, starts, ends, token_start(starts, index), token_end(ends, index)):
-        return VALUE_TYPE_LIST
+        return VALUE_TYPE_STRUCT
     if source_type_is_interface(source, kinds, starts, ends, token_start(starts, index), token_end(ends, index)):
         return VALUE_TYPE_INTERFACE
     return 0
 
 def parameter_type_from_declaration(source: str, kinds: list[int], starts: list[int], ends: list[int], name_start: int, name_end: int) -> int:
     if source_equals(source, name_start, name_end, "self"):
-        return VALUE_TYPE_LIST
+        return VALUE_TYPE_STRUCT
     let source_length = text_length(source)
     let type_start = name_end
     while type_start < source_length and source[type_start] != ':':
@@ -1083,6 +1298,11 @@ def get_return_type(source: str, kinds: list[int], starts: list[int], ends: list
     if source_equals(source, type_start, type_end, "float"):
         return 10
     if source_equals(source, type_start, type_end, "list"):
+        if token_kind(kinds, index + 1) == TOKEN_OPEN_BRACKET:
+            let element_index = index + 2
+            if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source[token_start(starts, element_index):token_end(ends, element_index)] == "str":
+                return VALUE_TYPE_LIST_STRING
+            return VALUE_TYPE_LIST_INT
         return 3
     if source_equals(source, type_start, type_end, "dict"):
         return VALUE_TYPE_DICT_INT_INT
@@ -1095,7 +1315,7 @@ def get_return_type(source: str, kinds: list[int], starts: list[int], ends: list
     if source_equals(source, type_start, type_end, "int") or source_equals(source, type_start, type_end, "rune") or source_equals(source, type_start, type_end, "byte"):
         return 1
     if source_type_is_struct(source, kinds, starts, ends, type_start, type_end):
-        return VALUE_TYPE_LIST
+        return VALUE_TYPE_STRUCT
     if source_type_is_interface(source, kinds, starts, ends, type_start, type_end):
         return VALUE_TYPE_INTERFACE
     return 1
@@ -1141,7 +1361,7 @@ def function_parameter_type(source: str, kinds: list[int], starts: list[int], en
         return 0
     return parameter_type_from_declaration(source, kinds, starts, ends, parameter_starts[parameter_index], parameter_ends[parameter_index])
 
-def collect_functions(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], function_ends: list[int], function_bodies: list[int], function_body_ends: list[int], function_param_offsets: list[int], function_param_counts: list[int], parameter_starts: list[int], parameter_ends: list[int], parameter_types: list[int], function_return_types: list[int], parameter_default_indexes: list[int]) -> int:
+def collect_functions(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], function_ends: list[int], function_bodies: list[int], function_body_ends: list[int], function_param_offsets: list[int], function_param_counts: list[int], parameter_starts: list[int], parameter_ends: list[int], parameter_types: list[int], parameter_struct_decls: list[int], function_return_types: list[int], function_return_struct_decls: list[int], parameter_default_indexes: list[int]) -> int:
     let current_index = 0
     while token_kind(kinds, current_index) != TOKEN_EOF:
         let is_function_definition = false
@@ -1157,16 +1377,27 @@ def collect_functions(source: str, kinds: list[int], starts: list[int], ends: li
             let parameter_count = 0
             while token_kind(kinds, parameter_index) != TOKEN_CLOSE_PAREN and token_kind(kinds, parameter_index) != TOKEN_EOF:
                 let is_parameter = false
+                let parameter_name = ""
                 if token_kind(kinds, parameter_index) == TOKEN_IDENTIFIER:
+                    parameter_name = source[token_start(starts, parameter_index):token_end(ends, parameter_index)]
+                if token_kind(kinds, parameter_index) == TOKEN_IDENTIFIER and token_kind(kinds, parameter_index + 1) == TOKEN_COLON:
+                    is_parameter = true
+                if parameter_name == "self" and line_indent(source, token_start(starts, current_index)) > 0:
                     is_parameter = true
                 if is_parameter:
                     append(parameter_starts, token_start(starts, parameter_index))
                     append(parameter_ends, token_end(ends, parameter_index))
                     let parameter_type_index = parameter_index + 2
                     let collected_parameter_type = get_parameter_type(source, kinds, starts, ends, parameter_type_index)
-                    if source[token_start(starts, parameter_index):token_end(ends, parameter_index)] == "self":
-                        collected_parameter_type = VALUE_TYPE_LIST
+                    let collected_struct_declaration = -1
+                    if parameter_name == "self":
+                        collected_parameter_type = VALUE_TYPE_STRUCT
+                        collected_struct_declaration = enclosing_self_struct_declaration(source, kinds, starts, ends, token_start(starts, name_index))
                     append(parameter_types, collected_parameter_type)
+                    if collected_struct_declaration >= 0:
+                        append(parameter_struct_decls, collected_struct_declaration)
+                    else:
+                        append(parameter_struct_decls, struct_field_type_declaration(source, starts, ends, parameter_type_index))
                     let default_index = -1
                     let default_scan_index = parameter_index + 1
                     let default_depth = 0
@@ -1192,12 +1423,15 @@ def collect_functions(source: str, kinds: list[int], starts: list[int], ends: li
             append(function_param_counts, parameter_count)
             let header_index = parameter_index
             let function_return_type = 1
+            let function_return_struct_decl = -1
             let return_type_scan_index = header_index + 1
             while token_kind(kinds, return_type_scan_index) != TOKEN_NEWLINE and token_kind(kinds, return_type_scan_index) != TOKEN_EOF:
                 if token_kind(kinds, return_type_scan_index) == TOKEN_ARROW:
                     function_return_type = get_return_type(source, kinds, starts, ends, return_type_scan_index + 1)
+                    function_return_struct_decl = struct_field_type_declaration(source, starts, ends, return_type_scan_index + 1)
                 return_type_scan_index = return_type_scan_index + 1
             append(function_return_types, function_return_type)
+            append(function_return_struct_decls, function_return_struct_decl)
             while token_kind(kinds, header_index) != TOKEN_NEWLINE and token_kind(kinds, header_index) != TOKEN_EOF:
                 header_index = header_index + 1
             let body_index = header_index + 1
@@ -1228,7 +1462,7 @@ def find_constant_index(source: str, constant_starts: list[int], constant_ends: 
         constant_index = constant_index + 1
     return -1
 
-def collect_constants(source: str, kinds: list[int], starts: list[int], ends: list[int], constant_starts: list[int], constant_ends: list[int], constant_values: list[int], constant_types: list[int]) -> int:
+def collect_constants(source: str, kinds: list[int], starts: list[int], ends: list[int], constant_starts: list[int], constant_ends: list[int], constant_values: list[int], constant_types: list[int], constant_literal_starts: list[int], constant_literal_ends: list[int]) -> int:
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
         if token_kind(kinds, token_index) == TOKEN_CONST and token_kind(kinds, token_index + 1) == TOKEN_IDENTIFIER:
@@ -1239,21 +1473,34 @@ def collect_constants(source: str, kinds: list[int], starts: list[int], ends: li
             let has_constant_value = false
             let constant_value = 0
             let constant_type = 0
+            let literal_start = 0
+            let literal_end = 0
             if token_kind(kinds, value_index) == TOKEN_INTEGER:
                 has_constant_value = true
                 constant_value = parse_integer(source, token_start(starts, value_index), token_end(ends, value_index))
                 constant_type = 1
+                literal_start = token_start(starts, value_index)
+                literal_end = token_end(ends, value_index)
+            if token_kind(kinds, value_index) == TOKEN_STRING:
+                has_constant_value = true
+                constant_type = 2
+                literal_start = token_start(starts, value_index)
+                literal_end = token_end(ends, value_index)
             if token_kind(kinds, value_index) == TOKEN_IDENTIFIER:
                 let referenced_index = find_constant_index(source, constant_starts, constant_ends, token_start(starts, value_index), token_end(ends, value_index))
                 if referenced_index >= 0:
                     has_constant_value = true
                     constant_value = constant_values[referenced_index]
                     constant_type = constant_types[referenced_index]
+                    literal_start = constant_literal_starts[referenced_index]
+                    literal_end = constant_literal_ends[referenced_index]
             if has_constant_value:
                 append(constant_starts, token_start(starts, name_index))
                 append(constant_ends, token_end(ends, name_index))
                 append(constant_values, constant_value)
                 append(constant_types, constant_type)
+                append(constant_literal_starts, literal_start)
+                append(constant_literal_ends, literal_end)
                 token_index = value_index
         token_index = token_index + 1
     return len(constant_starts)
@@ -1355,6 +1602,8 @@ def collect_global_lets(source: str, kinds: list[int], starts: list[int], ends: 
                                     value_type = VALUE_TYPE_DICT_STRING_STRING
                                 else:
                                     value_type = VALUE_TYPE_DICT_STRING_INT
+                    if token_kind(kinds, expression_index) == TOKEN_INTEGER:
+                        value_type = VALUE_TYPE_INT
                     if token_kind(kinds, expression_index) == TOKEN_STRING:
                         value_type = VALUE_TYPE_STRING
                     if token_kind(kinds, expression_index) == TOKEN_FLOAT:

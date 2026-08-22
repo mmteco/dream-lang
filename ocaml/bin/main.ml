@@ -125,7 +125,7 @@ let compile_ir_to_exe ?(optimized=true) output_exe llvm_ir =
   write_file temporary_ll llvm_ir;
   try
     let result = compile_to_exe_at ~optimized temporary_ll output_exe in
-    Sys.remove temporary_ll;
+    if Sys.getenv_opt "DREAM_KEEP_LL" = None then Sys.remove temporary_ll;
     result
   with exn ->
     remove_temporary_file temporary_ll;

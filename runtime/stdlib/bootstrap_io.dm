@@ -13,8 +13,8 @@ def process_arg_count() -> int:
 def process_arg(index: int) -> str:
     return __c_process_arg(index)
 
-def build_llvm(llvm_path: str, output_path: str) -> bool:
-    let status = __c_build_llvm(llvm_path, output_path)
+def build_llvm(llvm_path: str, output_path: str, optimized: bool = true) -> bool:
+    let status = __c_build_llvm(llvm_path, output_path, optimized)
     if status == 0:
         return false
     return true

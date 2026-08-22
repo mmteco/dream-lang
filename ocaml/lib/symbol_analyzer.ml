@@ -408,6 +408,7 @@ let rec analyze_stmt ctx stmt : symbol_def list =
       then_defs @ elif_defs @ else_defs
 
   | SBreak _ -> []
+  | SContinue _ -> []
   | SWhile (cond, body, _) ->
       analyze_expr ctx cond;
       enter_scope ctx;

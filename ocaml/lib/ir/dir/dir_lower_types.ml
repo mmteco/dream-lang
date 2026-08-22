@@ -49,6 +49,7 @@ type context = {
   global_inits: (string * Ast.expr) list ref;
   globals: (string * Dir.ty) list ref;
   break_labels: (string * (string * Dir.ty) list) list ref;
+  continue_labels: (string * (string * Dir.ty) list * int option) list ref;
 }
 
 exception Lower_error of string
@@ -566,7 +567,7 @@ and free_statements bound statements =
           current_bound def_info.def_params in
         let body_free = free_statements param_names def_info.def_body in
         (StringSet.add def_info.def_name current_bound, StringSet.union acc_free body_free)
-    | SBreak _ | SImport _ | SFromImport _ | SImpl _ | SStruct _ | SInterface _ | SEnum _ ->
+    | SBreak _ | SContinue _ | SImport _ | SFromImport _ | SImpl _ | SStruct _ | SInterface _ | SEnum _ ->
         (current_bound, acc_free)
     | SFieldAssign (obj, _, expr, _) ->
         let obj_free = free_expression current_bound obj in
