@@ -295,7 +295,9 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
         let llvm_output = TextBuffer{data: []}
         let is_lir_valid = mir_validate_program(optimized_mir_program) and lir_validate_program(lir_program)
         phase_time = compiler_debug_checkpoint("lir-validate", phase_time)
-        if not is_lir_valid or not llvm_lower_lir(lir_program, llvm_output):
+        let is_llvm_valid = llvm_lower_lir(lir_program, llvm_output)
+        phase_time = compiler_debug_checkpoint("llvm-lower", phase_time)
+        if not is_lir_valid or not is_llvm_valid:
             append(llvm_output, "; LLVM lowering failed\n")
         write_text_buffer(output_path, llvm_output)
         return

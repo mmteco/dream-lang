@@ -450,6 +450,19 @@ def lir_value_type_in_function(records: list[int], function_index: int, value: i
         record_id = record_id + 1
     return LIR_TYPE_DYNAMIC
 
+def lir_value_exists(records: list[int], function_index: int, value: int) -> bool:
+    if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
+        let value_index = lir_value_cache_index(function_index, value)
+        return value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_type_cache[value_index] != 0
+    let record_id = 0
+    while record_id < lir_record_count(records):
+        let offset = lir_record_offset(record_id)
+        if records[offset + 1] == function_index and records[offset + 5] == value:
+            if records[offset] == LIR_RECORD_PARAMETER or records[offset] == LIR_RECORD_INSTRUCTION:
+                return true
+        record_id = record_id + 1
+    return false
+
 def lir_is_block_parameter_value(records: list[int], function_index: int, value: int) -> bool:
     if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
         let value_index = lir_value_cache_index(function_index, value)
