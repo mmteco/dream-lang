@@ -258,8 +258,8 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
         write_text_buffer(output_path, hir_output)
         return
     phase_time = compiler_debug_checkpoint("hir-validate", phase_time)
-    let hir_diagnostic_context = HirDiagnosticContext{ast: ast_compilation.nodes, source: source, source_path: source_path, file_paths: file_paths.to_str(), file_starts: file_starts, file_ends: file_ends, function_name_starts: function_starts, function_name_ends: function_ends}
-    hir_report_unreachable(hir_diagnostic_context, ast_compilation.function_nodes_start, ast_compilation.function_nodes_end)
+    let hir_diagnostic_context = HirDiagnosticContext{source: source, source_path: source_path, file_paths: file_paths.to_str(), file_starts: file_starts, file_ends: file_ends, function_name_starts: function_starts, function_name_ends: function_ends}
+    hir_report_unreachable(hir_program, hir_diagnostic_context)
     if output_mode == COMPILE_OUTPUT_HIR:
         let hir_output = TextBuffer{data: []}
         if not hir_model_dump_program(hir_program, hir_output):

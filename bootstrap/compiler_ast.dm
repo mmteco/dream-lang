@@ -375,6 +375,8 @@ def ast_stmt_next_node(ast: list[int], node: int) -> int:
             return ast_node_arg(ast, node, 2)
         case AST_CASE:
             return ast_node_arg(ast, node, 2)
+        case AST_M_CASE:
+            return ast_node_arg(ast, node, 3)
         case AST_STMT_EXPR:
             return ast_node_arg(ast, node, 1)
         default:

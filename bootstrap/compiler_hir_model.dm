@@ -238,7 +238,7 @@ def hir_lower_ast_block(ast: list[int], start: int, end: int, records: list[int]
     let node = start
     while node < end:
         hir_append_node_value(payload, hir_lower_ast_node(ast, node, records, values, cache))
-        let next_node = node + ast_node_size(ast_node_kind(ast, node))
+        let next_node = ast_stmt_next_node(ast, node)
         if next_node <= node:
             return -1
         node = next_node
@@ -410,6 +410,29 @@ def hir_validate_value(values: list[int], value_id: int, record_count: int) -> b
         return value >= 0 and value < record_count
     return false
 
+def hir_validate_record_shape(record_kind: int, opcode: int, payload_count: int) -> bool:
+    if record_kind != HIR_RECORD_STATEMENT:
+        return true
+    if opcode == HIR_OP_LET:
+        return payload_count == 3 or payload_count == 6
+    if opcode == HIR_OP_ASSIGN:
+        return payload_count == 5
+    if opcode == HIR_OP_RETURN:
+        return payload_count == 2
+    if opcode == HIR_OP_BREAK:
+        return payload_count == 0
+    if opcode == HIR_OP_SEQUENCE:
+        return payload_count == 1
+    if opcode == HIR_OP_IF:
+        return payload_count == 2 or payload_count == 4
+    if opcode == HIR_OP_WHILE:
+        return payload_count == 2
+    if opcode == HIR_OP_FOR:
+        return payload_count == 4
+    if opcode == HIR_OP_MATCH:
+        return payload_count == 2 or payload_count == 3
+    return false
+
 def hir_validate_model_program(program: HirProgram) -> bool:
     let records = program.records
     let values = program.values
@@ -435,17 +458,27 @@ def hir_validate_model_program(program: HirProgram) -> bool:
             return false
         if opcode < HIR_OP_NONE or opcode > HIR_OP_MAX or type_tag < HIR_TYPE_UNKNOWN or type_tag > HIR_TYPE_MAX:
             return false
+        if not hir_validate_record_shape(kind, opcode, payload_count):
+            return false
         if source_start < 0 or source_end < source_start or name_start < 0 or name_end < name_start:
             return false
         if payload_start < 0 or payload_count < 0 or payload_start > value_count or payload_count > value_count - payload_start:
             return false
         if auxiliary_start < 0 or auxiliary_count < 0 or auxiliary_start > value_count or auxiliary_count > value_count - auxiliary_start:
             return false
+        if kind == HIR_RECORD_FUNCTION:
+            if payload_count != 1:
+                return false
+            let function_value_offset = hir_value_offset(payload_start)
+            if values[function_value_offset] != HIR_VALUE_BLOCK:
+                return false
         let value_id = payload_start
         while value_id < payload_start + payload_count:
             if not hir_validate_value(values, value_id, record_count):
                 return false
             let value_offset = hir_value_offset(value_id)
+            if kind == HIR_RECORD_BLOCK and values[value_offset] != HIR_VALUE_NODE:
+                return false
             if values[value_offset] == HIR_VALUE_BLOCK:
                 let target_offset = hir_record_offset(values[value_offset + 1])
                 if records[target_offset] != HIR_RECORD_BLOCK:
@@ -471,7 +504,6 @@ def hir_semantic_error(reason: str) -> bool:
     return false
 
 struct HirDiagnosticContext:
-    ast: list[int]
     source: str
     source_path: str
     file_paths: str
@@ -522,27 +554,23 @@ def hir_diag_line_column(context: HirDiagnosticContext, file_index: int, positio
             column[0] = column[0] + 1
         cursor = cursor + 1
 
-def hir_diag_node_position(ast: list[int], node: int) -> int:
-    if node <= 0 or node >= len(ast):
+def hir_diag_record_position(program: HirProgram, node_id: int) -> int:
+    if node_id < 0 or node_id >= hir_record_count(program.records):
         return 0
-    let position = ast_node_start(ast, node)
+    let offset = hir_record_offset(node_id)
+    let position = program.records[offset + 3]
     if position > 0:
         return position
-    let kind = ast_node_kind(ast, node)
-    if kind == AST_STMT_LET:
-        return hir_diag_node_position(ast, ast_node_arg(ast, node, 4))
-    if kind == AST_STMT_LET_TUPLE:
-        return hir_diag_node_position(ast, ast_node_arg(ast, node, 2))
-    if kind == AST_STMT_ASSIGN:
-        return hir_diag_node_position(ast, ast_node_arg(ast, node, 4))
-    if kind == AST_STMT_IF or kind == AST_ELIF or kind == AST_STMT_WHILE:
-        return hir_diag_node_position(ast, ast_node_arg(ast, node, 0))
-    if kind == AST_STMT_FOR:
-        return hir_diag_node_position(ast, ast_node_arg(ast, node, 2))
-    if kind == AST_STMT_SWITCH or kind == AST_CASE:
-        return hir_diag_node_position(ast, ast_node_arg(ast, node, 0))
-    if kind == AST_STMT_RETURN or kind == AST_STMT_EXPR:
-        return hir_diag_node_position(ast, ast_node_arg(ast, node, 0))
+    let payload_start = program.records[offset + 5]
+    let payload_count = program.records[offset + 6]
+    let payload_index = 0
+    while payload_index < payload_count:
+        let value_offset = hir_value_offset(payload_start + payload_index)
+        if program.values[value_offset] == HIR_VALUE_NODE:
+            let child_position = hir_diag_record_position(program, program.values[value_offset + 1])
+            if child_position > 0:
+                return child_position
+        payload_index = payload_index + 1
     return 0
 
 def hir_diag_function_name(context: HirDiagnosticContext, function_index: int) -> str:
@@ -554,8 +582,8 @@ def hir_diag_function_name(context: HirDiagnosticContext, function_index: int) -
         return "<anonymous>"
     return context.source[name_start:name_end]
 
-def hir_diag_report(context: HirDiagnosticContext, function_index: int, node: int):
-    let position = hir_diag_node_position(context.ast, node)
+def hir_diag_report(program: HirProgram, context: HirDiagnosticContext, function_index: int, node: int):
+    let position = hir_diag_record_position(program, node)
     let file_index = hir_diag_file_index(context, position)
     let line: list[int] = [1]
     let column: list[int] = [1]
@@ -570,98 +598,142 @@ def hir_diag_report(context: HirDiagnosticContext, function_index: int, node: in
     __c_eprint_text(hir_diag_function_name(context, function_index))
     __c_eprint_text("\n")
 
-def hir_diag_next_node(ast: list[int], node: int) -> int:
-    return ast_stmt_next_node(ast, node)
+def hir_diag_payload_block(program: HirProgram, node_id: int, payload_index: int) -> int:
+    if node_id < 0 or node_id >= hir_record_count(program.records):
+        return -1
+    let offset = hir_record_offset(node_id)
+    let payload_count = program.records[offset + 6]
+    if payload_index < 0 or payload_index >= payload_count:
+        return -1
+    let value_offset = hir_value_offset(program.records[offset + 5] + payload_index)
+    if program.values[value_offset] != HIR_VALUE_BLOCK:
+        return -1
+    return program.values[value_offset + 1]
 
-def hir_diag_scan_block(ast: list[int], start: int, end: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
-    let node = start
+def hir_diag_block_is_empty(program: HirProgram, block_id: int) -> bool:
+    if block_id < 0 or block_id >= hir_record_count(program.records):
+        return false
+    let offset = hir_record_offset(block_id)
+    return program.records[offset] == HIR_RECORD_BLOCK and program.records[offset + 6] == 0
+
+def hir_diag_scan_block(program: HirProgram, block_id: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
+    if block_id < 0 or block_id >= hir_record_count(program.records):
+        result[0] = 0
+        return
+    let block_offset = hir_record_offset(block_id)
+    if program.records[block_offset] != HIR_RECORD_BLOCK:
+        result[0] = 0
+        return
+    let payload_start = program.records[block_offset + 5]
+    let payload_count = program.records[block_offset + 6]
+    let payload_index = 0
     let is_terminated = false
-    while node < end:
-        let next_node = hir_diag_next_node(ast, node)
-        if next_node <= node or next_node > end:
-            result[0] = 0
-            return
+    while payload_index < payload_count:
+        let value_offset = hir_value_offset(payload_start + payload_index)
+        let node = -1
+        if program.values[value_offset] == HIR_VALUE_NODE:
+            node = program.values[value_offset + 1]
         if is_terminated:
-            hir_diag_report(context, function_index, node)
+            if node >= 0:
+                hir_diag_report(program, context, function_index, node)
         else:
             let statement_result: list[int] = [0]
-            hir_diag_scan_statement(ast, node, context, function_index, statement_result)
+            if node >= 0:
+                hir_diag_scan_statement(program, node, context, function_index, statement_result)
             if statement_result[0] != 0:
                 is_terminated = true
-        node = next_node
+        payload_index = payload_index + 1
     result[0] = 0
     if is_terminated:
         result[0] = 1
 
-def hir_diag_scan_branch_range(ast: list[int], start: int, end: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
-    let node = start
-    let has_case = false
+def hir_diag_scan_branches(program: HirProgram, block_id: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
+    if block_id < 0 or block_id >= hir_record_count(program.records):
+        result[0] = 0
+        return
+    let block_offset = hir_record_offset(block_id)
+    if program.records[block_offset] != HIR_RECORD_BLOCK:
+        result[0] = 0
+        return
+    let payload_start = program.records[block_offset + 5]
+    let payload_count = program.records[block_offset + 6]
+    let payload_index = 0
+    let has_branch = false
     let all_terminated = true
-    while node < end:
-        let next_node = hir_diag_next_node(ast, node)
-        let kind = ast_node_kind(ast, node)
-        if next_node <= node or next_node > end or (kind != AST_CASE and kind != AST_ELIF):
+    while payload_index < payload_count:
+        let value_offset = hir_value_offset(payload_start + payload_index)
+        if program.values[value_offset] != HIR_VALUE_NODE:
             result[0] = 0
             return
-        has_case = true
+        let node = program.values[value_offset + 1]
+        let node_offset = hir_record_offset(node)
+        let opcode = program.records[node_offset + 1]
+        if opcode != HIR_OP_IF and opcode != HIR_OP_MATCH:
+            result[0] = 0
+            return
+        has_branch = true
         let case_result: list[int] = [0]
-        hir_diag_scan_block(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2), context, function_index, case_result)
+        hir_diag_scan_block(program, hir_diag_payload_block(program, node, 1), context, function_index, case_result)
         if case_result[0] == 0:
             all_terminated = false
-        node = next_node
+        payload_index = payload_index + 1
     result[0] = 0
-    if has_case and all_terminated:
+    if has_branch and all_terminated:
         result[0] = 1
 
-def hir_diag_scan_statement(ast: list[int], node: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
-    let kind = ast_node_kind(ast, node)
+def hir_diag_scan_if(program: HirProgram, node: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
+    let then_result: list[int] = [0]
+    hir_diag_scan_block(program, hir_diag_payload_block(program, node, 1), context, function_index, then_result)
+    let elif_result: list[int] = [0]
+    let elif_block = hir_diag_payload_block(program, node, 2)
+    hir_diag_scan_branches(program, elif_block, context, function_index, elif_result)
+    if hir_diag_block_is_empty(program, elif_block):
+        elif_result[0] = 1
+    let else_block = hir_diag_payload_block(program, node, 3)
+    let else_result: list[int] = [0]
+    if else_block >= 0:
+        hir_diag_scan_block(program, else_block, context, function_index, else_result)
     result[0] = 0
-    if kind == AST_STMT_RETURN or kind == AST_STMT_BREAK:
+    if then_result[0] != 0 and elif_result[0] != 0 and else_block >= 0 and else_result[0] != 0:
+        result[0] = 1
+
+def hir_diag_scan_switch(program: HirProgram, node: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
+    let cases_result: list[int] = [0]
+    hir_diag_scan_branches(program, hir_diag_payload_block(program, node, 1), context, function_index, cases_result)
+    let default_block = hir_diag_payload_block(program, node, 2)
+    let default_result: list[int] = [0]
+    if default_block >= 0:
+        hir_diag_scan_block(program, default_block, context, function_index, default_result)
+    result[0] = 0
+    if cases_result[0] != 0 and default_block >= 0 and default_result[0] != 0:
+        result[0] = 1
+
+def hir_diag_scan_statement(program: HirProgram, node: int, context: HirDiagnosticContext, function_index: int, result: list[int]):
+    let offset = hir_record_offset(node)
+    let record_kind = program.records[offset]
+    let opcode = program.records[offset + 1]
+    result[0] = 0
+    if opcode == HIR_OP_RETURN or opcode == HIR_OP_BREAK or opcode == HIR_OP_CONTINUE:
         result[0] = 1
         return
-    if kind == AST_STMT_IF:
-        let then_result: list[int] = [0]
-        hir_diag_scan_block(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2), context, function_index, then_result)
-        let branches_terminate = then_result[0] != 0
-        let elif_node = ast_node_arg(ast, node, 3)
-        let elif_end = ast_node_arg(ast, node, 4)
-        let elif_result: list[int] = [0]
-        if elif_node != elif_end:
-            hir_diag_scan_branch_range(ast, elif_node, elif_end, context, function_index, elif_result)
-        let else_start = ast_node_arg(ast, node, 5)
-        let else_end = ast_node_arg(ast, node, 6)
-        let else_result: list[int] = [0]
-        if else_start != 0:
-            hir_diag_scan_block(ast, else_start, else_end, context, function_index, else_result)
-        if branches_terminate and (elif_node == elif_end or elif_result[0] != 0) and else_start != 0 and else_result[0] != 0:
-            result[0] = 1
+    if record_kind == HIR_RECORD_STATEMENT and opcode == HIR_OP_IF and program.records[offset + 6] >= 4:
+        hir_diag_scan_if(program, node, context, function_index, result)
         return
-    if kind == AST_STMT_SWITCH:
-        let cases_result: list[int] = [0]
-        hir_diag_scan_branch_range(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2), context, function_index, cases_result)
-        let default_start = ast_node_arg(ast, node, 3)
-        let default_end = ast_node_arg(ast, node, 4)
-        let default_result: list[int] = [0]
-        if default_start != 0:
-            hir_diag_scan_block(ast, default_start, default_end, context, function_index, default_result)
-        if cases_result[0] != 0 and default_start != 0 and default_result[0] != 0:
-            result[0] = 1
+    if record_kind == HIR_RECORD_STATEMENT and opcode == HIR_OP_MATCH and program.records[offset + 6] >= 3:
+        hir_diag_scan_switch(program, node, context, function_index, result)
         return
-    if kind == AST_STMT_WHILE or kind == AST_STMT_FOR:
-        let body_start = ast_node_arg(ast, node, 1)
-        let body_end = ast_node_arg(ast, node, 2)
-        if kind == AST_STMT_FOR:
-            body_start = ast_node_arg(ast, node, 3)
-            body_end = ast_node_arg(ast, node, 4)
-        let body_result: list[int] = [0]
-        hir_diag_scan_block(ast, body_start, body_end, context, function_index, body_result)
 
-def hir_report_unreachable(context: HirDiagnosticContext, function_body_starts: list[int], function_body_ends: list[int]):
+def hir_report_unreachable(program: HirProgram, context: HirDiagnosticContext):
     let function_index = 0
-    while function_index < len(function_body_starts) and function_index < len(function_body_ends):
-        let result: list[int] = [0]
-        hir_diag_scan_block(context.ast, function_body_starts[function_index], function_body_ends[function_index], context, function_index, result)
-        function_index = function_index + 1
+    let record_id = 0
+    while record_id < hir_record_count(program.records):
+        let offset = hir_record_offset(record_id)
+        if program.records[offset] == HIR_RECORD_FUNCTION:
+            let body_block = hir_diag_payload_block(program, record_id, 0)
+            let result: list[int] = [0]
+            hir_diag_scan_block(program, body_block, context, function_index, result)
+            function_index = function_index + 1
+        record_id = record_id + 1
 
 def hir_debug_checkpoint(label: str, previous_time: int) -> int:
     if not __c_debug_on():
