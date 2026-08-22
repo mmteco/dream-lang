@@ -1,4 +1,4 @@
-from compiler_lir_model import LirProgram, lir_record_count, lir_value_count, lir_record_offset, lir_value_offset, lir_value_type_in_function, lir_value_exists, lir_block_parameter_offset, LIR_RECORD_MODULE, LIR_RECORD_FUNCTION, LIR_RECORD_BLOCK, LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR, LIR_TYPE_VOID, LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_PTR, LIR_TYPE_AGGREGATE, LIR_TYPE_DYNAMIC, LIR_OPERAND_VALUE, LIR_OPERAND_IMMEDIATE, LIR_OPERAND_BLOCK, LIR_OPERAND_TYPE, LIR_OPERAND_SYMBOL, LIR_OP_CONST, LIR_OP_COPY, LIR_OP_BINARY, LIR_OP_UNARY, LIR_OP_CALL, LIR_OP_RUNTIME_CALL, LIR_OP_SELECT, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE, LIR_OP_CAST, LIR_OP_BOUNDS_CHECK, LIR_TERM_JUMP, LIR_TERM_BRANCH, LIR_TERM_SWITCH, LIR_TERM_RETURN, LIR_TERM_UNREACHABLE
+from compiler_lir_model import LirProgram, lir_record_count, lir_value_count, lir_record_offset, lir_value_offset, lir_value_type_in_function, lir_value_exists, lir_block_parameter_offset, LIR_RECORD_MODULE, LIR_RECORD_FUNCTION, LIR_RECORD_BLOCK, LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR, LIR_FUNCTION_ENTRY, LIR_TYPE_VOID, LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_PTR, LIR_TYPE_AGGREGATE, LIR_TYPE_DYNAMIC, LIR_OPERAND_VALUE, LIR_OPERAND_IMMEDIATE, LIR_OPERAND_BLOCK, LIR_OPERAND_TYPE, LIR_OPERAND_SYMBOL, LIR_OP_CONST, LIR_OP_COPY, LIR_OP_BINARY, LIR_OP_UNARY, LIR_OP_CALL, LIR_OP_RUNTIME_CALL, LIR_OP_SELECT, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE, LIR_OP_CAST, LIR_OP_BOUNDS_CHECK, LIR_TERM_JUMP, LIR_TERM_BRANCH, LIR_TERM_SWITCH, LIR_TERM_RETURN, LIR_TERM_UNREACHABLE
 from text_buffer import TextBuffer
 
 let llvm_lir_function_record_cache: list[int] = []
@@ -505,11 +505,23 @@ def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: in
         operand_index = operand_index + 1
         argument_index = argument_index + 1
 
+def llvm_lir_binary_operand_type(program: LirProgram, offset: int, operand_index: int) -> int:
+    let operand_kind = llvm_lir_operand_kind(program, offset, operand_index)
+    if operand_kind == LIR_OPERAND_VALUE:
+        return llvm_lir_value_type(program, program.records[offset + 1], llvm_lir_operand_value(program, offset, operand_index))
+    if operand_kind == LIR_OPERAND_IMMEDIATE:
+        return LIR_TYPE_I32
+    if operand_kind == LIR_OPERAND_TYPE:
+        return llvm_lir_operand_value(program, offset, operand_index)
+    return LIR_TYPE_DYNAMIC
+
 def llvm_lir_append_binary(program: LirProgram, offset: int, output: TextBuffer, result_name: str, result_type: int):
     let operator = llvm_lir_operand_value(program, offset, 0)
-    let operand_type = LIR_TYPE_I32
-    if llvm_lir_operand_kind(program, offset, 1) == LIR_OPERAND_VALUE:
-        operand_type = llvm_lir_value_type(program, program.records[offset + 1], llvm_lir_operand_value(program, offset, 1))
+    let left_type = llvm_lir_binary_operand_type(program, offset, 1)
+    let right_type = llvm_lir_binary_operand_type(program, offset, 2)
+    let operand_type = left_type
+    if left_type != right_type:
+        operand_type = LIR_TYPE_DYNAMIC
     let instruction = "add"
     let is_compare = false
     if operand_type != LIR_TYPE_I1 and operand_type != LIR_TYPE_I32 and operand_type != LIR_TYPE_F64:
@@ -931,7 +943,10 @@ def llvm_lir_emit_function(program: LirProgram, function_id: int, function_recor
     append(output, "define ")
     append(output, llvm_lir_type(return_type))
     append(output, " ")
-    append(output, llvm_lir_function_name(function_id))
+    if program.records[function_offset + 3] == LIR_FUNCTION_ENTRY:
+        append(output, "@main")
+    else:
+        append(output, llvm_lir_function_name(function_id))
     append(output, "(")
     let record_id = function_record_id + 1
     let first_block = record_id

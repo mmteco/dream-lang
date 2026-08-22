@@ -13,6 +13,7 @@ const MIR_RECORD_BLOCK: int = 6
 const MIR_RECORD_PARAMETER: int = 7
 const MIR_RECORD_INSTRUCTION: int = 8
 const MIR_RECORD_TERMINATOR: int = 9
+const MIR_FUNCTION_ENTRY: int = 1
 
 const MIR_TYPE_UNKNOWN: int = 0
 const MIR_TYPE_UNIT: int = 1
@@ -763,7 +764,10 @@ def mir_model_build_program(hir_program: HirProgram, source: str) -> MirProgram:
             let signature_start = mir_value_count(values)
             let parameter_count = mir_append_function_signature(hir_program, hir_offset, values)
             let signature_count = mir_value_count(values) - signature_start
-            let function = MirRecord{record_kind: MIR_RECORD_FUNCTION, function_index: function_index, block_index: -1, opcode: 0, type_tag: MIR_TYPE_FUNCTION, result_value: -1, operand_start: 0, operand_count: 0, auxiliary_start: signature_start, auxiliary_count: signature_count, source_start: hir_program.records[hir_offset + 9], source_end: hir_program.records[hir_offset + 10]}
+            let function_opcode = 0
+            if source[hir_program.records[hir_offset + 9]:hir_program.records[hir_offset + 10]] == "main":
+                function_opcode = MIR_FUNCTION_ENTRY
+            let function = MirRecord{record_kind: MIR_RECORD_FUNCTION, function_index: function_index, block_index: -1, opcode: function_opcode, type_tag: MIR_TYPE_FUNCTION, result_value: -1, operand_start: 0, operand_count: 0, auxiliary_start: signature_start, auxiliary_count: signature_count, source_start: hir_program.records[hir_offset + 9], source_end: hir_program.records[hir_offset + 10]}
             mir_append_record(records, function)
             let parameter_index = 0
             while parameter_index < parameter_count:
