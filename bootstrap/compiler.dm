@@ -4,6 +4,6 @@ from compiler_ast import ast_validate_program, ast_build_program, ast_node_kind,
 from compiler_hir_model import HirDiagnosticContext, hir_model_build_program, hir_model_dump_program, hir_report_unreachable, hir_validate_semantics
 from compiler_mir_model import mir_model_build_program, mir_validate_program, mir_dump_program
 from compiler_mir_opt import mir_optimize_program
-from compiler_lir_model import lir_model_build_program, lir_validate_program, lir_dump_program
+from compiler_lir_model import lir_model_build_program, lir_validate_program, lir_dump_validated_program
 from compiler_llvm_emit import llvm_lower_lir
 from compiler_main import main

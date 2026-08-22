@@ -2,7 +2,6 @@ from compiler_mir_model import MirProgram, mir_record_count, mir_value_count, mi
 from text_buffer import TextBuffer
 
 let lir_value_type_cache: list[int] = []
-let lir_value_present_cache: list[int] = []
 let lir_block_parameter_cache: list[int] = []
 let lir_value_cache_width: list[int] = [0]
 let lir_block_parameter_start_cache: list[int] = []
@@ -11,6 +10,22 @@ let lir_block_cache_width: list[int] = [0]
 let lir_block_parameter_inferred_cache: list[int] = []
 let lir_block_parameter_has_incoming_cache: list[int] = []
 let lir_block_parameter_mismatch_cache: list[int] = []
+
+def lir_debug_start() -> int:
+    if __c_debug_on():
+        return __c_time_ms()
+    return 0
+
+def lir_debug_checkpoint(label: str, previous_time: int) -> int:
+    if not __c_debug_on():
+        return previous_time
+    let current_time = __c_time_ms()
+    __c_eprint_text("[timing] lir-")
+    __c_eprint_text(label)
+    __c_eprint_text(" ")
+    __c_eprint_int(current_time - previous_time)
+    __c_eprint_text("ms\n")
+    return current_time
 
 const LIR_MODEL_VERSION: int = 1
 const LIR_RECORD_SIZE: int = 14
@@ -334,10 +349,11 @@ def lir_lower_mir_record(mir: MirProgram, record_id: int, records: list[int], va
     else:
         lir_copy_operands(mir, source_offset, values)
     let target_operand_count = lir_value_count(values) - target_operand_start
-    let target = LirRecord{record_kind: target_kind, function_index: mir.records[source_offset + 1], block_index: mir.records[source_offset + 2], opcode: target_opcode, type_tag: target_type, result_value: mir.records[source_offset + 5], operand_start: target_operand_start, operand_count: target_operand_count, auxiliary_start: target_auxiliary_start, auxiliary_count: target_auxiliary_count, layout_id: -1, flags: 0, source_start: mir.records[source_offset + 10], source_end: mir.records[source_offset + 11]}
+    let target = LirRecord{record_kind: target_kind, function_index: mir.records[source_offset + 1], block_index: mir.records[source_offset + 2], opcode: target_opcode, type_tag: target_type, result_value: mir.records[source_offset + 5], operand_start: target_operand_start, operand_count: target_operand_count, auxiliary_start: target_auxiliary_start, auxiliary_count: target_auxiliary_count, layout_id: target_type - 1, flags: 0, source_start: mir.records[source_offset + 10], source_end: mir.records[source_offset + 11]}
     lir_append_record(records, target)
 
 def lir_model_build_program(mir: MirProgram) -> LirProgram:
+    let phase_time = lir_debug_start()
     let records = []
     let values = []
     let layouts = lir_build_default_layouts()
@@ -345,15 +361,12 @@ def lir_model_build_program(mir: MirProgram) -> LirProgram:
     while record_id < mir_record_count(mir.records):
         lir_lower_mir_record(mir, record_id, records, values)
         record_id = record_id + 1
-    let record_index = 0
-    while record_index < lir_record_count(records):
-        let record_offset = lir_record_offset(record_index)
-        let type_tag = records[record_offset + 4]
-        records[record_offset + 10] = type_tag - 1
-        record_index = record_index + 1
+    phase_time = lir_debug_checkpoint("lower", phase_time)
     let program = LirProgram{records: records, values: values, layouts: layouts}
     lir_prepare_value_cache(program)
+    phase_time = lir_debug_checkpoint("cache", phase_time)
     lir_infer_block_parameter_types(program)
+    lir_debug_checkpoint("params", phase_time)
     return program
 
 def lir_value_cache_index(function_index: int, value: int) -> int:
@@ -378,7 +391,6 @@ def lir_prepare_value_cache(program: LirProgram):
         width = 1
     lir_value_cache_width[0] = width
     lir_value_type_cache = []
-    lir_value_present_cache = []
     lir_block_parameter_cache = []
     lir_block_parameter_start_cache = []
     lir_block_parameter_count_cache = []
@@ -393,8 +405,7 @@ def lir_prepare_value_cache(program: LirProgram):
     let block_cache_size = (maximum_function + 1) * block_width
     let cache_index = 0
     while cache_index < cache_size:
-        append(lir_value_type_cache, LIR_TYPE_DYNAMIC)
-        append(lir_value_present_cache, 0)
+        append(lir_value_type_cache, 0)
         append(lir_block_parameter_cache, -1)
         append(lir_block_parameter_inferred_cache, LIR_TYPE_DYNAMIC)
         append(lir_block_parameter_has_incoming_cache, 0)
@@ -415,7 +426,6 @@ def lir_prepare_value_cache(program: LirProgram):
             if value_index < len(lir_value_type_cache):
                 if program.records[offset] == LIR_RECORD_PARAMETER or program.records[offset] == LIR_RECORD_INSTRUCTION:
                     lir_value_type_cache[value_index] = program.records[offset + 4]
-                    lir_value_present_cache[value_index] = 1
                 if program.records[offset] == LIR_RECORD_PARAMETER and program.records[offset + 2] >= 0:
                     lir_block_parameter_cache[value_index] = program.records[offset + 2]
         if program.records[offset] == LIR_RECORD_PARAMETER and function_index >= 0 and program.records[offset + 2] >= 0:
@@ -428,7 +438,7 @@ def lir_prepare_value_cache(program: LirProgram):
 def lir_value_type_in_function(records: list[int], function_index: int, value: int) -> int:
     if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
         let value_index = lir_value_cache_index(function_index, value)
-        if value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_present_cache[value_index] == 1:
+        if value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_type_cache[value_index] != 0:
             return lir_value_type_cache[value_index]
         return LIR_TYPE_DYNAMIC
     let record_id = 0
@@ -664,9 +674,7 @@ def lir_validate_program(program: LirProgram) -> bool:
 def lir_empty_program() -> LirProgram:
     return LirProgram{records: [], values: [], layouts: lir_build_default_layouts()}
 
-def lir_dump_program(program: LirProgram, output: TextBuffer) -> bool:
-    if not lir_validate_model_program(program):
-        return false
+def lir_dump_validated_program(program: LirProgram, output: TextBuffer) -> bool:
     append(output, "LIR version=")
     append(output, LIR_MODEL_VERSION)
     append(output, " records=")
@@ -713,3 +721,8 @@ def lir_dump_program(program: LirProgram, output: TextBuffer) -> bool:
         append(output, "\n")
         record_id = record_id + 1
     return true
+
+def lir_dump_program(program: LirProgram, output: TextBuffer) -> bool:
+    if not lir_validate_model_program(program):
+        return false
+    return lir_dump_validated_program(program, output)

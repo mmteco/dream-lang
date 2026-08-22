@@ -268,7 +268,9 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
         compiler_debug_checkpoint("hir-dump", phase_time)
         return
     let mir_program = mir_model_build_program(hir_program, source)
+    phase_time = compiler_debug_checkpoint("mir-build", phase_time)
     let optimized_mir_program = mir_optimize_program(mir_program)
+    phase_time = compiler_debug_checkpoint("mir-opt", phase_time)
     if output_mode == COMPILE_OUTPUT_MIR:
         let mir_output = TextBuffer{data: []}
         if not mir_validate_program(optimized_mir_program) or not mir_dump_program(optimized_mir_program, mir_output):
@@ -277,15 +279,23 @@ def compile_source(source_path: str, output_path: str, output_mode: int):
         return
     elif output_mode == COMPILE_OUTPUT_LIR:
         let lir_program = lir_model_build_program(optimized_mir_program)
+        phase_time = compiler_debug_checkpoint("lir-build", phase_time)
         let lir_output = TextBuffer{data: []}
-        if not mir_validate_program(optimized_mir_program) or not lir_validate_program(lir_program) or not lir_dump_program(lir_program, lir_output):
+        let is_lir_valid = mir_validate_program(optimized_mir_program) and lir_validate_program(lir_program)
+        phase_time = compiler_debug_checkpoint("lir-validate", phase_time)
+        if not is_lir_valid:
+            append(lir_output, "LIR validation failed\n")
+        elif not lir_dump_validated_program(lir_program, lir_output):
             append(lir_output, "LIR validation failed\n")
         write_text_buffer(output_path, lir_output)
         return
     elif output_mode == COMPILE_OUTPUT_LLVM:
         let lir_program = lir_model_build_program(optimized_mir_program)
+        phase_time = compiler_debug_checkpoint("lir-build", phase_time)
         let llvm_output = TextBuffer{data: []}
-        if not mir_validate_program(optimized_mir_program) or not lir_validate_program(lir_program) or not llvm_lower_lir(lir_program, llvm_output):
+        let is_lir_valid = mir_validate_program(optimized_mir_program) and lir_validate_program(lir_program)
+        phase_time = compiler_debug_checkpoint("lir-validate", phase_time)
+        if not is_lir_valid or not llvm_lower_lir(lir_program, llvm_output):
             append(llvm_output, "; LLVM lowering failed\n")
         write_text_buffer(output_path, llvm_output)
         return
