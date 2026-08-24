@@ -4,7 +4,7 @@ FISH ?= fish
 RUNTIME_DIR ?= runtime/c
 STAGE3 ?= 0
 
-.PHONY: build clean run test examples runtime-check check bootstrap bootstrap-verify bootstrap-build compile dynarray help $(EXAMPLE_TARGETS)
+.PHONY: build clean run test examples runtime-check check bootstrap bootstrap-verify bootstrap-build compile dynarray repro-diff help $(EXAMPLE_TARGETS)
 
 # 默认目标
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "  make bootstrap STAGE3=1 - 执行 Stage 2 → Stage 3 固定点验证"
 	@echo "  make bootstrap-build FILE=path/to/file.dm - 使用 Stage 2 bootstrapped 编译器构建"
 	@echo "  make bootstrap-verify - 验证已生成的自举 LLVM 文件"
+	@echo "  make repro-diff FILE=path/to/file.dm - stage1/stage2 逐级 IR 差分定位"
 	@echo ""
 
 # 构建编译器
@@ -96,3 +97,11 @@ run: build
 		exit 1; \
 	fi
 	$(FISH) scripts/dream.fish run "$(FILE)"
+
+# 自举差分定位:同一输入经 stage1/stage2 逐级 dump IR 并报告首个分歧层级
+repro-diff:
+	@if [ -z "$(FILE)" ]; then \
+		echo "错误: 请指定文件路径，例如: make repro-diff FILE=test/fixtures/iface.dm"; \
+		exit 1; \
+	fi
+	$(FISH) scripts/repro_diff.fish "$(FILE)" $(if $(LEVELS),--levels $(LEVELS))
