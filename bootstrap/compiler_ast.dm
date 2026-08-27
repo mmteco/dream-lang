@@ -1586,7 +1586,7 @@ def ast_parse_lambda(context: ParseContext, index: int, ast: list[int]) -> (int,
     let (body_next_index, body_node) = ast_parse_expression(context, arrow_index + 1, ast)
     if body_node == 0:
         return (index, 0)
-    let node = ast_append_node(ast, AST_EXPR_LAMBDA, token_start(starts, index), token_end(ends, index), ARGS_LAMBDA)
+    let node = ast_append_node(ast, AST_EXPR_LAMBDA, token_start(starts, index), token_end(ends, body_next_index - 1), ARGS_LAMBDA)
     ast_set_arg(ast, node, 0, index + 1)
     ast_set_arg(ast, node, 1, arrow_index)
     ast_set_arg(ast, node, 2, body_node)

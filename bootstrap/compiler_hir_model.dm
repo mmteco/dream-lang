@@ -247,6 +247,8 @@ def hir_type_from_annotation(source: str, name_start: int, name_end: int) -> int
         return HIR_TYPE_LIST_INT
     if type_name == "list[str]":
         return HIR_TYPE_LIST
+    if text_length(type_name) >= 5 and type_name[0:5] == "dict[":
+        return HIR_TYPE_DICT
     if type_name == "Result[int, str]" or type_name == "Result[int,str]":
         return HIR_TYPE_ENUM
     if type_name == "Option[int]":
@@ -423,7 +425,9 @@ def hir_lower_ast_node(ast: list[int], node: int, records: list[int], values: li
         hir_append_ast_child(ast, ast_node_arg(ast, node, 1), records, values, payload, cache)
         hir_append_ast_child(ast, ast_node_arg(ast, node, 2), records, values, payload, cache)
     elif hir_opcode_from_ast(kind) == HIR_OP_LITERAL:
-        hir_append_int(payload, ast_node_arg(ast, node, 0))
+        # 字符串/浮点字面量节点无 arg（size 3），只有 int/rune/bool 携带字面量值
+        if ast_node_size(ast, node) > AST_HEADER_SIZE:
+            hir_append_int(payload, ast_node_arg(ast, node, 0))
     else:
         let argument_count = ast_node_size(ast, node) - AST_HEADER_SIZE
         let index = 0
@@ -1174,8 +1178,6 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, functi
         let value_offset = hir_value_offset(payload_start)
         let base_type = hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
         if base_type == HIR_TYPE_STR:
-            return HIR_TYPE_I32
-        if base_type == HIR_TYPE_DICT:
             return HIR_TYPE_I32
         if base_type == HIR_TYPE_LIST_INT:
             return HIR_TYPE_I32

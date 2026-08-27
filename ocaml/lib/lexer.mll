@@ -119,6 +119,8 @@ let letter = ['a'-'z' 'A'-'Z']
 let ident = (letter | '_') (letter | digit | '_')*
 let integer = digit+
 let float = digit+ '.' digit*
+let hexdigit = ['0'-'9' 'a'-'f' 'A'-'F']
+let hexint = '0' ['x' 'X'] hexdigit+
 
 rule token = parse
   | whitespace+ { update_pos lexbuf; token lexbuf }
@@ -129,11 +131,15 @@ rule token = parse
       (NEWLINE, start_pos, end_pos)
     }
   | '#' { line_comment lexbuf }
-  | integer as i {
+  | integer as i
+  | hexint as i {
       let start_pos = make_lexing_pos () in
       update_pos lexbuf;
       let end_pos = make_lexing_pos () in
-      (INT (int_of_string i), start_pos, end_pos)
+      let value = if String.length i > 2 && (i.[1] = 'x' || i.[1] = 'X') then
+          int_of_string ("0x" ^ String.sub i 2 (String.length i - 2))
+        else int_of_string i in
+      (INT value, start_pos, end_pos)
     }
   | float as f {
       let start_pos = make_lexing_pos () in

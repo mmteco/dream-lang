@@ -200,6 +200,15 @@ def is_digit(code: int) -> bool:
         return false
     return true
 
+def is_hex_digit(code: int) -> bool:
+    if is_digit(code):
+        return true
+    if code >= ASCII_LOWER_A and code <= ASCII_LOWER_A + 5:
+        return true
+    if code >= ASCII_UPPER_A and code <= ASCII_UPPER_A + 5:
+        return true
+    return false
+
 def is_identifier_start(code: int) -> bool:
     if code >= ASCII_UPPER_A and code <= ASCII_UPPER_Z:
         return true
@@ -516,8 +525,16 @@ def lex(source: str, kinds: list[int], starts: list[int], ends: list[int]) -> in
             handled = true
         if not handled and is_digit(code):
             let number_start = index
-            while index < source_length and is_digit(ord(source[index])):
-                index = index + 1
+            let is_hex = false
+            if code == ASCII_DIGIT_ZERO and index + 1 < source_length:
+                if source[index + 1] == 'x' or source[index + 1] == 'X':
+                    is_hex = true
+                    index = index + 2
+                    while index < source_length and is_hex_digit(ord(source[index])):
+                        index = index + 1
+            if not is_hex:
+                while index < source_length and is_digit(ord(source[index])):
+                    index = index + 1
             let is_float = false
             if index < source_length and source[index] == '.':
                 let next_index = index + 1
@@ -873,6 +890,47 @@ def collect_impl_functions(source: str, kinds: list[int], starts: list[int], end
                     append(impl_func_interface_types, interface_type)
         function_index = function_index + 1
 
+def enclosing_impl_interface_range(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> (int, int):
+    # 函数所在 impl 块的接口名区间；非 impl 方法返回 (-1, -1)
+    let function_token_index = 0
+    let function_token_found = false
+    while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
+        if token_start(starts, function_token_index) == function_name_start:
+            function_token_found = true
+        function_token_index = function_token_index + 1
+    let scan_index = function_token_index - 1
+    while scan_index >= 0:
+        if line_indent(source, token_start(starts, scan_index)) == 0:
+            let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
+            if declaration_name == "impl":
+                if token_kind(kinds, scan_index + 1) == TOKEN_IDENTIFIER:
+                    return (token_start(starts, scan_index + 1), token_end(ends, scan_index + 1))
+                return (-1, -1)
+            if declaration_name == "struct" or declaration_name == "interface" or declaration_name == "def":
+                return (-1, -1)
+        scan_index = scan_index - 1
+    return (-1, -1)
+
+def collect_interfaces(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], interface_name_starts: list[int], interface_name_ends: list[int], impl_function_indexes: list[int], impl_decl_indexes: list[int], impl_interface_name_starts: list[int], impl_interface_name_ends: list[int]):
+    # 收集接口声明名与 impl 方法分发表（函数索引、struct 声明、接口名区间）
+    let token_index = 0
+    while token_kind(kinds, token_index) != TOKEN_EOF:
+        if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source[token_start(starts, token_index):token_end(ends, token_index)] == "interface" and token_kind(kinds, token_index + 1) == TOKEN_IDENTIFIER and token_kind(kinds, token_index + 2) == TOKEN_COLON:
+            append(interface_name_starts, token_start(starts, token_index + 1))
+            append(interface_name_ends, token_end(ends, token_index + 1))
+        token_index = token_index + 1
+    let function_index = 0
+    while function_index < len(function_starts):
+        let declaration_index = enclosing_self_struct_declaration(source, kinds, starts, ends, function_starts[function_index])
+        if declaration_index >= 0:
+            let (interface_start, interface_end) = enclosing_impl_interface_range(source, kinds, starts, ends, function_starts[function_index])
+            if interface_start >= 0:
+                append(impl_function_indexes, function_index)
+                append(impl_decl_indexes, declaration_index)
+                append(impl_interface_name_starts, interface_start)
+                append(impl_interface_name_ends, interface_end)
+        function_index = function_index + 1
+
 def function_has_body(source: str, kinds: list[int], starts: list[int], body_start: int, body_end: int, function_name_start: int) -> bool:
     let definition_indent = line_indent(source, function_name_start)
     let current_index = body_start
@@ -1020,9 +1078,25 @@ def skip_source_newlines(source: str, starts: list[int], index: int) -> int:
 def parse_integer(source: str, start: int, end: int) -> int:
     let result = 0
     let index = start
-    while index < end:
-        result = result * 10 + ord(source[index]) - 48
-        index = index + 1
+    let is_hex = false
+    if end - start > 2 and source[start] == '0':
+        if source[start + 1] == 'x' or source[start + 1] == 'X':
+            is_hex = true
+            index = start + 2
+    if is_hex:
+        while index < end:
+            let code = ord(source[index])
+            let digit_value = code - 48
+            if code >= ASCII_LOWER_A:
+                digit_value = code - 87
+            elif code >= ASCII_UPPER_A:
+                digit_value = code - 55
+            result = result * 16 + digit_value
+            index = index + 1
+    else:
+        while index < end:
+            result = result * 10 + ord(source[index]) - 48
+            index = index + 1
     return result
 
 def parse_rune_literal(source: str, start: int, end: int) -> int:
@@ -1361,12 +1435,26 @@ def function_parameter_type(source: str, kinds: list[int], starts: list[int], en
         return 0
     return parameter_type_from_declaration(source, kinds, starts, ends, parameter_starts[parameter_index], parameter_ends[parameter_index])
 
-def collect_functions(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], function_ends: list[int], function_bodies: list[int], function_body_ends: list[int], function_param_offsets: list[int], function_param_counts: list[int], parameter_starts: list[int], parameter_ends: list[int], parameter_types: list[int], parameter_struct_decls: list[int], function_return_types: list[int], function_return_struct_decls: list[int], parameter_default_indexes: list[int]) -> int:
+def collect_functions(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], function_ends: list[int], function_bodies: list[int], function_body_ends: list[int], function_param_offsets: list[int], function_param_counts: list[int], parameter_starts: list[int], parameter_ends: list[int], parameter_types: list[int], parameter_struct_decls: list[int], function_return_types: list[int], function_return_struct_decls: list[int], parameter_default_indexes: list[int], parameter_annotation_starts: list[int], parameter_annotation_ends: list[int]) -> int:
     let current_index = 0
+    # interface 声明块内的 def 只是方法签名，不收集为可调用函数
+    let interface_indent = -1
+    let interface_header_end = -1
     while token_kind(kinds, current_index) != TOKEN_EOF:
+        if token_kind(kinds, current_index) == TOKEN_IDENTIFIER:
+            if interface_indent >= 0 and current_index > interface_header_end:
+                if line_indent(source, token_start(starts, current_index)) <= interface_indent:
+                    interface_indent = -1
+            elif source[token_start(starts, current_index):token_end(ends, current_index)] == "interface" and token_kind(kinds, current_index + 1) == TOKEN_IDENTIFIER and token_kind(kinds, current_index + 2) == TOKEN_COLON:
+                interface_indent = line_indent(source, token_start(starts, current_index))
+                let header_scan = current_index + 1
+                while token_kind(kinds, header_scan) != TOKEN_COLON and token_kind(kinds, header_scan) != TOKEN_NEWLINE and token_kind(kinds, header_scan) != TOKEN_EOF:
+                    header_scan = header_scan + 1
+                interface_header_end = header_scan
         let is_function_definition = false
         if token_kind(kinds, current_index) == TOKEN_DEF:
-            is_function_definition = true
+            if interface_indent < 0:
+                is_function_definition = true
         if is_function_definition:
             let name_index = current_index + 1
             let open_index = find_function_open_parenthesis(kinds, name_index)
@@ -1388,6 +1476,8 @@ def collect_functions(source: str, kinds: list[int], starts: list[int], ends: li
                     append(parameter_starts, token_start(starts, parameter_index))
                     append(parameter_ends, token_end(ends, parameter_index))
                     let parameter_type_index = parameter_index + 2
+                    append(parameter_annotation_starts, token_start(starts, parameter_type_index))
+                    append(parameter_annotation_ends, token_end(ends, parameter_type_index))
                     let collected_parameter_type = get_parameter_type(source, kinds, starts, ends, parameter_type_index)
                     let collected_struct_declaration = -1
                     if parameter_name == "self":

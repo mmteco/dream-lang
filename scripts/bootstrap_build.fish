@@ -66,7 +66,9 @@ if not rg -q '^def[[:space:]]+main[[:space:]]*\(' "$source_path"
         end
     end
     printf '\n' >> "$prepared_source_file"
-    sed '/^let[[:space:]]/d' "$source_path" >> "$prepared_source_file"
+    # 顶层语句已拷入 main；追加部分只保留定义（struct/def 等含缩进块），
+    # 避免残留 let/match 多行体或重复的顶层表达式
+    awk '/^(def|from|import|const|struct|enum|class|interface|impl|type)([[:space:](]|$)/ {keep=1; print; next} keep && /^[[:space:]]/ {print; next} keep && !/^[[:space:]]*$/ {keep=0} {next}' "$source_path" >> "$prepared_source_file"
     set request_input_path "$prepared_source_file"
 end
 

@@ -161,10 +161,36 @@ def llvm_lir_decoded_content_length(source_start: int, source_end: int) -> int:
     while index < source_end:
         if ord(llvm_lir_source[index]) == 92 and index + 1 < source_end and llvm_lir_escape_value(ord(llvm_lir_source[index + 1])) >= 0:
             index = index + 2
+            count = count + 1
         else:
+            let rune_value = ord(llvm_lir_source[index])
+            if rune_value >= 0x10000:
+                count = count + 4
+            elif rune_value >= 0x800:
+                count = count + 3
+            elif rune_value >= 0x80:
+                count = count + 2
+            else:
+                count = count + 1
             index = index + 1
-        count = count + 1
     return count
+
+def llvm_lir_append_rune_utf8(value: int, output: TextBuffer):
+    # rune 码 → UTF-8 字节序列（LLVM 字符串常量按字节存储）
+    if value < 0x80:
+        llvm_lir_append_hex_byte(value, output)
+    elif value < 0x800:
+        llvm_lir_append_hex_byte(0xC0 + value / 64, output)
+        llvm_lir_append_hex_byte(0x80 + value % 64, output)
+    elif value < 0x10000:
+        llvm_lir_append_hex_byte(0xE0 + value / 0x1000, output)
+        llvm_lir_append_hex_byte(0x80 + (value / 64) % 64, output)
+        llvm_lir_append_hex_byte(0x80 + value % 64, output)
+    else:
+        llvm_lir_append_hex_byte(0xF0 + value / 0x40000, output)
+        llvm_lir_append_hex_byte(0x80 + (value / 0x1000) % 64, output)
+        llvm_lir_append_hex_byte(0x80 + (value / 64) % 64, output)
+        llvm_lir_append_hex_byte(0x80 + value % 64, output)
 
 def llvm_lir_append_string_global(record_id: int, source_start: int, source_end: int, output: TextBuffer):
     let content_length = llvm_lir_decoded_content_length(source_start, source_end)
@@ -183,7 +209,7 @@ def llvm_lir_append_string_global(record_id: int, source_start: int, source_end:
             llvm_lir_append_hex_byte(escaped_value, output)
             index = index + 2
         else:
-            llvm_lir_append_hex_byte(current, output)
+            llvm_lir_append_rune_utf8(current, output)
             index = index + 1
     append(output, "\\00\"\n")
 
@@ -873,11 +899,56 @@ def llvm_lir_append_runtime_declarations(output: TextBuffer):
     append(output, "declare void @append_i32(i8*, i32)\n")
     append(output, "declare void @append_pointer(i8*, i8*)\n")
     append(output, "declare i32 @get_dynarray_i32(i8*, i32)\n")
+    append(output, "declare double @get_f64(i8*, i32)\n")
     append(output, "declare void @set_dynarray_i32(i8*, i32, i32)\n")
     append(output, "declare i8* @get_pointer(i8*, i32)\n")
     append(output, "declare i8* @slice_dynarray_i32(i8*, i32, i32)\n")
     append(output, "declare i8* @concat_dynarray_i32(i8*, i8*)\n")
     append(output, "declare i8* @string_substring(i8*, i32, i32)\n")
+
+def llvm_lir_append_function_signature(program: LirProgram, record_id: int, output: TextBuffer):
+    # 写函数 LLVM 签名 "return_type (param_types...)"，供函数指针表 bitcast 使用
+    let function_offset = lir_record_offset(record_id)
+    append(output, llvm_lir_type(llvm_lir_function_return_type(program, function_offset)))
+    append(output, " (")
+    let scan_record = record_id + 1
+    let parameter_index = 0
+    let scanning_parameters = true
+    while scanning_parameters:
+        if scan_record >= lir_record_count(program.records):
+            scanning_parameters = false
+        elif program.records[lir_record_offset(scan_record)] != LIR_RECORD_PARAMETER:
+            scanning_parameters = false
+        else:
+            if parameter_index > 0:
+                append(output, ", ")
+            let parameter_offset = lir_record_offset(scan_record)
+            append(output, llvm_lir_type(program.records[parameter_offset + 4]))
+            parameter_index = parameter_index + 1
+            scan_record = scan_record + 1
+    append(output, ")")
+
+def llvm_lir_append_function_table(program: LirProgram, output: TextBuffer):
+    # 函数指针表：@dm_function_table = [ptr @dm_function_N, ...]
+    let function_count = len(llvm_lir_function_record_cache)
+    append(output, "@dm_function_table = private global [")
+    append(output, function_count)
+    append(output, " x ptr] [")
+    let function_index = 0
+    while function_index < function_count:
+        if function_index > 0:
+            append(output, ", ")
+        let record_id = llvm_lir_find_function_record(program, function_index)
+        if record_id >= 0:
+            if program.records[lir_record_offset(record_id) + 3] == LIR_FUNCTION_ENTRY:
+                append(output, "ptr null")
+            else:
+                append(output, "ptr @dm_function_")
+                append(output, function_index)
+        else:
+            append(output, "ptr null")
+        function_index = function_index + 1
+    append(output, "]\n")
     append(output, "declare i32 @string_compare(i8*, i8*)\n")
     append(output, "declare i8* @dream_dict_create_int_int(i32)\n")
     append(output, "declare i8* @dream_dict_create_int_str(i32)\n")
@@ -1495,6 +1566,75 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: TextBu
         let runtime_id = program.records[offset + 8]
         if runtime_id <= 0:
             runtime_id = 31
+        if runtime_id == 15:
+            # 函数值间接调用：operand0 = 函数索引，经函数指针表取地址后统一签名调用
+            let operand_count = program.records[offset + 7]
+            let fn_index_name = llvm_lir_join_int("%fn_idx_", offset, "")
+            append(output, "  ")
+            append(output, fn_index_name)
+            let fn_index_type = llvm_lir_binary_operand_type(program, offset, 0)
+            if llvm_lir_is_pointer_like(fn_index_type):
+                append(output, " = ptrtoint i8* ")
+                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                append(output, " to i32\n")
+            else:
+                append(output, " = add i32 0, ")
+                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+                append(output, "\n")
+            append(output, "  %fn_ptr_")
+            append(output, offset)
+            append(output, " = getelementptr inbounds [")
+            append(output, len(llvm_lir_function_record_cache))
+            append(output, " x ptr], ptr @dm_function_table, i32 0, i32 ")
+            append(output, fn_index_name)
+            append(output, "\n  %fn_ptr_load_")
+            append(output, offset)
+            append(output, " = load ptr, ptr %fn_ptr_")
+            append(output, offset)
+            append(output, "\n  %fn_cast_")
+            append(output, offset)
+            append(output, " = bitcast ptr %fn_ptr_load_")
+            append(output, offset)
+            append(output, " to i32 (i32, i32, i32)*\n")
+            let call_arg_index = 1
+            while call_arg_index < operand_count and call_arg_index <= 3:
+                let arg_type = llvm_lir_binary_operand_type(program, offset, call_arg_index)
+                if llvm_lir_is_pointer_like(arg_type):
+                    let arg_int_name = llvm_lir_join_int("%fn_arg_int_", offset + call_arg_index, "")
+                    append(output, "  ")
+                    append(output, arg_int_name)
+                    append(output, " = ptrtoint i8* ")
+                    llvm_lir_append_operand(program, offset, call_arg_index, LIR_TYPE_PTR, output)
+                    append(output, " to i32\n")
+                call_arg_index = call_arg_index + 1
+            append(output, "  ")
+            append(output, result_name)
+            append(output, " = call i32 %fn_cast_")
+            append(output, offset)
+            append(output, "(")
+            let call_arg_index = 1
+            let first_argument_emitted = false
+            while call_arg_index < operand_count and call_arg_index <= 3:
+                let arg_type = llvm_lir_binary_operand_type(program, offset, call_arg_index)
+                if first_argument_emitted:
+                    append(output, ", ")
+                if llvm_lir_is_pointer_like(arg_type):
+                    let arg_int_name = llvm_lir_join_int("%fn_arg_int_", offset + call_arg_index, "")
+                    append(output, "i32 ")
+                    append(output, arg_int_name)
+                else:
+                    append(output, "i32 ")
+                    llvm_lir_append_operand(program, offset, call_arg_index, LIR_TYPE_I32, output)
+                first_argument_emitted = true
+                call_arg_index = call_arg_index + 1
+            while call_arg_index <= 3:
+                if first_argument_emitted:
+                    append(output, ", ")
+                append(output, "i32 0")
+                first_argument_emitted = true
+                call_arg_index = call_arg_index + 1
+            append(output, ")\n")
+            return
         if runtime_id == 1:
             append(output, "  call void ")
             append(output, llvm_lir_print_name(program, offset))
@@ -2046,6 +2186,9 @@ def llvm_lower_lir(program: LirProgram, source: str, output: TextBuffer) -> bool
     llvm_lir_prepare_function_cache(program)
     phase_time = llvm_lir_debug_checkpoint("cache", phase_time)
     append(output, "; Dream LIR to LLVM IR\n")
+    append(output, "; DIR records=")
+    append(output, lir_record_count(program.records))
+    append(output, "\n")
     llvm_lir_append_runtime_declarations(output)
     llvm_lir_append_external_declarations(output)
     llvm_lir_append_global_declarations(program, output)
@@ -2060,5 +2203,6 @@ def llvm_lower_lir(program: LirProgram, source: str, output: TextBuffer) -> bool
             llvm_lir_emit_function(program, function_id, record_id, output)
             function_id = function_id + 1
         record_id = record_id + 1
+    llvm_lir_append_function_table(program, output)
     llvm_lir_debug_checkpoint("functions", phase_time)
     return true

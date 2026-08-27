@@ -246,18 +246,27 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let constant_literal_starts = []
     let constant_literal_ends = []
     let parameter_default_indexes = []
+    let parameter_annotation_starts: list[int] = []
+    let parameter_annotation_ends: list[int] = []
     let ast_nodes: list[int] = []
     let ast_function_nodes_start: list[int] = []
     let ast_function_nodes_end: list[int] = []
     let ast_global_nodes: list[int] = []
     collect_declared_types(source, kinds, starts, ends)
     collect_struct_fields(source, kinds, starts, ends)
-    collect_functions(source, kinds, starts, ends, function_starts, function_ends, function_bodies, function_body_ends, function_param_offsets, function_param_counts, parameter_starts, parameter_ends, parameter_types, parameter_struct_decls, function_return_types, function_return_struct_decls, parameter_default_indexes)
+    collect_functions(source, kinds, starts, ends, function_starts, function_ends, function_bodies, function_body_ends, function_param_offsets, function_param_counts, parameter_starts, parameter_ends, parameter_types, parameter_struct_decls, function_return_types, function_return_struct_decls, parameter_default_indexes, parameter_annotation_starts, parameter_annotation_ends)
     collect_constants(source, kinds, starts, ends, constant_starts, constant_ends, constant_values, constant_types, constant_literal_starts, constant_literal_ends)
     let impl_func_indexes: list[int] = []
     let impl_func_decls: list[int] = []
     let impl_func_interface_types: list[int] = []
     collect_impl_functions(source, kinds, starts, ends, function_starts, function_ends, impl_func_indexes, impl_func_decls, impl_func_interface_types)
+    let interface_name_starts: list[int] = []
+    let interface_name_ends: list[int] = []
+    let impl_function_indexes: list[int] = []
+    let impl_decl_indexes: list[int] = []
+    let impl_interface_name_starts: list[int] = []
+    let impl_interface_name_ends: list[int] = []
+    collect_interfaces(source, kinds, starts, ends, function_starts, interface_name_starts, interface_name_ends, impl_function_indexes, impl_decl_indexes, impl_interface_name_starts, impl_interface_name_ends)
     phase_time = compiler_debug_checkpoint("collect", phase_time)
     let parse_context = ParseContext{src: source, kinds: kinds, starts: starts, ends: ends, fn_starts: function_starts, fn_ends: function_ends, param_offsets: function_param_offsets, param_counts: function_param_counts, param_starts: parameter_starts, param_ends: parameter_ends, ret_types: function_return_types, pd: parameter_default_indexes, cst_starts: constant_starts, cst_ends: constant_ends, cst_values: constant_values, file_packages: file_packages, file_starts: file_starts, file_ends: file_ends}
     let global_let_name_starts = []
@@ -307,7 +316,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         write_byte_output(output_path, hir_output)
         compiler_debug_checkpoint("hir-dump", phase_time)
         return true
-    let mir_program = mir_model_build_program(validated_hir_records, hir_values, validated_hir_struct_decls, source, constant_starts, constant_ends, constant_values, constant_types, constant_literal_starts, constant_literal_ends, function_return_struct_decls, function_param_offsets, parameter_struct_decls, impl_func_indexes, impl_func_decls, impl_func_interface_types)
+    let mir_program = mir_model_build_program(validated_hir_records, hir_values, validated_hir_struct_decls, source, constant_starts, constant_ends, constant_values, constant_types, constant_literal_starts, constant_literal_ends, function_return_struct_decls, function_param_offsets, parameter_struct_decls, parameter_default_indexes, parameter_annotation_starts, parameter_annotation_ends, impl_func_indexes, impl_func_decls, impl_func_interface_types, interface_name_starts, interface_name_ends, impl_function_indexes, impl_decl_indexes, impl_interface_name_starts, impl_interface_name_ends)
     phase_time = compiler_debug_checkpoint("mir-build", phase_time)
     let optimized_mir_program = mir_optimize_program(mir_program)
     phase_time = compiler_debug_checkpoint("mir-opt", phase_time)

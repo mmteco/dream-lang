@@ -399,6 +399,30 @@ void dream_interface_release(void* object) {
     gc_release(object);
 }
 
+// 接口 box：{对象指针, 类型 tag}，tag 为 struct 声明索引
+typedef struct {
+    void* object;
+    int32_t tag;
+} dream_interface_box_t;
+
+void* __c_interface_box(void* object, int32_t tag) {
+    dream_interface_box_t* box = (dream_interface_box_t*)gc_alloc(sizeof(dream_interface_box_t), OBJ_INTERFACE);
+    if (!box) return NULL;
+    box->object = object;
+    box->tag = tag;
+    return box;
+}
+
+void* __c_interface_obj(void* box) {
+    if (!box) return NULL;
+    return ((dream_interface_box_t*)box)->object;
+}
+
+int32_t __c_interface_tag(void* box) {
+    if (!box) return -1;
+    return ((dream_interface_box_t*)box)->tag;
+}
+
 // ============================================================================
 // 引用计数操作
 // ============================================================================
