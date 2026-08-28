@@ -198,6 +198,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_bootstrap_list_match.dm tmp/dream_bootstrap_list_match 30 0 11
     check_bootstrapped_example test/test_bootstrap_match_enum.dm tmp/dream_bootstrap_match_enum 42
     check_bootstrapped_example test/test_bootstrap_match_builtin.dm tmp/dream_bootstrap_match_builtin 7 9
+    check_bootstrapped_example test/test_bootstrap_list_str.dm tmp/dream_bootstrap_list_str 2 b c 2 x 3 a x-y
     check_bootstrapped_example test/test_bootstrap_match_statement.dm tmp/dream_bootstrap_match_statement 42 -1 7 9
     check_bootstrapped_example test/test_bootstrap_dict.dm tmp/dream_bootstrap_dict 10 25 2
     check_bootstrapped_example test/test_bootstrap_dict_string.dm tmp/dream_bootstrap_dict_string two 2

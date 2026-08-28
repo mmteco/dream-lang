@@ -352,6 +352,13 @@ intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index) {
     return arr->data[index];
 }
 
+void set_dynarray_ptr(dynarray_ptr* arr, int index, const void* value) {
+    if (!arr || index < 0 || index >= arr->length) {
+        return;
+    }
+    arr->data[index] = (intptr_t)value;
+}
+
 int len_dynarray_ptr(dynarray_ptr* arr) {
     return arr ? arr->length : 0;
 }

@@ -2,7 +2,7 @@
 # int_to_str 为纯 Dream 实现，其余直接映射 C 运行时字符串函数
 
 def int_to_str(value: int) -> str:
-    '''将整数转换为十进制字符串'''
+    
     if value == 0:
         return "0"
 

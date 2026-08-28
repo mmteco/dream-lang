@@ -58,7 +58,8 @@ const LIR_TYPE_BYTES: int = 10
 const LIR_TYPE_DICT: int = 11
 const LIR_TYPE_TUPLE: int = 12
 const LIR_TYPE_STRUCT: int = 13
-const LIR_TYPE_MAX: int = LIR_TYPE_STRUCT
+const LIR_TYPE_LIST_PTR: int = 14
+const LIR_TYPE_MAX: int = LIR_TYPE_LIST_PTR
 
 const LIR_OPERAND_VALUE: int = 1
 const LIR_OPERAND_IMMEDIATE: int = 2
@@ -178,6 +179,7 @@ def lir_build_default_layouts() -> list[int]:
     lir_append_layout(layouts, LIR_TYPE_DICT, 8, 8, -1, -1, 0)
     lir_append_layout(layouts, LIR_TYPE_TUPLE, 8, 8, -1, -1, 0)
     lir_append_layout(layouts, LIR_TYPE_STRUCT, 8, 8, -1, -1, 0)
+    lir_append_layout(layouts, LIR_TYPE_LIST_PTR, 8, 8, -1, -1, 0)
     return layouts
 
 def lir_append_record(records: list[int], record: LirRecord):
@@ -221,6 +223,8 @@ def lir_type_from_mir(type_tag: int) -> int:
         return LIR_TYPE_PTR
     if type_tag == MIR_TYPE_LIST:
         return LIR_TYPE_LIST
+    if type_tag == MIR_TYPE_LIST_PTR:
+        return LIR_TYPE_LIST_PTR
     if type_tag == MIR_TYPE_DICT:
         return LIR_TYPE_DICT
     if type_tag == MIR_TYPE_TUPLE:

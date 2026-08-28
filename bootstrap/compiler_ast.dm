@@ -852,9 +852,9 @@ def ast_parse_let_statement(context: ParseContext, index: int, body_end: int, as
     let let_value_index = ast_advance_index(index, 3)
     let annotation_index = ast_advance_index(index, 2)
     if token_kind(kinds, annotation_index) == TOKEN_COLON:
-        let_annotation_start = token_start(starts, annotation_index)
-        let_annotation_end = token_end(ends, annotation_index)
         let annotation_cursor = ast_advance_index(index, 3)
+        let_annotation_start = token_start(starts, annotation_cursor)
+        let_annotation_end = token_end(ends, annotation_cursor)
         while token_kind(kinds, annotation_cursor) != TOKEN_ASSIGN and token_kind(kinds, annotation_cursor) != TOKEN_NEWLINE and token_kind(kinds, annotation_cursor) != TOKEN_EOF:
             annotation_cursor = annotation_cursor + 1
         if token_kind(kinds, annotation_cursor) == TOKEN_ASSIGN:

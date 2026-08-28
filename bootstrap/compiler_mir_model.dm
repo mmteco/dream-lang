@@ -27,15 +27,16 @@ const MIR_TYPE_STR: int = 5
 const MIR_TYPE_BYTES: int = 6
 const MIR_TYPE_PTR: int = 7
 const MIR_TYPE_LIST: int = 8
-const MIR_TYPE_DICT: int = 9
-const MIR_TYPE_TUPLE: int = 10
-const MIR_TYPE_STRUCT: int = 11
-const MIR_TYPE_ENUM: int = 12
-const MIR_TYPE_INTERFACE: int = 13
-const MIR_TYPE_UNION: int = 14
-const MIR_TYPE_FUNCTION: int = 15
-const MIR_TYPE_CLOSURE: int = 16
-const MIR_TYPE_DYNAMIC: int = 17
+const MIR_TYPE_LIST_PTR: int = 9
+const MIR_TYPE_DICT: int = 10
+const MIR_TYPE_TUPLE: int = 11
+const MIR_TYPE_STRUCT: int = 12
+const MIR_TYPE_ENUM: int = 13
+const MIR_TYPE_INTERFACE: int = 14
+const MIR_TYPE_UNION: int = 15
+const MIR_TYPE_FUNCTION: int = 16
+const MIR_TYPE_CLOSURE: int = 17
+const MIR_TYPE_DYNAMIC: int = 18
 const MIR_TYPE_MAX: int = MIR_TYPE_DYNAMIC
 
 const MIR_IMPL_ACCEPTS_STR: int = 0
@@ -226,7 +227,9 @@ def mir_append_operand(values: list[int], operand_kind: int, value: int):
     append(values, value)
 
 def mir_type_from_hir(type_tag: int) -> int:
-    if type_tag == HIR_TYPE_LIST or type_tag == HIR_TYPE_LIST_INT:
+    if type_tag == HIR_TYPE_LIST:
+        return MIR_TYPE_LIST_PTR
+    if type_tag == HIR_TYPE_LIST_INT:
         return MIR_TYPE_LIST
     if type_tag == HIR_TYPE_DICT:
         return MIR_TYPE_DICT
@@ -468,8 +471,22 @@ def mir_list_element_type(state: MirLowerState, list_value: int) -> int:
                             return mir_list_element_type(state, first_element)
                         return element_type
         record_id = record_id + 1
-    # 无定义可循（函数参数等）默认 int 元素
+    # 无定义可循（函数参数等）：按列表类型推断元素类型
+    if mir_state_value_type(state, list_value) == MIR_TYPE_LIST_PTR:
+        return MIR_TYPE_PTR
     return MIR_TYPE_I32
+
+# 将 list 创建指令的类型提升为 LIST_PTR（用于 let 注解 list[str] + 空字面量初始化）
+def mir_promote_list_type(state: MirLowerState, value: int, target_type: int):
+    let record_id = 0
+    while record_id < mir_record_count(state.records):
+        let offset = mir_record_offset(record_id)
+        if state.records[offset] == MIR_RECORD_INSTRUCTION and state.records[offset + 5] == value and state.records[offset + 3] == MIR_OP_LIST:
+            mir_int_list_set(state.records, offset + 4, target_type)
+            if value >= 0 and value < len(state.value_types):
+                mir_int_list_set(state.value_types, value, target_type)
+            return
+        record_id = record_id + 1
 
 # 二元运算结果类型：比较/逻辑为 bool，算术沿用操作数类型（int/float/str）
 def mir_binary_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -> int:
@@ -911,6 +928,8 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
         if global_slot >= 0 and global_slot < len(state.global_types):
             if mir_int_list_get(state.global_types, global_slot) == MIR_TYPE_LIST:
                 return MIR_TYPE_I32
+            if mir_int_list_get(state.global_types, global_slot) == MIR_TYPE_LIST_PTR:
+                return MIR_TYPE_PTR
             # 全局 dict：从初始化表达式（DICT 字面量）的首个 value 节点类型推断
             let initializer_node = mir_int_list_get(state.global_initializers, global_slot)
             if initializer_node >= 0:
@@ -947,7 +966,7 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
                     dict_record_id = dict_record_id + 1
                 # 泛型 dict 参数（dict[int, T]）无创建指令，默认元素为 int
                 return MIR_TYPE_I32
-            if base_type == MIR_TYPE_LIST or base_type == MIR_TYPE_PTR or base_type == MIR_TYPE_BYTES:
+            if base_type == MIR_TYPE_LIST or base_type == MIR_TYPE_LIST_PTR or base_type == MIR_TYPE_PTR or base_type == MIR_TYPE_BYTES:
                 # bytes（str_to_bytes 结果）元素为 int；list 取定义元素类型
                 return mir_list_element_type(state, local_value)
             if base_type == MIR_TYPE_TUPLE:
@@ -1245,6 +1264,15 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                         mir_state_set_struct_declaration(state, box_value, 0 - (interface_id + 2))
                         initializer = box_value
                         initializer_node = -1
+            # list[str] 注解：空字面量初始化的容器类型提升为 LIST_PTR（直接读注解文本，不依赖推断）
+            if initializer >= 0 and payload_count > 4:
+                let annotation_start_offset = hir_value_offset(payload_start + 2)
+                let annotation_end_offset = hir_value_offset(payload_start + 3)
+                if hir.values[annotation_start_offset] == HIR_VALUE_INT and hir.values[annotation_end_offset] == HIR_VALUE_INT:
+                    let ann_start = hir.values[annotation_start_offset + 1]
+                    let ann_end = hir.values[annotation_end_offset + 1]
+                    if ann_start > 0 and ann_end > ann_start and state.source[ann_start:ann_end] == "list[str]":
+                        mir_promote_list_type(state, initializer, MIR_TYPE_LIST_PTR)
             let name_start_offset = hir_value_offset(payload_start)
             let name_end_offset = hir_value_offset(payload_start + 1)
             mir_bind_symbol(state, hir.values[name_start_offset + 1], hir.values[name_end_offset + 1], initializer)
@@ -2006,11 +2034,16 @@ def mir_lower_hir_list_comp(hir: HirProgram, node_id: int, state: MirLowerState)
         cond_node = hir.values[cond_offset + 1]
     if body_node < 0:
         return -1
-    # 结果列表
+    # 结果列表：元素类型按 iterable 元素类型推断（指针元素用 LIST_PTR）
     let list_value = mir_int_list_get(state.next_value, 0)
     mir_int_list_set(state.next_value, 0, list_value + 1)
+    let list_type = MIR_TYPE_LIST
+    if iterable >= 0:
+        let iterable_element_type = mir_list_element_type(state, iterable)
+        if iterable_element_type != MIR_TYPE_I32 and iterable_element_type != MIR_TYPE_F64 and iterable_element_type != MIR_TYPE_BOOL and iterable_element_type != MIR_TYPE_UNIT and iterable_element_type != MIR_TYPE_UNKNOWN and iterable_element_type != MIR_TYPE_DYNAMIC:
+            list_type = MIR_TYPE_LIST_PTR
     let list_start = mir_value_count(state.values)
-    mir_state_append_instruction(state, MIR_OP_LIST, MIR_TYPE_LIST, list_value, list_start, 0)
+    mir_state_append_instruction(state, MIR_OP_LIST, list_type, list_value, list_start, 0)
     # 内部变量伪名（var 之前的位置，避免与真实变量冲突）
     let list_name_start = var_start - 2
     let list_name_end = var_start - 1
@@ -2683,6 +2716,8 @@ def mir_lambda_annotation_type(state: MirLowerState, text_start: int, text_end: 
         return MIR_TYPE_STR
     if annotation == "list[int]":
         return MIR_TYPE_LIST
+    if annotation == "list[str]":
+        return MIR_TYPE_LIST_PTR
     return MIR_TYPE_PTR
 
 def mir_lambda_explicit_params(state: MirLowerState, params_token_start: int, params_token_end: int, explicit_name_starts: list[int], explicit_name_ends: list[int], explicit_types: list[int]):

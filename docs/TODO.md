@@ -215,11 +215,12 @@
    - 列表推导式返回固定最大容量的数组
    - 数组切片返回最大可能大小的数组
 
-2. list[str] 运行时 ABI 未统一（bootstrap 编译器）
-   - `append_pointer` 以 2 个 i32 槽存储 64 位指针（length 双倍），但 len/索引发射仍按 i32 单槽 → `len(list[str])` 为实际元素数的 2 倍、索引只取低 32 位
-   - DM 创建（字面量/append）的 list[str] 与 C 创建的 dynarray_ptr（string_split 返回值）表示不兼容
-   - 规避：标准库包装函数显式标注返回类型；C 返回的数组 len/join 可用，DM 创建数组的索引/遍历不可用
-   - 修复方向：MIR/LIR 类型支持 list 元素类型，按元素类型分派 append/get/len（append 已按操作数类型分派）
+2. struct 字段的 list 索引赋值不生效（`h.records[i] = v`，bootstrap 编译器）
+   - MIR 层 set 分支只处理符号/全局集合，struct 字段集合（FIELD 表达式）降级为读取
+   - 编译器自身代码已避开（改用 mir_int_list_set/hir_int_list_set 辅助函数）；用户程序使用会静默变读取
+   - 修复方向：mir 层 set 处理支持 FIELD 集合（先 FIELD 取指针再 set_dynarray_*）
+
+3. list[float] 的 ABI（append_f64 双槽 + len/索引按单槽）与 list[str] 修复前同类问题，无自举覆盖，未修复
 
 2. 列表推导式的实际长度信息丢失
    - `len()` 只能用于局部数组变量

@@ -1654,6 +1654,11 @@ def parse_global_let_annotation(source: str, kinds: list[int], starts: list[int]
             return VALUE_TYPE_FLOAT
         if type_name == "bool":
             return VALUE_TYPE_BOOL
+        if type_name == "list" and token_kind(kinds, type_index + 1) == TOKEN_OPEN_BRACKET:
+            let element_index = type_index + 2
+            if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source[token_start(starts, element_index):token_end(ends, element_index)] == "str":
+                return VALUE_TYPE_LIST_STRING
+            return VALUE_TYPE_LIST_INT
     return VALUE_TYPE_UNKNOWN
 
 def collect_global_lets(source: str, kinds: list[int], starts: list[int], ends: list[int], global_let_name_starts: list[int], global_let_name_ends: list[int], global_let_types: list[int], global_let_expression_indexes: list[int]) -> int:
@@ -1675,6 +1680,11 @@ def collect_global_lets(source: str, kinds: list[int], starts: list[int], ends: 
                 if value_type == VALUE_TYPE_UNKNOWN:
                     if token_kind(kinds, expression_index) == TOKEN_OPEN_BRACKET:
                         value_type = VALUE_TYPE_LIST
+                        let first_element_index = expression_index + 1
+                        while token_kind(kinds, first_element_index) == TOKEN_NEWLINE:
+                            first_element_index = first_element_index + 1
+                        if token_kind(kinds, first_element_index) == TOKEN_STRING:
+                            value_type = VALUE_TYPE_LIST_STRING
                     if token_kind(kinds, expression_index) == TOKEN_OPEN_BRACE:
                         value_type = VALUE_TYPE_DICT_INT_INT
                         let dict_first_key_index = expression_index + 1

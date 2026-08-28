@@ -1232,7 +1232,17 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, functi
             field_index = field_index + 1
         return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_LIST:
-        return HIR_TYPE_LIST
+        # 元素类型推断：任一指针元素（str/struct 等）为 LIST，全标量或空为 LIST_INT
+        let list_element_type = HIR_TYPE_LIST_INT
+        let element_index = 0
+        while element_index < payload_count:
+            let element_offset = hir_value_offset(payload_start + element_index)
+            if program.values[element_offset] == HIR_VALUE_NODE:
+                let element_type = hir_node_type(program, program.values[element_offset], program.values[element_offset + 1])
+                if element_type != HIR_TYPE_I32 and element_type != HIR_TYPE_F64 and element_type != HIR_TYPE_BOOL and element_type != HIR_TYPE_UNIT and element_type != HIR_TYPE_UNKNOWN:
+                    list_element_type = HIR_TYPE_LIST
+            element_index = element_index + 1
+        return list_element_type
     if opcode == HIR_OP_DICT:
         return HIR_TYPE_DICT
     if opcode == HIR_OP_TUPLE:
@@ -1538,9 +1548,9 @@ def hir_type_from_collected_type(value_type: int) -> int:
         return HIR_TYPE_I32
     if value_type == 2:
         return HIR_TYPE_STR
-    if value_type == 3 or value_type == 40:
+    if value_type == 40:
         return HIR_TYPE_LIST
-    if value_type == 41:
+    if value_type == 3 or value_type == 41:
         return HIR_TYPE_LIST_INT
     if value_type == 42:
         return HIR_TYPE_STRUCT

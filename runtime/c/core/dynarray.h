@@ -48,6 +48,7 @@ dynarray_ptr* create_dynarray_ptr(int initial_capacity);
 void free_dynarray_ptr(dynarray_ptr* arr);
 void append_ptr(dynarray_ptr* arr, intptr_t value);
 intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index);
+void set_dynarray_ptr(dynarray_ptr* arr, int index, const void* value);
 int len_dynarray_ptr(dynarray_ptr* arr);
 dynarray_ptr* slice_dynarray_ptr(dynarray_ptr* arr, int start, int end);
 dynarray_ptr* concat_dynarray_ptr(dynarray_ptr* arr1, dynarray_ptr* arr2);
