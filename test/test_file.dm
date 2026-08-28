@@ -1,9 +1,8 @@
 # dream-test: dir
-# Dream 文件 I/O 综合测试（bootstrap 子集）
-# 包含：文本读写、字节读写、追加、删除、错误处理
+# Dream 文件 I/O 综合测试
 
-from file import read_text, read_bytes, write_text, write_bytes, append_text, delete_file, exists_file
-from bytes import str_to_bytes
+from io import open, exists, delete
+from bytes import encode
 
 def report_result(r: Result[int, str]) -> int:
     return match r:
@@ -15,42 +14,46 @@ def main():
 
     print("--- Text Write/Read ---")
 
-    let result1 = write_text("test1.txt", "Hello Dream")
+    let writer = open("test1.txt", "w")
+    let result1 = writer.write("Hello Dream")
     print(report_result(result1))
 
-    let content1 = read_text("test1.txt")
+    let reader = open("test1.txt", "r")
+    let content1 = reader.read()
     print(content1)
 
-    let exists1 = exists_file("test1.txt")
+    let exists1 = exists("test1.txt")
     print(exists1)
 
     print("--- Bytes Write/Read ---")
 
-    let result2 = write_bytes("test2.txt", str_to_bytes("Hello"))
+    let bytes_writer = open("test2.txt", "wb")
+    let result2 = bytes_writer.write_bytes(encode("Hello"))
     print(report_result(result2))
 
-    let bytes_read = read_bytes("test2.txt")
+    let bytes_read = open("test2.txt", "rb").read_bytes()
     print(len(bytes_read))
 
     print("--- Append ---")
 
-    let result3 = append_text("test1.txt", " World")
+    let append_writer = open("test1.txt", "a")
+    let result3 = append_writer.write(" World")
     print(report_result(result3))
 
-    let content2 = read_text("test1.txt")
+    let content2 = reader.read()
     print(content2)
 
     print("--- Error Case ---")
 
-    let result4 = write_text("/nonexistent_dir/test.txt", "fail")
+    let result4 = open("/nonexistent_dir/test.txt", "w").write("fail")
     print(report_result(result4))
 
     print("--- Cleanup ---")
 
-    let del1 = delete_file("test1.txt")
+    let del1 = delete("test1.txt")
     print(del1)
 
-    let del2 = delete_file("test2.txt")
+    let del2 = delete("test2.txt")
     print(del2)
 
     print("=== All File I/O Tests Passed ===")

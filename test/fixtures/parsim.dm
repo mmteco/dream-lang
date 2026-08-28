@@ -24,7 +24,7 @@ def main() -> int:
                 output_path = args[argument_index + 1]
                 has_output = true
                 step = 2
-        elif text_length(input_path) == 0:
+        elif text_len(input_path) == 0:
             input_path = argument
         else:
             is_valid = false

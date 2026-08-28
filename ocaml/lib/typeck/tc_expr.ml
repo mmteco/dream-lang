@@ -69,11 +69,20 @@ let string_method_type method_name =
   | "length" -> Some (TyFunc ([], TyInt))
   | "upper" | "lower" | "strip" -> Some (TyFunc ([], TyStr))
   | "find" -> Some (TyFunc ([TyStr], TyInt))
-  | "starts_with" | "ends_with" -> Some (TyFunc ([TyStr], TyBool))
+  | "startswith" | "endswith" -> Some (TyFunc ([TyStr], TyBool))
   | "replace" -> Some (TyFunc ([TyStr; TyStr], TyStr))
   | "split" -> Some (TyFunc ([TyStr], TyList TyStr))
   | "join" -> Some (TyFunc ([TyList TyStr], TyStr))
-  | "is_digit" | "is_alpha" | "is_whitespace" -> Some (TyFunc ([TyInt], TyBool))
+  | "isdigit" | "isalpha" | "isspace" -> Some (TyFunc ([TyInt], TyBool))
+  | "encode" -> Some (TyFunc ([], TyBytes))
+  | _ -> None
+
+let bytes_method_type method_name =
+  match method_name with
+  | "length" -> Some (TyFunc ([], TyInt))
+  | "get" -> Some (TyFunc ([TyInt], TyByte))
+  | "slice" -> Some (TyFunc ([TyInt; TyInt], TyBytes))
+  | "decode" -> Some (TyFunc ([], TyStr))
   | _ -> None
 
 (* 表达式类型推导 *)
@@ -566,6 +575,14 @@ let rec infer_expr env = function
                   (Printf.sprintf "String type has no method '%s'" attr) in
                 report_error err;
                 (TyUnknown, obj_subst))
+       | TyBytes ->
+           (match bytes_method_type attr with
+            | Some method_type -> (method_type, obj_subst)
+            | None ->
+                let err = make_error (TypeError "Unknown bytes method") pos
+                  (Printf.sprintf "Bytes type has no method '%s'" attr) in
+                report_error err;
+                (TyUnknown, obj_subst))
        | TyStruct (struct_name, _) ->
            (match Env.find_struct struct_name env with
             | None ->
@@ -899,6 +916,11 @@ let rec infer_expr env = function
             | Some (TyFunc ([], return_type)) -> return_type, empty_subst
             | Some method_type -> method_type, empty_subst
             | None -> TyEnum (enum_name, []), empty_subst)
+       | Some TyBytes ->
+           (match bytes_method_type variant_name with
+            | Some (TyFunc ([], return_type)) -> return_type, empty_subst
+            | Some method_type -> method_type, empty_subst
+            | None -> TyEnum (enum_name, []), empty_subst)
        | Some (TyInterface (interface_name, _)) ->
            (match find_interface_method_type env interface_name variant_name with
             | Some (TyFunc ([], return_type)) -> return_type, empty_subst
@@ -919,7 +941,7 @@ let rec infer_expr env = function
                 (match find_method_type env struct_name variant_name struct_def with
                  | Some (TyFunc (parameter_types, return_type)) ->
                      (match parameter_types with
-                      | _ :: expected_arguments
+                      | expected_arguments
                         when List.length expected_arguments = List.length resolved_arg_types ->
                           List.iter2 (fun expected actual ->
                             try ignore (unify expected actual)
@@ -972,6 +994,26 @@ let rec infer_expr env = function
             | Some (TyFunc (expected_argument_types, _)) ->
                 let err = make_error (TypeError "Argument count mismatch") _pos
                   (Printf.sprintf "String method '%s' expects %d arguments but got %d"
+                    variant_name (List.length expected_argument_types)
+                    (List.length resolved_arg_types)) in
+                report_error err;
+                TyUnknown, combined_subst
+            | _ -> TyUnknown, combined_subst)
+       | Some TyBytes ->
+           (match bytes_method_type variant_name with
+            | Some (TyFunc (expected_argument_types, return_type))
+              when List.length expected_argument_types = List.length resolved_arg_types ->
+                List.iter2 (fun expected actual ->
+                  try ignore (unify expected actual)
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) _pos
+                      "Bytes method argument type mismatch" in
+                    report_error err
+                ) expected_argument_types resolved_arg_types;
+                return_type, combined_subst
+            | Some (TyFunc (expected_argument_types, _)) ->
+                let err = make_error (TypeError "Argument count mismatch") _pos
+                  (Printf.sprintf "Bytes method '%s' expects %d arguments but got %d"
                     variant_name (List.length expected_argument_types)
                     (List.length resolved_arg_types)) in
                 report_error err;

@@ -279,6 +279,7 @@ let c_runtime_functions_table =
     (* 进程参数 *)
     ("__c_process_arg_count", TyFunc ([], TyInt));
     ("__c_process_arg", TyFunc ([TyInt], TyStr));
+    ("__c_env", TyFunc ([TyStr], TyStr));
     ("__c_build_llvm", TyFunc ([TyStr; TyStr; TyBool], TyInt));
     (* 文件 I/O *)
     ("__c_file_read", TyFunc ([TyStr], TyStr));

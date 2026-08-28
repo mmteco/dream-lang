@@ -86,7 +86,7 @@ dream/
 ├── runtime/           # 运行时标准库
 │   ├── c/             # C 运行时（io.c / memory.c / dynarray.c / str.c / bytes.c / file.c
 │   │                  #  dict.c / tuple.c / union.c / enum.c / utf8.c / math.c 等）
-│   └── stdlib/        # Dream 标准库（dir_bootstrap.dm、operators.dm、file.dm 等）
+│   └── stdlib/        # Dream 标准库（compiler_io.dm、ops.dm、io.dm 等）
 ├── scripts/           # Fish 脚本（自举编排、测试、构建）
 ├── examples/          # 示例代码
 ├── test/              # .dm 语言测试（大而全的覆盖测试）
@@ -115,7 +115,7 @@ Dream 使用自动内存管理，结合引用计数和分代垃圾回收：
 
 ## 标准库位置
 
-标准库 Runtime 函数直接链接到可执行文件中（`str_length`、`dynarray_push`、`dict_set`、`file_read`、`print_*` 等），另有 Dream 源码标准库 `runtime/stdlib/`（`operators.dm` 运算符重载接口、`file.dm` 文件 I/O 包装等）。
+标准库 Runtime 函数直接链接到可执行文件中（`str_length`、`dynarray_push`、`dict_set`、`file_read`、`print_*` 等），另有 Dream 源码标准库 `runtime/stdlib/`（`ops.dm` 运算符重载接口、`io.dm` 文件 I/O 包装等）。
 
 ## 相关文档
 

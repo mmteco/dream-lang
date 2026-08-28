@@ -752,7 +752,7 @@ def mir_lower_tuple_let(hir: HirProgram, node_id: int, state: MirLowerState) -> 
     let source_start = hir.records[offset + 3]
     let source_end = hir.records[offset + 4]
     let cursor = source_start
-    let source_length = text_length(state.source)
+    let source_length = text_len(state.source)
     while cursor < source_end and cursor < source_length and state.source[cursor] != '(':
         cursor = cursor + 1
     if cursor >= source_end or cursor >= source_length:
@@ -967,7 +967,7 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
                 # 泛型 dict 参数（dict[int, T]）无创建指令，默认元素为 int
                 return MIR_TYPE_I32
             if base_type == MIR_TYPE_LIST or base_type == MIR_TYPE_LIST_PTR or base_type == MIR_TYPE_PTR or base_type == MIR_TYPE_BYTES:
-                # bytes（str_to_bytes 结果）元素为 int；list 取定义元素类型
+                # bytes（encode 结果）元素为 int；list 取定义元素类型
                 return mir_list_element_type(state, local_value)
             if base_type == MIR_TYPE_TUPLE:
                 # tuple 底层为 dynarray_i32，元素为 int
@@ -984,7 +984,7 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
                 return mir_list_element_type(state, inner_index_value)
         return result_type
     if hir.records[base_node_offset + 1] == HIR_OP_CALL:
-        # base 是外部调用结果（bytes）：str_to_bytes 返回 bytes，元素为 int
+        # base 是外部调用结果（bytes）：encode 返回 bytes，元素为 int
         let call_payload_start = hir.records[base_node_offset + 5]
         let call_callee_offset = hir_value_offset(call_payload_start)
         if hir.values[call_callee_offset] == HIR_VALUE_NODE:
@@ -992,7 +992,7 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
             let call_callee_offset_id = hir_record_offset(call_callee_id)
             if hir.records[call_callee_offset_id + 1] == HIR_OP_LOCAL:
                 let call_callee_name = state.source[hir.records[call_callee_offset_id + 3]:hir.records[call_callee_offset_id + 4]]
-                if call_callee_name == "str_to_bytes":
+                if call_callee_name == "encode":
                     return MIR_TYPE_I32
         return result_type
     if hir.records[base_node_offset + 1] != HIR_OP_FIELD or hir.records[base_node_offset + 6] < 3:
@@ -1587,7 +1587,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                         if default_value >= 0:
                             append(argument_values, default_value)
                     fill_index = fill_index + 1
-        # 参数类型转换：签名参数 bytes 而实参 str 时插入 str_to_bytes（如 append_bytes("hi")）
+        # 参数类型转换：签名参数 bytes 而实参 str 时插入 encode（如 append_bytes("hi")）
         if direct_function >= 0 and direct_function < len(state.function_param_counts):
             let param_type_offset = 0
             let param_function_index = 0

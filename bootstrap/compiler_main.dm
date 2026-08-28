@@ -1,4 +1,4 @@
-from text_buffer import TextBuffer
+from buffer import Buffer
 
 const COMPILE_OUTPUT_AST: int = 0
 const COMPILE_OUTPUT_HIR: int = 1
@@ -8,8 +8,8 @@ const COMPILE_OUTPUT_LLVM: int = 4
 
 def module_path(module_name: str) -> str:
     switch module_name:
-        case "bootstrap_io":
-            return "runtime/stdlib/bootstrap_io.dm"
+        case "compiler_io":
+            return "runtime/stdlib/compiler_io.dm"
         case "compiler_lex":
             return "bootstrap/compiler_lex.dm"
         case "compiler_operator":
@@ -30,12 +30,25 @@ def module_path(module_name: str) -> str:
             return "bootstrap/compiler_llvm_emit.dm"
         case "compiler_main":
             return "bootstrap/compiler_main.dm"
+    let configured_paths = env("DREAM_MODULE_PATH")
+    let path_start = 0
+    let path_end = 0
+    let path_length = text_len(configured_paths)
+    while path_end <= path_length:
+        if path_end == path_length or configured_paths[path_end] == ':':
+            if path_end > path_start:
+                let root = configured_paths[path_start:path_end]
+                let candidate = string_concat(string_concat(root, "/"), string_concat(module_name, ".dm"))
+                if exists(candidate):
+                    return candidate
+            path_start = path_end + 1
+        path_end = path_end + 1
     let with_prefix = string_concat("runtime/stdlib/", module_name)
     return string_concat(with_prefix, ".dm")
 
 def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
     let module_start = 0
-    let loaded_length = text_length(loaded_modules)
+    let loaded_length = text_len(loaded_modules)
     while module_start < loaded_length:
         let module_end = module_start
         while module_end < loaded_length and ord(loaded_modules[module_end]) != 10:
@@ -45,12 +58,12 @@ def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
         module_start = module_end + 1
     return false
 
-def append_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: TextBuffer) -> str:
+def append_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: Buffer) -> str:
     let imported_path = module_path(module_name)
-    let module_source = read_text_file(imported_path)
-    let start_offset = text_length(imported_source)
+    let module_source = read(imported_path)
+    let start_offset = text_len(imported_source)
     let new_source = string_concat(imported_source, string_concat(module_source, "\n"))
-    let end_offset = text_length(new_source)
+    let end_offset = text_len(new_source)
     append(file_packages, classify_package(imported_path))
     append(file_starts, start_offset)
     append(file_ends, end_offset)
@@ -58,7 +71,7 @@ def append_imported_module(imported_source: str, module_name: str, file_packages
     append(file_paths, "\n")
     return new_source
 
-def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: TextBuffer) -> str:
+def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: Buffer) -> str:
     let imported_source = ""
     let loaded_modules = ""
     let scan_source = source
@@ -84,24 +97,24 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         if found_new_module:
             scan_source = imported_source
         scan_round = scan_round + 1
-    let user_source_start = text_length(imported_source)
-    if text_length(loaded_modules) != 0:
+    let user_source_start = text_len(imported_source)
+    if text_len(loaded_modules) != 0:
         user_source_start = user_source_start + 1
         let final_source = string_concat(imported_source, string_concat("\n", source))
         append(file_packages, classify_package(source_path))
         append(file_starts, user_source_start)
-        append(file_ends, text_length(final_source))
+        append(file_ends, text_len(final_source))
         append(file_paths, source_path)
         append(file_paths, "\n")
         return final_source
     append(file_packages, classify_package(source_path))
     append(file_starts, 0)
-    append(file_ends, text_length(source))
+    append(file_ends, text_len(source))
     append(file_paths, source_path)
     append(file_paths, "\n")
     return source
 
-def write_text_buffer(path: str, output: TextBuffer) -> int:
+def write_buffer(path: str, output: Buffer) -> int:
     let bytes = __c_bytes_from_array(output.data)
     return __c_file_write_bytes(path, bytes)
 
@@ -215,11 +228,11 @@ def write_ast_output(output_path: str, source: str, function_starts: list[int], 
 def compile_source(source_path: str, output_path: str, output_mode: int) -> bool:
     access_violation_count[0] = 0
     let phase_time = compiler_debug_start()
-    let raw_source = read_text_file(source_path)
+    let raw_source = read(source_path)
     let file_packages = []
     let file_starts: list[int] = []
     let file_ends: list[int] = []
-    let file_paths = TextBuffer{data: []}
+    let file_paths = Buffer{data: []}
     let source = load_imported_source(raw_source, source_path, file_packages, file_starts, file_ends, file_paths)
     phase_time = compiler_debug_checkpoint("load", phase_time)
     let kinds = []
@@ -336,7 +349,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
             return false
         let lir_program = lir_model_build_program(optimized_mir_program)
         phase_time = compiler_debug_checkpoint("lir-build", phase_time)
-        let lir_output = TextBuffer{data: []}
+        let lir_output = Buffer{data: []}
         let is_lir_valid = lir_validate_program(lir_program)
         phase_time = compiler_debug_checkpoint("lir-validate", phase_time)
         if not is_lir_valid:
@@ -345,7 +358,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not lir_dump_validated_program(lir_program, lir_output):
             __c_eprint_text("error: LIR validation failed while dumping\n")
             return false
-        write_text_buffer(output_path, lir_output)
+        write_buffer(output_path, lir_output)
         return true
     elif output_mode == COMPILE_OUTPUT_LLVM:
         if not mir_validate_program(optimized_mir_program):
@@ -353,7 +366,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
             return false
         let lir_program = lir_model_build_program(optimized_mir_program)
         phase_time = compiler_debug_checkpoint("lir-build", phase_time)
-        let llvm_output = TextBuffer{data: []}
+        let llvm_output = Buffer{data: []}
         let is_lir_valid = lir_validate_program(lir_program)
         phase_time = compiler_debug_checkpoint("lir-validate", phase_time)
         if not is_lir_valid:
@@ -364,7 +377,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not is_llvm_valid:
             __c_eprint_text("error: LLVM lowering failed\n")
             return false
-        write_text_buffer(output_path, llvm_output)
+        write_buffer(output_path, llvm_output)
         return true
     __c_eprint_text("error: only ast, hir, mir, lir, and llvm outputs are supported\n")
     return false
@@ -376,7 +389,7 @@ struct BuildArguments:
     is_valid: bool
 
 def remove_source_extension(source_path: str) -> str:
-    let index = text_length(source_path) - 1
+    let index = text_len(source_path) - 1
     while index >= 0:
         if source_path[index] == '.':
             if index > 0:
@@ -391,12 +404,12 @@ def parse_build_arguments(argument_count: int):
     let is_optimized = true
     let is_valid = true
     if argument_count >= 3:
-        input_path = process_arg(2)
-    if argument_count >= 5 and process_arg(3) == "-o":
-        output_path = process_arg(4)
+        input_path = arg(2)
+    if argument_count >= 5 and arg(3) == "-o":
+        output_path = arg(4)
     elif argument_count >= 4:
-        output_path = process_arg(3)
-    if text_length(input_path) < 3:
+        output_path = arg(3)
+    if text_len(input_path) < 3:
         is_valid = false
     BA_input_path = input_path
     BA_output_path = output_path
@@ -407,7 +420,7 @@ def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool
     let llvm_path = string_concat(output_path, ".ll")
     if not compile_source(source_path, llvm_path, COMPILE_OUTPUT_LLVM):
         return false
-    let is_built = build_llvm(llvm_path, output_path, is_optimized)
+    let is_built = build(llvm_path, output_path, is_optimized)
     if not is_built:
         __c_file_delete(llvm_path)
         __c_eprint_text("error: failed to build executable\n")
@@ -419,43 +432,43 @@ def run_build_command(argument_count: int) -> bool:
     if not BA_is_valid:
         __c_eprint_text("error: build accepts [--dev] <file.dm> [-o output]\n")
         return false
-    let input_length = text_length(BA_input_path)
+    let input_length = text_len(BA_input_path)
     if input_length < 3 or BA_input_path[input_length - 3:input_length] != ".dm":
         __c_eprint_text("error: input file must have .dm extension\n")
         return false
     return build_source(BA_input_path, BA_output_path, BA_is_optimized)
 
 def main() -> int:
-    let argument_count = process_arg_count()
+    let argument_count = argc()
     let usage = " build [--dev] <file.dm> [-o output] | ast/hir/mir/lir/llvm <input.dm> -o <output>"
     if argument_count == 2:
-        let command_name = process_arg(1)
+        let command_name = arg(1)
         if command_name == "help" or command_name == "--help":
-            print(string_concat("用法: ", string_concat(process_arg(0), usage)))
+            print(string_concat("用法: ", string_concat(arg(0), usage)))
             return 0
-    if argument_count >= 4 and process_arg(1) == "build" and process_arg(3) == "-o":
-        if build_source(process_arg(2), process_arg(4), true):
+    if argument_count >= 4 and arg(1) == "build" and arg(3) == "-o":
+        if build_source(arg(2), arg(4), true):
             return 0
         return 1
-    if argument_count == 5 and process_arg(3) == "-o":
-        let command_name = process_arg(1)
+    if argument_count == 5 and arg(3) == "-o":
+        let command_name = arg(1)
         if command_name == "ast":
-            if compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_AST):
+            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_AST):
                 return 0
         elif command_name == "hir":
-            if compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_HIR):
+            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_HIR):
                 return 0
         elif command_name == "mir":
-            if compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_MIR):
+            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_MIR):
                 return 0
         elif command_name == "lir":
-            if compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_LIR):
+            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_LIR):
                 return 0
         elif command_name == "llvm":
-            if compile_source(process_arg(2), process_arg(4), COMPILE_OUTPUT_LLVM):
+            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_LLVM):
                 return 0
         else:
             __c_eprint_text("error: use ast, hir, mir, lir, or llvm\n")
         return 1
-    print(string_concat("用法: ", string_concat(process_arg(0), usage)))
+    print(string_concat("用法: ", string_concat(arg(0), usage)))
     return 1

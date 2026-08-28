@@ -155,11 +155,12 @@ and lower_string_method context function_builder environment object_value method
   | "lower" -> unary_str_call "string_lower" Str
   | "strip" -> unary_str_call "string_strip" Str
   | "find" -> binary_str_call "string_find" I32
-  | "starts_with" -> binary_str_call "string_starts_with" Bool
-  | "ends_with" -> binary_str_call "string_ends_with" Bool
-  | "is_digit" -> char_test_call "string_is_digit"
-  | "is_alpha" -> char_test_call "string_is_alpha"
-  | "is_whitespace" -> char_test_call "string_is_whitespace"
+  | "startswith" -> binary_str_call "string_starts_with" Bool
+  | "endswith" -> binary_str_call "string_ends_with" Bool
+  | "isdigit" -> char_test_call "string_is_digit"
+  | "isalpha" -> char_test_call "string_is_alpha"
+  | "isspace" -> char_test_call "string_is_whitespace"
+  | "encode" -> unary_str_call "__c_str_to_bytes" Bytes
   | "replace" ->
       (match lowered_arguments with
        | [old_text; new_text] ->
@@ -190,6 +191,36 @@ and lower_string_method context function_builder environment object_value method
            { operand = Value value; ty = Str }
        | _ -> fail_at position "join expects one argument")
   | _ -> fail_at position ("unsupported string method " ^ method_name)
+
+and lower_bytes_method context function_builder environment object_value method_name
+    arguments position =
+  let lowered_arguments = List.map
+    (lower_expr context function_builder environment) arguments in
+  match method_name, lowered_arguments with
+  | "length", [] ->
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_bytes_length",
+        [Bytes], [object_value.operand]));
+      { operand = Value value; ty = I32 }
+  | "get", [index] ->
+      expect_type position I32 index.ty "bytes.get index";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_bytes_get",
+        [Bytes; I32], [object_value.operand; index.operand]));
+      { operand = Value value; ty = I32 }
+  | "slice", [start; end_] ->
+      expect_type position I32 start.ty "bytes.slice start";
+      expect_type position I32 end_.ty "bytes.slice end";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Bytes, "__c_bytes_slice",
+        [Bytes; I32; I32], [object_value.operand; start.operand; end_.operand]));
+      { operand = Value value; ty = Bytes }
+  | "decode", [] ->
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Str, "__c_bytes_to_str",
+        [Bytes], [object_value.operand]));
+      { operand = Value value; ty = Str }
+  | _ -> fail_at position ("unsupported bytes method " ^ method_name)
 
 and lower_interface_call context function_builder environment object_value method_name
     arguments position =
@@ -488,18 +519,18 @@ and lower_expr context function_builder environment expression =
        | actual_type -> fail_at position (Printf.sprintf
            "append collection: expected list or Append implementation, got %s"
            (Dir.ty_to_string actual_type)))
-  | ECall (EVar ("text_length", _), [argument], position) ->
+  | ECall (EVar ("text_len", _), [argument], position) ->
       let lowered_argument = lower_expr context function_builder environment argument in
-      expect_type position Str lowered_argument.ty "text_length argument";
+      expect_type position Str lowered_argument.ty "text_len argument";
       let value = fresh_value function_builder in
       emit function_builder (StringLength (value, lowered_argument.operand));
       { operand = Value value; ty = I32 }
-  | ECall (EVar ("process_arg_count", _), [], _)
+  | ECall (EVar ("argc", _), [], _)
   | ECall (EVar ("__c_process_arg_count", _), [], _) ->
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, I32, "__c_process_arg_count", [], []));
       { operand = Value value; ty = I32 }
-  | ECall (EVar ("process_arg", _), [index], position)
+  | ECall (EVar ("arg", _), [index], position)
   | ECall (EVar ("__c_process_arg", _), [index], position) ->
       let lowered_index = lower_expr context function_builder environment index in
       expect_type position I32 lowered_index.ty "__c_process_arg index";
@@ -507,7 +538,7 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, Str, "__c_process_arg",
         [I32], [lowered_index.operand]));
       { operand = Value value; ty = Str }
-  | ECall (EVar ("build_llvm", _), [llvm_path; output_path; optimized], position)
+  | ECall (EVar ("build", _), [llvm_path; output_path; optimized], position)
   | ECall (EVar ("__c_build_llvm", _), [llvm_path; output_path; optimized], position) ->
       let lowered_llvm_path = lower_expr context function_builder environment llvm_path in
       let lowered_output_path = lower_expr context function_builder environment output_path in
@@ -518,7 +549,7 @@ and lower_expr context function_builder environment expression =
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, I32, "__c_build_llvm",
         [Str; Str; Bool], [lowered_llvm_path.operand; lowered_output_path.operand; lowered_optimized.operand]));
-      if match expression with ECall (EVar ("build_llvm", _), _, _) -> true | _ -> false then
+      if match expression with ECall (EVar ("build", _), _, _) -> true | _ -> false then
         let status = fresh_value function_builder in
         emit function_builder (Compare (status, Ne, Value value, Int 0));
         { operand = Value status; ty = Bool }
@@ -532,18 +563,18 @@ and lower_expr context function_builder environment expression =
       let lowered_rune = lower_expr context function_builder environment rune in
       expect_type position I32 lowered_rune.ty "__c_rune_to_int argument";
       lowered_rune
-  | ECall (EVar ("read_text_file", _), [path], position) ->
+  | ECall (EVar ("read", _), [path], position) ->
       let lowered_path = lower_expr context function_builder environment path in
-      expect_type position Str lowered_path.ty "read_text_file path";
+      expect_type position Str lowered_path.ty "read path";
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, Str, "__c_file_read",
         [Str], [lowered_path.operand]));
       { operand = Value value; ty = Str }
-  | ECall (EVar ("write_text_codes", _), [path; codes], position) ->
+  | ECall (EVar ("write_codes", _), [path; codes], position) ->
       let lowered_path = lower_expr context function_builder environment path in
       let lowered_codes = lower_expr context function_builder environment codes in
-      expect_type position Str lowered_path.ty "write_text_codes path";
-      expect_type position (List I32) lowered_codes.ty "write_text_codes codes";
+      expect_type position Str lowered_path.ty "write_codes path";
+      expect_type position (List I32) lowered_codes.ty "write_codes codes";
       let bytes = fresh_value function_builder in
       emit function_builder (Call (Some bytes, Bytes, "__c_bytes_from_array",
         [List I32], [lowered_codes.operand]));
@@ -635,14 +666,14 @@ and lower_expr context function_builder environment expression =
         [Bytes; I32; I32], [lowered_bytes.operand; lowered_start.operand;
           lowered_end.operand]));
       { operand = Value value; ty = Bytes }
-  | ECall (EVar (("str_to_bytes" | "__c_str_to_bytes"), _), [text], position) ->
+  | ECall (EVar ("__c_str_to_bytes", _), [text], position) ->
       let lowered_text = lower_expr context function_builder environment text in
       expect_type position Str lowered_text.ty "__c_str_to_bytes text";
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, Bytes, "__c_str_to_bytes",
         [Str], [lowered_text.operand]));
       { operand = Value value; ty = Bytes }
-  | ECall (EVar (("bytes_to_str" | "__c_bytes_to_str"), _), [bytes], position) ->
+  | ECall (EVar ("__c_bytes_to_str", _), [bytes], position) ->
       let lowered_bytes = lower_expr context function_builder environment bytes in
       expect_type position Bytes lowered_bytes.ty "__c_bytes_to_str bytes";
       let value = fresh_value function_builder in
@@ -670,6 +701,17 @@ and lower_expr context function_builder environment expression =
         [Bytes; I32; I32],
         [lowered_bytes.operand; lowered_start.operand; lowered_finish.operand]));
       { operand = Value value; ty = Bytes }
+  | ECall (EVar ("open", _), [path], position) ->
+      let lowered_path = lower_expr context function_builder environment path in
+      expect_type position Str lowered_path.ty "open path";
+      let return_type = match Hashtbl.find_opt context.signatures "open" with
+        | Some signature -> signature.return_type
+        | None -> fail_at position "open is not available"
+      in
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, return_type, "open",
+        [Str; Str], [lowered_path.operand; String "r"]));
+      { operand = Value value; ty = return_type }
   | ECall (EVar (name, _), arguments, position)
     when (match Hashtbl.find_opt environment name with
           | Some { ty = Func _; _ } -> true
@@ -742,8 +784,11 @@ and lower_expr context function_builder environment expression =
        | Str ->
            lower_string_method context function_builder environment object_value
              method_name arguments position
+       | Bytes ->
+           lower_bytes_method context function_builder environment object_value
+             method_name arguments position
        | actual_type -> fail_at position (Printf.sprintf
-           "method call requires a struct, interface or string value, got %s"
+           "method call requires a struct, interface, string or bytes value, got %s"
            (Dir.ty_to_string actual_type)))
   | EList (elements, position) ->
       (match elements with
@@ -920,6 +965,7 @@ and lower_expr context function_builder environment expression =
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
           | Some (Interface _) -> true
           | Some Str -> true
+          | Some Bytes -> true
           | _ -> false) ->
       let object_value = load_variable context function_builder environment variable_name in
       (match object_value.ty with
@@ -931,6 +977,9 @@ and lower_expr context function_builder environment expression =
              arguments position
        | Str ->
            lower_string_method context function_builder environment object_value
+             method_name arguments position
+       | Bytes ->
+           lower_bytes_method context function_builder environment object_value
              method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | ECall (callee, arguments, position) ->
@@ -969,6 +1018,9 @@ and lower_expr context function_builder environment expression =
             | Str ->
                 lower_string_method context function_builder environment object_value
                   field_name [] position
+            | Bytes ->
+                lower_bytes_method context function_builder environment object_value
+                  field_name [] position
             | actual_type -> fail_at position (Printf.sprintf
                 "DIR does not support enum variant %s.%s on %s"
                 variable_name field_name (Dir.ty_to_string actual_type)))
@@ -996,6 +1048,7 @@ and lower_expr context function_builder environment expression =
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
           | Some { ty = Interface (_, _); _ } -> true
           | Some { ty = Str; _ } -> true
+          | Some { ty = Bytes; _ } -> true
           | _ -> false) ->
       let object_value = Hashtbl.find environment variable_name in
       (match object_value.ty with
@@ -1008,6 +1061,9 @@ and lower_expr context function_builder environment expression =
        | Str ->
            lower_string_method context function_builder environment object_value
              method_name arguments position
+       | Bytes ->
+           lower_bytes_method context function_builder environment object_value
+             method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | EEnumVariant (variable_name, method_name, arguments, position)
     when (match variable_type context environment variable_name with
@@ -1015,6 +1071,7 @@ and lower_expr context function_builder environment expression =
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
           | Some (Interface _) -> true
           | Some Str -> true
+          | Some Bytes -> true
           | _ -> false) ->
       let object_value = load_variable context function_builder environment variable_name in
       (match object_value.ty with
@@ -1026,6 +1083,9 @@ and lower_expr context function_builder environment expression =
              arguments position
        | Str ->
            lower_string_method context function_builder environment object_value
+             method_name arguments position
+       | Bytes ->
+           lower_bytes_method context function_builder environment object_value
              method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | EEnumVariant (enum_name, variant_name, arguments, position) ->
@@ -1945,6 +2005,7 @@ let runtime_externs = [
   { name = "union_print_value"; parameters = [Union [I32; F64; Str; Bool; Bytes]]; return_type = Unit };
   { name = "__c_process_arg_count"; parameters = []; return_type = I32 };
   { name = "__c_process_arg"; parameters = [I32]; return_type = Str };
+  { name = "__c_env"; parameters = [Str]; return_type = Str };
   { name = "__c_file_read"; parameters = [Str]; return_type = Str };
   { name = "__c_file_write"; parameters = [Str; Str]; return_type = I32 };
   { name = "__c_file_exists"; parameters = [Str]; return_type = Bool };

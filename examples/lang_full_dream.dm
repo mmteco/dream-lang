@@ -1,6 +1,6 @@
 # dream-test: dir
 # Dream 语言导览：覆盖自举编译器当前支持的表达式、语句和模式语法。
-from bytes import str_to_bytes, bytes_to_str
+from bytes import encode, decode
 
 const BASE: int = 3
 const DOUBLE_BASE = 6
@@ -211,9 +211,9 @@ def main():
     print(function_value(41))
     print(closure(1))
 
-    let encoded = str_to_bytes("abc")
+    let encoded = encode("abc")
     print(encoded[1])
-    print(bytes_to_str(encoded[0:2]))
+    print(decode(encoded[0:2]))
     let total = 1.5 + 2.0
     print(total)
     print(total >= 3.5)

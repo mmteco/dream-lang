@@ -33,7 +33,7 @@
 5. **runtime id 撞号**:dict 字面量与 list append 共用 aux id=7，emit 按结果类型分派（DICT → dict_create）。
 6. **HIR/MIR 类型码空间混淆**:HIR_TYPE_DYNAMIC=16 而 MIR_TYPE_DYNAMIC=17，凡读 HIR type_tag 与 MIR 常量比较处先经 `mir_type_from_hir` 转换（lambda 返回类型、list 元素推断）。
 7. **? 操作符 Err 不短路**:SELECT 取 payload 继续执行导致 `Ok(0+1)` 误传播；改块级条件分支，Err 时直接 RETURN 原 Result 盒。
-8. **bytes 索引类型**:str_to_bytes 结果类型 BYTES 未识别，`encoded[1]` 发射成 get_pointer+print_string；mir_index_result_type 加 BYTES 分支。
+8. **bytes 索引类型**:encode 结果类型 BYTES 未识别，`encoded[1]` 发射成 get_pointer+print_string；mir_index_result_type 加 BYTES 分支。
 9. **for 循环 break 缺 mir_push_loop**:break 被编译成 UNREACHABLE→ret 0 提前退出 main。
 10. **float 字面量越界读取**:HIR 构建 `ast_node_arg(node,0)` 对无参节点越界读下一节点 kind（1.5→2、2.0→10）；LLVM 发射 F64 CONST 从源码取文本 `fadd double 1.5, 0.0`。
 11. **嵌套索引类型推断**:`list[list[int]][i][j]` base 是 INDEX 节点未推断；mir_index_result_type 加 INDEX 分支 + mir_list_element_type 穿透。

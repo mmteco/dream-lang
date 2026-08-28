@@ -173,7 +173,7 @@ def is_trusted_package(package_id: int) -> bool:
     return package_id == PACKAGE_STDLIB or package_id == PACKAGE_BOOTSTRAP
 
 def is_private_symbol(name: str) -> bool:
-    if text_length(name) == 0:
+    if text_len(name) == 0:
         return false
     return ord(name[0]) == ASCII_UNDERSCORE
 
@@ -505,7 +505,7 @@ def keyword_kind(source: str, start: int, end: int) -> int:
 
 def lex(source: str, kinds: list[int], starts: list[int], ends: list[int]) -> int:
     let index = 0
-    let source_length = text_length(source)
+    let source_length = text_len(source)
     while index < source_length:
         let code = ord(source[index])
         let handled = false
@@ -814,7 +814,7 @@ def enclosing_self_struct_declaration(source: str, kinds: list[int], starts: lis
 
 def function_symbol_name(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int, function_name_end: int) -> str:
     let method_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_name_start)
-    if text_length(method_prefix) == 0:
+    if text_len(method_prefix) == 0:
         return source[function_name_start:function_name_end]
     let function_name = source[function_name_start:function_name_end]
     return string_concat(method_prefix, function_name)
@@ -961,7 +961,7 @@ def find_method_function_index(source: str, kinds: list[int], starts: list[int],
             let struct_prefix = string_concat("__dir_method_", struct_suffix)
             if candidate_prefix == struct_prefix:
                 return function_index
-            if text_length(candidate_prefix) > 0:
+            if text_len(candidate_prefix) > 0:
                 return function_index
         function_index = function_index + 1
     return -1
@@ -1049,7 +1049,7 @@ def find_interface_declaration_function_index(source: str, kinds: list[int], sta
         let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
         if candidate_name == method_name:
             let candidate_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_starts[function_index])
-            if text_length(candidate_prefix) == 0 and not function_has_body(source, kinds, starts, 0, 0, function_starts[function_index]):
+            if text_len(candidate_prefix) == 0 and not function_has_body(source, kinds, starts, 0, 0, function_starts[function_index]):
                 return function_index
         function_index = function_index + 1
     return -1
@@ -1342,7 +1342,7 @@ def get_parameter_type(source: str, kinds: list[int], starts: list[int], ends: l
 def parameter_type_from_declaration(source: str, kinds: list[int], starts: list[int], ends: list[int], name_start: int, name_end: int) -> int:
     if source_equals(source, name_start, name_end, "self"):
         return VALUE_TYPE_STRUCT
-    let source_length = text_length(source)
+    let source_length = text_len(source)
     let type_start = name_end
     while type_start < source_length and source[type_start] != ':':
         type_start = type_start + 1

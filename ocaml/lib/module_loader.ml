@@ -192,6 +192,12 @@ let import_selected_from_module module_path selections =
        | Error msg -> Error msg
        | Ok selected_imports ->
            let selected_names = List.map fst selections in
+           let imported_types = List.filter_map (function
+             | ExportedStruct _ as symbol -> Some (import_symbol symbol None)
+             | ExportedInterface _ as symbol -> Some (import_symbol symbol None)
+             | ExportedEnum _ as symbol -> Some (import_symbol symbol None)
+             | _ -> None
+           ) exports in
            let target_name = function
              | TVar name
              | TStruct (name, _) -> Some name
@@ -210,4 +216,4 @@ let import_selected_from_module module_path selections =
              | _ -> None
            ) exports in
            let imported_impls = List.map (fun symbol -> import_symbol symbol None) imported_impls in
-           Ok (selected_imports @ imported_impls @ constant_imports))
+           Ok (imported_types @ selected_imports @ imported_impls @ constant_imports))

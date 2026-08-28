@@ -1,8 +1,8 @@
 from compiler_lir_model import LirProgram, lir_record_count, lir_value_count, lir_record_offset, lir_value_offset, lir_value_type_in_function, lir_value_exists, lir_block_parameter_offset, LIR_RECORD_MODULE, LIR_RECORD_FUNCTION, LIR_RECORD_BLOCK, LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR, LIR_FUNCTION_ENTRY, LIR_EXTERNAL_BASE, LIR_TYPE_VOID, LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_PTR, LIR_TYPE_AGGREGATE, LIR_TYPE_DYNAMIC, LIR_TYPE_STR, LIR_TYPE_LIST, LIR_TYPE_BYTES, LIR_TYPE_DICT, LIR_TYPE_TUPLE, LIR_TYPE_STRUCT, LIR_OPERAND_VALUE, LIR_OPERAND_IMMEDIATE, LIR_OPERAND_BLOCK, LIR_OPERAND_TYPE, LIR_OPERAND_SYMBOL, LIR_OP_CONST, LIR_OP_COPY, LIR_OP_BINARY, LIR_OP_UNARY, LIR_OP_CALL, LIR_OP_RUNTIME_CALL, LIR_OP_SELECT, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE, LIR_OP_CAST, LIR_OP_BOUNDS_CHECK, LIR_OP_GLOBAL_LOAD, LIR_OP_GLOBAL_STORE, LIR_TERM_JUMP, LIR_TERM_BRANCH, LIR_TERM_SWITCH, LIR_TERM_RETURN, LIR_TERM_UNREACHABLE
 from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_AND, IR_OPERATOR_OR, IR_OPERATOR_NOT, IR_OPERATOR_POS, IR_OPERATOR_NEG
 from compiler_external import EXTERNAL_COUNT, EXTERNAL_ID_BASE, EXTERNAL_ID_APPEND, EXTERNAL_ID_LEN, external_llvm_name, external_return_type, external_has_declaration, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
-from text_buffer import TextBuffer
-from bootstrap_io import text_length
+from buffer import Buffer
+from compiler_io import text_len
 
 let llvm_lir_function_record_cache: list[int] = []
 let llvm_lir_function_terminator_start_cache: list[int] = []
@@ -57,7 +57,7 @@ def llvm_lir_types_compatible(actual_type: int, expected_type: int) -> bool:
     return actual_type == expected_type or llvm_lir_is_pointer_like(actual_type) and llvm_lir_is_pointer_like(expected_type)
 
 def llvm_lir_join_int(prefix: str, value: int, suffix: str) -> str:
-    let buffer = TextBuffer{data: []}
+    let buffer = Buffer{data: []}
     append(buffer, prefix)
     append(buffer, value)
     append(buffer, suffix)
@@ -127,14 +127,14 @@ def llvm_lir_external_call_name(program: LirProgram, record_offset: int, symbol:
 def llvm_lir_string_global_name(record_offset: int) -> str:
     return llvm_lir_join_int("@.dm_str_", record_offset, "")
 
-def llvm_lir_append_hex_byte(value: int, output: TextBuffer):
+def llvm_lir_append_hex_byte(value: int, output: Buffer):
     let digits = "0123456789ABCDEF"
     append(output, "\\")
     append(output, digits[(value / 16) % 16:(value / 16) % 16 + 1])
     append(output, digits[value % 16:value % 16 + 1])
 
 def llvm_lir_is_string_literal(source_start: int, source_end: int) -> bool:
-    if source_start < 0 or source_end < source_start or source_end > text_length(llvm_lir_source):
+    if source_start < 0 or source_end < source_start or source_end > text_len(llvm_lir_source):
         return false
     return true
 
@@ -177,7 +177,7 @@ def llvm_lir_decoded_content_length(source_start: int, source_end: int) -> int:
             index = index + 1
     return count
 
-def llvm_lir_append_rune_utf8(value: int, output: TextBuffer):
+def llvm_lir_append_rune_utf8(value: int, output: Buffer):
     # rune 码 → UTF-8 字节序列（LLVM 字符串常量按字节存储）
     if value < 0x80:
         llvm_lir_append_hex_byte(value, output)
@@ -194,7 +194,7 @@ def llvm_lir_append_rune_utf8(value: int, output: TextBuffer):
         llvm_lir_append_hex_byte(0x80 + (value / 64) % 64, output)
         llvm_lir_append_hex_byte(0x80 + value % 64, output)
 
-def llvm_lir_append_string_global(record_id: int, source_start: int, source_end: int, output: TextBuffer):
+def llvm_lir_append_string_global(record_id: int, source_start: int, source_end: int, output: Buffer):
     let content_length = llvm_lir_decoded_content_length(source_start, source_end)
     append(output, llvm_lir_string_global_name(record_id))
     append(output, " = private unnamed_addr constant [")
@@ -283,7 +283,7 @@ def llvm_lir_zero(type_tag: int) -> str:
         return "0.000000e+00"
     return "0"
 
-def llvm_lir_append_zero_definition(type_tag: int, result_name: str, output: TextBuffer):
+def llvm_lir_append_zero_definition(type_tag: int, result_name: str, output: Buffer):
     append(output, "  ")
     append(output, result_name)
     if llvm_lir_is_pointer_like(type_tag):
@@ -321,7 +321,7 @@ def llvm_lir_operand(program: LirProgram, record_offset: int, operand_index: int
         return "1"
     return llvm_lir_join_int("", operand_value, "")
 
-def llvm_lir_append_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: TextBuffer):
+def llvm_lir_append_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
     let operand_kind = llvm_lir_operand_kind(program, record_offset, operand_index)
     let operand_value = llvm_lir_operand_value(program, record_offset, operand_index)
     if operand_kind == LIR_OPERAND_VALUE:
@@ -373,7 +373,7 @@ def llvm_lir_runtime_name(runtime_id: int, result_type: int) -> str:
         return "@slice_dynarray_i32"
     return "@llvm.trap"
 
-def llvm_lir_append_dynamic_truthy(program: LirProgram, record_offset: int, operand_index: int, output: TextBuffer) -> str:
+def llvm_lir_append_dynamic_truthy(program: LirProgram, record_offset: int, operand_index: int, output: Buffer) -> str:
     let operand_type = llvm_lir_binary_operand_type(program, record_offset, operand_index)
     let result_name = llvm_lir_join_int("%dynamic_truthy_", record_offset + operand_index, "")
     append(output, "  ")
@@ -397,7 +397,7 @@ def llvm_lir_append_dynamic_truthy(program: LirProgram, record_offset: int, oper
     append(output, "\n")
     return result_name
 
-def llvm_lir_append_dynamic_i64(program: LirProgram, record_offset: int, operand_index: int, output: TextBuffer) -> str:
+def llvm_lir_append_dynamic_i64(program: LirProgram, record_offset: int, operand_index: int, output: Buffer) -> str:
     let operand_type = llvm_lir_binary_operand_type(program, record_offset, operand_index)
     let result_name = llvm_lir_join_int("%dynamic_i64_", record_offset + operand_index, "")
     append(output, "  ")
@@ -422,7 +422,7 @@ def llvm_lir_append_dynamic_i64(program: LirProgram, record_offset: int, operand
     append(output, "\n")
     return result_name
 
-def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: int, output: TextBuffer, result_name: str):
+def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: int, output: Buffer, result_name: str):
     let left_type = llvm_lir_binary_operand_type(program, offset, 1)
     let right_type = llvm_lir_binary_operand_type(program, offset, 2)
     if operator == IR_OPERATOR_AND or operator == IR_OPERATOR_OR:
@@ -491,7 +491,7 @@ def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: 
     append(output, right_integer)
     append(output, "\n")
 
-def llvm_lir_append_dynamic_unary(program: LirProgram, offset: int, output: TextBuffer, result_name: str, result_type: int):
+def llvm_lir_append_dynamic_unary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let operator = llvm_lir_operand_value(program, offset, 0)
     let operand_type = llvm_lir_binary_operand_type(program, offset, 1)
     if operator == IR_OPERATOR_NOT:
@@ -554,7 +554,7 @@ def llvm_lir_append_dynamic_unary(program: LirProgram, offset: int, output: Text
         llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
         append(output, "\n")
 
-def llvm_lir_append_dynamic_binary(program: LirProgram, offset: int, output: TextBuffer, result_name: str, result_type: int):
+def llvm_lir_append_dynamic_binary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let operator = llvm_lir_operand_value(program, offset, 0)
     let left_type = llvm_lir_binary_operand_type(program, offset, 1)
     let right_type = llvm_lir_binary_operand_type(program, offset, 2)
@@ -636,7 +636,7 @@ def llvm_lir_append_dynamic_binary(program: LirProgram, offset: int, output: Tex
         append(output, integer_result)
         append(output, " to double\n")
 
-def llvm_lir_append_container_create(program: LirProgram, offset: int, output: TextBuffer, result_name: str):
+def llvm_lir_append_container_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
     let is_ptr_list = program.records[offset + 4] == LIR_TYPE_LIST_PTR
     let operand_count = program.records[offset + 7]
     let capacity = operand_count - 1
@@ -687,7 +687,7 @@ def llvm_lir_append_container_create(program: LirProgram, offset: int, output: T
         append(output, ")\n")
         operand_index = operand_index + 1
 
-def llvm_lir_append_struct_create(program: LirProgram, offset: int, output: TextBuffer, result_name: str):
+def llvm_lir_append_struct_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
     let operand_count = program.records[offset + 7]
     let capacity = 0
     let capacity_index = 0
@@ -763,7 +763,7 @@ def llvm_lir_dict_function_name(key_type: int, value_type: int, operation: int) 
         return "@dream_dict_get_int_str"
     return "@llvm.trap"
 
-def llvm_lir_append_dict_create(program: LirProgram, offset: int, output: TextBuffer, result_name: str):
+def llvm_lir_append_dict_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
     let operand_count = program.records[offset + 7]
     let key_type = LIR_TYPE_I32
     let value_type = LIR_TYPE_I32
@@ -798,7 +798,7 @@ def llvm_lir_append_dict_create(program: LirProgram, offset: int, output: TextBu
         append(output, ")\n")
         operand_index = operand_index + 2
 
-def llvm_lir_append_dict_get(program: LirProgram, offset: int, output: TextBuffer, result_name: str, result_type: int):
+def llvm_lir_append_dict_get(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let key_type = LIR_TYPE_I32
     if program.records[offset + 7] > 1:
         key_type = llvm_lir_binary_operand_type(program, offset, 1)
@@ -822,7 +822,7 @@ def llvm_lir_append_dict_get(program: LirProgram, offset: int, output: TextBuffe
         append(output, llvm_lir_zero(key_type))
     append(output, ")\n")
 
-def llvm_lir_append_tuple_get(program: LirProgram, offset: int, output: TextBuffer, result_name: str, result_type: int):
+def llvm_lir_append_tuple_get(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let operand_count = program.records[offset + 7]
     if operand_count < 2:
         append(output, "  ")
@@ -911,7 +911,7 @@ def llvm_lir_function_parameter_type(program: LirProgram, function_index: int, p
         return LIR_TYPE_DYNAMIC
     return program.values[value_offset + 1]
 
-def llvm_lir_append_runtime_declarations(output: TextBuffer):
+def llvm_lir_append_runtime_declarations(output: Buffer):
     append(output, "declare void @llvm.trap()\n")
     append(output, "declare void @__c_process_set_args(i32, i8**)\n")
     append(output, "declare i8* @create_dynarray_i32(i32)\n")
@@ -932,7 +932,7 @@ def llvm_lir_append_runtime_declarations(output: TextBuffer):
     append(output, "declare i8* @concat_dynarray_ptr(i8*, i8*)\n")
     append(output, "declare i8* @string_substring(i8*, i32, i32)\n")
 
-def llvm_lir_append_function_signature(program: LirProgram, record_id: int, output: TextBuffer):
+def llvm_lir_append_function_signature(program: LirProgram, record_id: int, output: Buffer):
     # 写函数 LLVM 签名 "return_type (param_types...)"，供函数指针表 bitcast 使用
     let function_offset = lir_record_offset(record_id)
     append(output, llvm_lir_type(llvm_lir_function_return_type(program, function_offset)))
@@ -954,7 +954,7 @@ def llvm_lir_append_function_signature(program: LirProgram, record_id: int, outp
             scan_record = scan_record + 1
     append(output, ")")
 
-def llvm_lir_append_function_table(program: LirProgram, output: TextBuffer):
+def llvm_lir_append_function_table(program: LirProgram, output: Buffer):
     # 函数指针表：@dm_function_table = [ptr @dm_function_N, ...]
     let function_count = len(llvm_lir_function_record_cache)
     append(output, "@dm_function_table = private global [")
@@ -989,7 +989,7 @@ def llvm_lir_append_function_table(program: LirProgram, output: TextBuffer):
     append(output, "declare i32 @dream_dict_get_str_int(i8*, i8*)\n")
     append(output, "declare i8* @dream_dict_get_str_str(i8*, i8*)\n")
 
-def llvm_lir_append_external_declarations(output: TextBuffer):
+def llvm_lir_append_external_declarations(output: Buffer):
     let external_id = EXTERNAL_ID_BASE
     while external_id < EXTERNAL_ID_BASE + EXTERNAL_COUNT:
         if external_has_declaration(external_id):
@@ -1001,7 +1001,7 @@ def llvm_lir_append_external_declarations(output: TextBuffer):
         external_id = external_id + 1
     append(output, "declare void @append_f64(i8*, double)\n")
 
-def llvm_lir_append_string_globals(program: LirProgram, output: TextBuffer):
+def llvm_lir_append_string_globals(program: LirProgram, output: Buffer):
     let record_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
@@ -1012,7 +1012,7 @@ def llvm_lir_append_string_globals(program: LirProgram, output: TextBuffer):
                 llvm_lir_append_string_global(record_id, source_start, source_end, output)
         record_id = record_id + 1
 
-def llvm_lir_render_call_arguments_from(program: LirProgram, record_offset: int, first_operand: int, output: TextBuffer):
+def llvm_lir_render_call_arguments_from(program: LirProgram, record_offset: int, first_operand: int, output: Buffer):
     let operand_count = program.records[record_offset + 7]
     let operand_index = first_operand
     let rendered_count = 0
@@ -1030,7 +1030,7 @@ def llvm_lir_render_call_arguments_from(program: LirProgram, record_offset: int,
         operand_index = operand_index + 1
         rendered_count = rendered_count + 1
 
-def llvm_lir_render_call_arguments(program: LirProgram, record_offset: int, output: TextBuffer):
+def llvm_lir_render_call_arguments(program: LirProgram, record_offset: int, output: Buffer):
     llvm_lir_render_call_arguments_from(program, record_offset, 0, output)
 
 # 全局 slot 名与 LLVM 类型：slot 类型为指针类时用 i8* 存储
@@ -1047,7 +1047,7 @@ def llvm_lir_global_slot_type(lir_type: int) -> str:
         return "i1"
     return "i8*"
 
-def llvm_lir_append_global_declarations(program: LirProgram, output: TextBuffer):
+def llvm_lir_append_global_declarations(program: LirProgram, output: Buffer):
     # 按出现顺序收集全局 slot 的类型（LOAD 的 result 类型优先）
     let slot_types: list[int] = []
     let record_id = 0
@@ -1073,7 +1073,7 @@ def llvm_lir_append_global_declarations(program: LirProgram, output: TextBuffer)
             append(output, " zeroinitializer\n")
         slot_index = slot_index + 1
 
-def llvm_lir_append_coerced_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: TextBuffer):
+def llvm_lir_append_coerced_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
     let actual_type = LIR_TYPE_I32
     if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_VALUE:
         let operand_value = llvm_lir_operand_value(program, record_offset, operand_index)
@@ -1094,7 +1094,7 @@ def llvm_lir_append_coerced_operand(program: LirProgram, record_offset: int, ope
     else:
         append(output, llvm_lir_zero(expected_type))
 
-def llvm_lir_append_direct_call_argument(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: TextBuffer):
+def llvm_lir_append_direct_call_argument(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
     let actual_type = LIR_TYPE_I32
     if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_VALUE:
         actual_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, operand_index))
@@ -1139,7 +1139,7 @@ def llvm_lir_edge_operand_type(program: LirProgram, record_offset: int, operand_
         return LIR_TYPE_I32
     return LIR_TYPE_DYNAMIC
 
-def llvm_lir_append_edge_cast(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: TextBuffer):
+def llvm_lir_append_edge_cast(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
     let actual_type = llvm_lir_edge_operand_type(program, record_offset, operand_index)
     # void 操作数由占位端发零；cast 端不再生成定义
     if actual_type == LIR_TYPE_VOID or expected_type == LIR_TYPE_VOID:
@@ -1218,7 +1218,7 @@ def llvm_lir_append_edge_cast(program: LirProgram, record_offset: int, operand_i
     else:
         llvm_lir_append_zero_definition(expected_type, temp_name, output)
 
-def llvm_lir_append_edge_casts(program: LirProgram, record_offset: int, target_block: int, argument_start: int, argument_count: int, output: TextBuffer):
+def llvm_lir_append_edge_casts(program: LirProgram, record_offset: int, target_block: int, argument_start: int, argument_count: int, output: Buffer):
     let parameter_index = 0
     let function_index = program.records[record_offset + 1]
     while parameter_index < argument_count:
@@ -1226,7 +1226,7 @@ def llvm_lir_append_edge_casts(program: LirProgram, record_offset: int, target_b
         llvm_lir_append_edge_cast(program, record_offset, argument_start + parameter_index, expected_type, output)
         parameter_index = parameter_index + 1
 
-def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, function_index: int, output: TextBuffer):
+def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, function_index: int, output: Buffer):
     let operand_count = program.records[record_offset + 7]
     let operand_index = 1
     let argument_index = 0
@@ -1322,7 +1322,7 @@ def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, f
         operand_index = operand_index + 1
         argument_index = argument_index + 1
 
-def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: int, function_index: int, output: TextBuffer):
+def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: int, function_index: int, output: Buffer):
     let operand_count = program.records[record_offset + 7]
     let operand_index = 1
     let argument_index = 0
@@ -1334,7 +1334,7 @@ def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: in
         operand_index = operand_index + 1
         argument_index = argument_index + 1
 
-def llvm_lir_append_token_call(program: LirProgram, offset: int, result_name: str, result_type: int, output: TextBuffer):
+def llvm_lir_append_token_call(program: LirProgram, offset: int, result_name: str, result_type: int, output: Buffer):
     append(output, "  call void @append_i32(i8* ")
     llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
     append(output, ", i32 ")
@@ -1361,7 +1361,7 @@ def llvm_lir_binary_operand_type(program: LirProgram, offset: int, operand_index
         return llvm_lir_operand_value(program, offset, operand_index)
     return LIR_TYPE_DYNAMIC
 
-def llvm_lir_append_binary(program: LirProgram, offset: int, output: TextBuffer, result_name: str, result_type: int):
+def llvm_lir_append_binary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let operator = llvm_lir_operand_value(program, offset, 0)
     let left_type = llvm_lir_binary_operand_type(program, offset, 1)
     let right_type = llvm_lir_binary_operand_type(program, offset, 2)
@@ -1448,7 +1448,7 @@ def llvm_lir_append_binary(program: LirProgram, offset: int, output: TextBuffer,
     llvm_lir_append_operand(program, offset, 2, operand_type, output)
     append(output, "\n")
 
-def llvm_lir_append_instruction(program: LirProgram, offset: int, output: TextBuffer):
+def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer):
     let opcode = program.records[offset + 3]
     let result_value = program.records[offset + 5]
     let result_type = program.records[offset + 4]
@@ -1483,7 +1483,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: TextBu
             llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
             append(output, " to i8*\n")
         elif result_type == LIR_TYPE_F64:
-            if string_start >= 0 and string_end > string_start and string_end <= text_length(llvm_lir_source):
+            if string_start >= 0 and string_end > string_start and string_end <= text_len(llvm_lir_source):
                 # 从源码区间取 float 文本（如 "1.5"），LLVM 无裸 double 赋值，用 fadd 0.0 构造
                 append(output, "fadd double ")
                 append(output, llvm_lir_source[string_start:string_end])
@@ -1914,7 +1914,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: TextBu
         llvm_lir_append_operand(program, offset, 0, result_type, output)
         append(output, "\n")
 
-def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: int, output: TextBuffer):
+def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: int, output: Buffer):
     let opcode = program.records[offset + 3]
     if opcode == LIR_TERM_JUMP:
         let target_block = llvm_lir_operand_value(program, offset, 0)
@@ -2045,7 +2045,7 @@ def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: in
             append(output, llvm_lir_zero(return_type))
             append(output, "\n")
 
-def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block: int, parameter_index: int, parameter_type: int, incoming: TextBuffer, incoming_count: list[int]) -> bool:
+def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block: int, parameter_index: int, parameter_type: int, incoming: Buffer, incoming_count: list[int]) -> bool:
     let opcode = program.records[offset + 3]
     let operand_count = program.records[offset + 7]
     let target_index = -1
@@ -2109,7 +2109,7 @@ def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block
             return true
     return false
 
-def llvm_lir_append_block_parameter(program: LirProgram, block_record_id: int, parameter_record_id: int, parameter_index: int, output: TextBuffer):
+def llvm_lir_append_block_parameter(program: LirProgram, block_record_id: int, parameter_record_id: int, parameter_index: int, output: Buffer):
     let block_offset = lir_record_offset(block_record_id)
     let parameter_offset = lir_record_offset(parameter_record_id)
     let function_index = program.records[block_offset + 1]
@@ -2119,7 +2119,7 @@ def llvm_lir_append_block_parameter(program: LirProgram, block_record_id: int, p
     if type_tag == LIR_TYPE_VOID:
         type_tag = LIR_TYPE_I32
     let result_value = program.records[parameter_offset + 5]
-    let incoming = TextBuffer{data: []}
+    let incoming = Buffer{data: []}
     let incoming_count = 0
     let term_start = 0
     let term_count = 0
@@ -2161,7 +2161,7 @@ def llvm_lir_function_return_type(program: LirProgram, offset: int) -> int:
     let value_offset = lir_value_offset(value_id)
     return program.values[value_offset + 1]
 
-def llvm_lir_emit_function(program: LirProgram, function_id: int, function_record_id: int, output: TextBuffer):
+def llvm_lir_emit_function(program: LirProgram, function_id: int, function_record_id: int, output: Buffer):
     let function_offset = lir_record_offset(function_record_id)
     let return_type = llvm_lir_function_return_type(program, function_offset)
     let is_process_entry = program.records[function_offset + 3] == LIR_FUNCTION_ENTRY
@@ -2225,7 +2225,7 @@ def llvm_lir_emit_function(program: LirProgram, function_id: int, function_recor
         record_id = record_id + 1
     append(output, "}\n")
 
-def llvm_lower_lir(program: LirProgram, source: str, output: TextBuffer) -> bool:
+def llvm_lower_lir(program: LirProgram, source: str, output: Buffer) -> bool:
     llvm_lir_source = source
     let phase_time = llvm_lir_debug_start()
     llvm_lir_prepare_function_cache(program)

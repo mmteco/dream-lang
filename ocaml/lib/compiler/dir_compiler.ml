@@ -129,13 +129,8 @@ let imported_definitions program =
   let definition_names = Hashtbl.create 32 in
   let type_definition_names = Hashtbl.create 32 in
   let visited_modules = Hashtbl.create 16 in
-  let is_runtime_wrapper name =
-    name = "str_to_bytes" || name = "bytes_to_str"
-    || name = "bytes_get" || name = "bytes_slice"
-  in
   let add_definition definitions definition =
-    if is_runtime_wrapper definition.Ast.def_name ||
-       Hashtbl.mem definition_names definition.Ast.def_name then
+    if Hashtbl.mem definition_names definition.Ast.def_name then
       definitions
     else begin
       Hashtbl.add definition_names definition.Ast.def_name ();

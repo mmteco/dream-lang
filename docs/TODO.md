@@ -87,7 +87,7 @@
     - [x] 代码生成器：运算符脱糖到方法调用
     - [x] Union 类型参数支持（自动装箱/拆箱）
     - [x] match type of 中的变量重新绑定
-    - [x] 标准库运算符接口（stdlib/operators.dm）
+    - [x] 标准库运算符接口（stdlib/ops.dm）
     - [x] 返回类型注册表和正确的类型推断
   - [ ] 接口约束的泛型函数（需要语法扩展）
   - [x] 隐式实现检查（Go风格duck typing）

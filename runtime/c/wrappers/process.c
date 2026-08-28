@@ -1,5 +1,6 @@
 #include "process.h"
 #include <stddef.h>
+#include <stdlib.h>
 
 static int32_t dream_process_argument_count = 0;
 static char** dream_process_argument_values = NULL;
@@ -24,4 +25,13 @@ const char* __c_process_arg(int32_t index) {
         return "";
     }
     return dream_process_argument_values[index];
+}
+
+const char* __c_env(const char* name) {
+    if (name == NULL) {
+        return "";
+    }
+
+    const char* value = getenv(name);
+    return value == NULL ? "" : value;
 }

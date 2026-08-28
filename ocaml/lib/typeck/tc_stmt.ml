@@ -673,11 +673,11 @@ let rec check_statement env = function
              | Module_loader.ExportedFunc (_original_name, def_info) ->
                  let param_types = List.map (fun (_, ty_opt, _) ->
                    match ty_opt with
-                   | Some ty -> type_expr_to_ty ty
+                   | Some ty -> resolve_type_expr acc_env ty
                    | None -> fresh_type_var ()
                  ) def_info.def_params in
                  let ret_type = match def_info.def_return_type with
-                   | Some ty -> type_expr_to_ty ty
+                   | Some ty -> resolve_type_expr acc_env ty
                    | None -> fresh_type_var ()
                  in
                  let func_type = TyFunc (param_types, ret_type) in
@@ -734,14 +734,12 @@ let rec check_statement env = function
                  ) struct_info.struct_members in
 
                  let struct_methods = List.fold_left (fun methods_map (method_name, _type_params, params, ret_ty_opt) ->
-                   let param_types = List.mapi (fun i (pname, pty_opt, _) ->
-                     if i = 0 && pname = "self" then
-                       TyStruct (struct_info.struct_name, [])
-                     else
-                       match pty_opt with
+                   let param_types = List.filter_map (fun (i, (pname, pty_opt, _)) ->
+                     if i = 0 && pname = "self" then None
+                     else Some (match pty_opt with
                        | Some t -> resolve_imported_type t
-                       | None -> fresh_type_var ()
-                   ) params in
+                       | None -> fresh_type_var ())
+                   ) (List.mapi (fun i param -> i, param) params) in
                    let ret_type = match ret_ty_opt with
                      | Some t -> resolve_imported_type t
                      | None -> TyNone
@@ -779,11 +777,11 @@ let rec check_statement env = function
              | Module_loader.ExportedFunc (_original_name, def_info) ->
                  let param_types = List.map (fun (_, ty_opt, _) ->
                    match ty_opt with
-                   | Some ty -> type_expr_to_ty ty
+                   | Some ty -> resolve_type_expr acc_env ty
                    | None -> fresh_type_var ()
                  ) def_info.def_params in
                  let ret_type = match def_info.def_return_type with
-                   | Some ty -> type_expr_to_ty ty
+                   | Some ty -> resolve_type_expr acc_env ty
                    | None -> fresh_type_var ()
                  in
                  let func_type = TyFunc (param_types, ret_type) in
@@ -840,14 +838,12 @@ let rec check_statement env = function
                  ) struct_info.struct_members in
 
                  let struct_methods = List.fold_left (fun methods_map (method_name, _type_params, params, ret_ty_opt) ->
-                   let param_types = List.mapi (fun i (pname, pty_opt, _) ->
-                     if i = 0 && pname = "self" then
-                       TyStruct (struct_info.struct_name, [])
-                     else
-                       match pty_opt with
+                   let param_types = List.filter_map (fun (i, (pname, pty_opt, _)) ->
+                     if i = 0 && pname = "self" then None
+                     else Some (match pty_opt with
                        | Some t -> resolve_imported_type t
-                       | None -> fresh_type_var ()
-                   ) params in
+                       | None -> fresh_type_var ())
+                   ) (List.mapi (fun i param -> i, param) params) in
                    let ret_type = match ret_ty_opt with
                      | Some t -> resolve_imported_type t
                      | None -> TyNone
@@ -936,22 +932,12 @@ let rec check_statement env = function
 
              let (_, _) = check_statements method_env body in
 
-             let param_types =
-               let (_, types) = List.fold_left
-                 (fun (is_first, acc) (pname, pty_opt, _) ->
-                   let pty =
-                     if is_first && pname = "self" then
-                       TyStruct (name, [])
-                     else
-                       match pty_opt with
-                       | Some t -> type_expr_to_ty t
-                       | None -> fresh_type_var ()
-                   in
-                   (false, acc @ [pty]))
-                 (true, []) params
-               in
-               types
-             in
+             let param_types = List.filter_map (fun (is_first, (pname, pty_opt, _)) ->
+               if is_first && pname = "self" then None
+               else Some (match pty_opt with
+                 | Some t -> type_expr_to_ty t
+                 | None -> fresh_type_var ())
+             ) (List.mapi (fun index param -> index = 0, param) params) in
 
              let ret_type = match ret_ty_opt with
                | Some t -> type_expr_to_ty t

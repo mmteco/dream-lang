@@ -377,7 +377,7 @@ let lookup_impl env target_type interface_name param_type =
 Dream 的内置类型默认实现常用运算符接口：
 
 ```python
-# 在标准库预定义文件中 (stdlib/operators.dm)
+# 在标准库预定义文件中 (stdlib/ops.dm)
 
 # int 实现算术运算符（编译器内置）
 impl Add[int] for int:

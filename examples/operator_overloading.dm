@@ -2,7 +2,7 @@
 # 展示如何为自定义类型实现运算符
 
 # 从标准库导入运算符接口
-from operators import Add, Sub, Mul, Eq, Ord, Neg
+from ops import Add, Sub, Mul, Eq, Ord, Neg
 
 
 # ===== 示例：二维向量类型 =====

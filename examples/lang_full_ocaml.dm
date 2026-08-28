@@ -1,7 +1,7 @@
 # dream-test: smoke
 # 语法综合导览：覆盖 Dream 语言的主要语法特性，作为宿主与自举回归的覆盖用例。
-from bytes import str_to_bytes, bytes_to_str
-from file import read_text, write_text
+from bytes import encode, decode
+from io import read, write
 
 interface Shape:
     def area(self) -> int
@@ -318,17 +318,17 @@ def main():
     print(text.upper())
     print(text.find("World"))
     print(text.replace("World", "Dream"))
-    print(text.starts_with("Hello"))
-    print(text.ends_with("World"))
+    print(text.startswith("Hello"))
+    print(text.endswith("World"))
     let joined = string_value + " world"
     print(joined)
     print("a" == "a")
     print("a" < "b")
     print(text.strip())
     print(text.strip().length())
-    print(text.is_digit(0))
-    print(text.is_alpha(0))
-    print(text.is_whitespace(0))
+    print(text.isdigit(0))
+    print(text.isalpha(0))
+    print(text.isspace(0))
     let pieces = text.split(" ")
     print(len(pieces))
     print(pieces[0])
@@ -336,10 +336,10 @@ def main():
     print("-".join(pieces))
 
     # bytes
-    let encoded = str_to_bytes("abc")
+    let encoded = encode("abc")
     print(encoded[0])
     print(encoded[1])
-    print(bytes_to_str(encoded[0:2]))
+    print(decode(encoded[0:2]))
 
     # lambda 与闭包
     let closure = lambda (value: int) -> value + 1
@@ -448,8 +448,8 @@ def main():
     print(nested_result)
     print(add_default(10))
     print(add_default(10, 20))
-    write_text("/tmp/dream_tour_io.txt", "tour io")
-    print(read_text("/tmp/dream_tour_io.txt"))
+    let write_result = write("/tmp/dream_tour_io.txt", "tour io")
+    print(read("/tmp/dream_tour_io.txt"))
     let shape_value: Shape = Rect{width: 5, height: 6}
     print(shape_value.area())
 

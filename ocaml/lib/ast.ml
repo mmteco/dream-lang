@@ -22,6 +22,7 @@ type token =
   | CONST
   | ENUM
   | IF
+  | WITH
   | ELSE
   | ELIF
   | SWITCH

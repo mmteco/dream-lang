@@ -3,6 +3,7 @@
 set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
 cd "$root_dir"
+set -lx DREAM_MODULE_PATH "$root_dir/test/fixtures"
 
 set stage0_compiler ocaml/_build/default/bin/main.exe
 set bootstrap_dir bootstrap

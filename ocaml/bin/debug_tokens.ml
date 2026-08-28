@@ -19,6 +19,7 @@ let tok_to_string = function
   | Parser.ENUM -> "ENUM"
   | Parser.STRUCT -> "STRUCT"
   | Parser.IF -> "IF"
+  | Parser.WITH -> "WITH"
   | Parser.ELSE -> "ELSE"
   | Parser.ELIF -> "ELIF"
   | Parser.SWITCH -> "SWITCH"

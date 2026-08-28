@@ -1,10 +1,10 @@
-from operators import Append
+from ops import Append
 
-struct TextBuffer:
+struct Buffer:
     data: list[byte]
 
-    def new() -> TextBuffer:
-        return TextBuffer{data: []}
+    def new() -> Buffer:
+        return Buffer{data: []}
 
     def to_str(self) -> str:
         let bytes = __c_bytes_from_array(self.data)
@@ -16,27 +16,27 @@ struct TextBuffer:
     def clear(self):
         self.data = []
 
-    def append_bytes(self, value: bytes) -> TextBuffer:
+    def append_bytes(self, value: bytes) -> Buffer:
         let index = 0
-        let length = __c_bytes_length(value)
+        let length = len(value)
         while index < length:
-            append(self.data, __c_bytes_get(value, index))
+            append(self.data, value[index])
             index = index + 1
         return self
 
-impl Append[str] for TextBuffer:
+impl Append[str] for Buffer:
     def append(self, value: str):
         self.append_bytes(__c_str_to_bytes(value))
 
-impl Append[bytes] for TextBuffer:
+impl Append[bytes] for Buffer:
     def append(self, value: bytes):
         self.append_bytes(value)
 
-impl Append[byte] for TextBuffer:
+impl Append[byte] for Buffer:
     def append(self, value: byte):
         append(self.data, value)
 
-impl Append[int] for TextBuffer:
+impl Append[int] for Buffer:
     def append(self, value: int):
         if value == 0:
             append(self.data, b'0')

@@ -684,11 +684,11 @@ render(Shape.Circle(5))  # 编译时验证
 
 #### 运算符重载 ✅
 
-通过接口实现运算符重载。标准运算符接口定义在 `runtime/stdlib/operators.dm`：
+通过接口实现运算符重载。标准运算符接口定义在 `runtime/stdlib/ops.dm`：
 
 ```python
 # 从标准库导入运算符接口
-from operators import Add, Sub, Mul, Eq, Neg
+from ops import Add, Sub, Mul, Eq, Neg
 
 # 自定义类型
 struct Vec2:
@@ -718,7 +718,7 @@ let v4 = v1 * 3         # 自动脱糖为 v1.mul(3)
 let v5 = -v1            # 自动脱糖为 v1.neg()
 ```
 
-**标准运算符接口** (`runtime/stdlib/operators.dm`)：
+**标准运算符接口** (`runtime/stdlib/ops.dm`)：
 - 算术：`Add[T, R]`, `Sub[T, R]`, `Mul[T, R]`, `Div[T, R]`, `Mod[T, R]`
 - 比较：`Eq[T]`, `Ord[T]`
 - 一元：`Neg[T]`, `Not`
@@ -1151,15 +1151,15 @@ print(result)
 let s: str = "A1 B2"
 
 # 检查指定位置的字符类型
-print(s.is_alpha(0))       # true (A 是字母)
-print(s.is_digit(1))       # true (1 是数字)
-print(s.is_whitespace(2))  # true (空格)
+print(s.isalpha(0))        # true (A 是字母)
+print(s.isdigit(1))        # true (1 是数字)
+print(s.isspace(2))        # true (空格)
 ```
 
 **说明**:
-- `is_alpha(index)` - 检查指定位置字符是否为字母
-- `is_digit(index)` - 检查指定位置字符是否为数字
-- `is_whitespace(index)` - 检查指定位置字符是否为空白字符
+- `isalpha(index)` - 检查指定位置字符是否为字母
+- `isdigit(index)` - 检查指定位置字符是否为数字
+- `isspace(index)` - 检查指定位置字符是否为空白字符
 - 所有方法返回布尔值
 
 ### 内置函数

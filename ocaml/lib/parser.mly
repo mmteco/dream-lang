@@ -91,7 +91,7 @@
 %token <bool> BOOL
 %token <string> IDENT
 %token LET LAMBDA DEF STRUCT INTERFACE IMPLEMENTS IMPL TYPE CONST ENUM
-%token IF ELSE ELIF SWITCH MATCH CASE DEFAULT FOR WHILE BREAK CONTINUE RETURN
+%token IF WITH ELSE ELIF SWITCH MATCH CASE DEFAULT FOR WHILE BREAK CONTINUE RETURN
 %token IMPORT FROM AS OF ASYNC AWAIT SELF SUPER IN
 %token SOME NONE OK ERR OPTION RESULT
 %token PLUS MINUS TIMES DIV FLOORDIV MOD POW
@@ -242,6 +242,18 @@ statement:
       { SWhile (cond, body, get_expr_pos cond) }
   | FOR pat = for_pattern IN iter = expr COLON newline_sep INDENT body = statement_list DEDENT
       { SFor (pat, iter, body, get_expr_pos iter) }
+  | WITH resource = expr AS name = IDENT COLON newline_sep INDENT body = statement_list DEDENT
+      { let position = get_expr_pos resource in
+        let binding = SLet {
+          let_name = name;
+          let_name_pos = make_position $startpos(name);
+          let_type = None;
+          let_value = resource;
+          let_pos = position;
+        } in
+        let close_call = EEnumVariant (name, "close", [], position) in
+        SIf (EBool (true, position), binding :: body @ [SExpr (close_call, position)],
+          [], None, position) }
   | MATCH e = expr COLON newline_sep INDENT cases = expr_case_list DEDENT
       { SExpr (EMatch (e, cases, get_expr_pos e), get_expr_pos e) }
   | MATCH TYPE OF e = expr COLON newline_sep INDENT cases = type_case_list DEDENT

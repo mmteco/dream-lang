@@ -1,5 +1,5 @@
 from compiler_mir_model import MirProgram, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset, MIR_RECORD_MODULE, MIR_RECORD_TYPE, MIR_RECORD_GLOBAL, MIR_RECORD_EXTERN, MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR, MIR_FUNCTION_ENTRY, MIR_EXTERNAL_BASE, MIR_TYPE_UNKNOWN, MIR_TYPE_UNIT, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_TYPE_F64, MIR_TYPE_STR, MIR_TYPE_BYTES, MIR_TYPE_PTR, MIR_TYPE_LIST, MIR_TYPE_DICT, MIR_TYPE_TUPLE, MIR_TYPE_STRUCT, MIR_TYPE_ENUM, MIR_TYPE_INTERFACE, MIR_TYPE_UNION, MIR_TYPE_FUNCTION, MIR_TYPE_CLOSURE, MIR_TYPE_DYNAMIC, MIR_TYPE_MAX, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK, MIR_OPERAND_TYPE, MIR_OPERAND_SYMBOL, MIR_OP_CONST, MIR_OP_LOCAL, MIR_OP_BINARY, MIR_OP_UNARY, MIR_OP_CALL, MIR_OP_SELECT, MIR_OP_LIST, MIR_OP_DICT, MIR_OP_TUPLE, MIR_OP_INDEX, MIR_OP_SLICE, MIR_OP_FIELD, MIR_OP_STRUCT, MIR_OP_ENUM, MIR_OP_PRINT, MIR_OP_CAST, MIR_OP_SEQUENCE, MIR_OP_ASSIGN, MIR_OP_CLOSURE, MIR_OP_RUNTIME, MIR_OP_MAX, MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH, MIR_TERM_RETURN, MIR_TERM_UNREACHABLE, MIR_TERM_MAX
-from text_buffer import TextBuffer
+from buffer import Buffer
 
 let lir_value_type_cache: list[int] = []
 let lir_block_parameter_cache: list[int] = []
@@ -736,7 +736,7 @@ def lir_validate_program(program: LirProgram) -> bool:
 def lir_empty_program() -> LirProgram:
     return LirProgram{records: [], values: [], layouts: lir_build_default_layouts()}
 
-def lir_dump_validated_program(program: LirProgram, output: TextBuffer) -> bool:
+def lir_dump_validated_program(program: LirProgram, output: Buffer) -> bool:
     append(output, "LIR version=")
     append(output, LIR_MODEL_VERSION)
     append(output, " records=")
@@ -784,7 +784,7 @@ def lir_dump_validated_program(program: LirProgram, output: TextBuffer) -> bool:
         record_id = record_id + 1
     return true
 
-def lir_dump_program(program: LirProgram, output: TextBuffer) -> bool:
+def lir_dump_program(program: LirProgram, output: Buffer) -> bool:
     if not lir_validate_model_program(program):
         return false
     return lir_dump_validated_program(program, output)

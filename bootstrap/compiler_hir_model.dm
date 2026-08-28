@@ -1,4 +1,4 @@
-from bootstrap_io import text_length
+from compiler_io import text_len
 from compiler_operator import ir_binary_operator_from_token, ir_unary_operator_from_token, ir_operator_is_comparison, ir_operator_is_boolean_result, IR_OPERATOR_ADD, IR_OPERATOR_NOT
 from compiler_lex import find_struct_declaration_index, is_identifier_start, is_identifier_continue, STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS, STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_KINDS, STRUCT_FIELD_TYPE_DECLS
 from compiler_external import external_id_from_name, external_return_type, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
@@ -225,7 +225,7 @@ def hir_type_from_ast(kind: int) -> int:
     return HIR_TYPE_DYNAMIC
 
 def hir_type_from_annotation(source: str, name_start: int, name_end: int) -> int:
-    if name_start < 0 or name_end <= name_start or name_end > text_length(source):
+    if name_start < 0 or name_end <= name_start or name_end > text_len(source):
         return HIR_TYPE_UNKNOWN
     # AST 记录的注解区间起点可能包含 ':'，剥离冒号与空白
     let type_start = name_start
@@ -248,7 +248,7 @@ def hir_type_from_annotation(source: str, name_start: int, name_end: int) -> int
         return HIR_TYPE_LIST_INT
     if type_name == "list[str]":
         return HIR_TYPE_LIST
-    if text_length(type_name) >= 5 and type_name[0:5] == "dict[":
+    if text_len(type_name) >= 5 and type_name[0:5] == "dict[":
         return HIR_TYPE_DICT
     if type_name == "Result[int, str]" or type_name == "Result[int,str]":
         return HIR_TYPE_ENUM
@@ -571,7 +571,7 @@ def hir_diag_file_path(context: HirDiagnosticContext, file_index: int) -> str:
     let path_index = 0
     let path_start = 0
     let path_end = 0
-    let source_length = text_length(context.file_paths)
+    let source_length = text_len(context.file_paths)
     while path_end <= source_length:
         if path_end == source_length or context.file_paths[path_end] == '\n':
             if path_index == file_index:
@@ -588,8 +588,8 @@ def hir_diag_line_column(context: HirDiagnosticContext, file_index: int, positio
     let target = position
     if target < file_start:
         target = file_start
-    if target > text_length(context.source):
-        target = text_length(context.source)
+    if target > text_len(context.source):
+        target = text_len(context.source)
     let cursor = file_start
     while cursor < target:
         if context.source[cursor] == '\n':
@@ -623,7 +623,7 @@ def hir_diag_function_name(context: HirDiagnosticContext, function_index: int) -
         return "<anonymous>"
     let name_start = context.function_name_starts[function_index]
     let name_end = context.function_name_ends[function_index]
-    if name_start < 0 or name_end <= name_start or name_end > text_length(context.source):
+    if name_start < 0 or name_end <= name_start or name_end > text_len(context.source):
         return "<anonymous>"
     return context.source[name_start:name_end]
 
@@ -793,7 +793,7 @@ def hir_type_is_boolean_result(operator: int) -> bool:
     return ir_operator_is_boolean_result(operator)
 
 def hir_source_ranges_equal(source: str, left_start: int, left_end: int, right_start: int, right_end: int) -> bool:
-    let source_size = text_length(source)
+    let source_size = text_len(source)
     if left_start < 0 or left_end < left_start or right_start < 0 or right_end < right_start:
         return false
     if left_end > source_size or right_end > source_size or left_end - left_start != right_end - right_start:
@@ -847,7 +847,7 @@ def hir_field_type_from_source(source: str, name_start: int, name_end: int) -> i
         while line_start > 0 and source[line_start - 1] != '\n':
             line_start = line_start - 1
         let line_end = line_start
-        while line_end < text_length(source) and source[line_end] != '\n':
+        while line_end < text_len(source) and source[line_end] != '\n':
             line_end = line_end + 1
         let content_start = line_start
         while content_start < line_end and source[content_start] == ' ':
@@ -867,7 +867,7 @@ def hir_field_type_from_source(source: str, name_start: int, name_end: int) -> i
         scan = scan + 1
         let line_start = scan
         let line_end = line_start
-        while line_end < text_length(source) and source[line_end] != '\n':
+        while line_end < text_len(source) and source[line_end] != '\n':
             line_end = line_end + 1
         let line_type = hir_struct_field_line_type(source, line_start, line_end, name_start, name_end)
         if line_type >= 0:
@@ -880,7 +880,7 @@ def hir_node_type(program: HirProgram, value_kind: int, value: int) -> int:
     return program.records[hir_record_offset(value) + 2]
 
 def hir_collect_function_index(program: HirProgram, source: str, offsets: list[int], hashes: list[int]):
-    let source_size = text_length(source)
+    let source_size = text_len(source)
     let record_id = 0
     while record_id < hir_record_count(program.records):
         let offset = hir_record_offset(record_id)
@@ -895,7 +895,7 @@ def hir_collect_function_index(program: HirProgram, source: str, offsets: list[i
         record_id = record_id + 1
 
 def hir_find_function_return_type(program: HirProgram, source: str, name_start: int, name_end: int, function_offsets: list[int], function_name_hashes: list[int]) -> int:
-    if name_start < 0 or name_end <= name_start or name_end > text_length(source):
+    if name_start < 0 or name_end <= name_start or name_end > text_len(source):
         return HIR_TYPE_UNKNOWN
     let name_hash = __c_fnv_hash_range(source, name_start, name_end)
     let function_index = 0
@@ -911,7 +911,7 @@ def hir_is_builtin_name(name: str) -> bool:
 
 # extern 调用返回类型：统一查外部表；表外特例保持历史 HIR 语义
 def hir_external_type_for_name(name: str) -> int:
-    if name == "ord" or name == "text_length":
+    if name == "ord" or name == "text_len":
         return HIR_TYPE_I32
     if name == "__c_process_arg" or name == "__c_bytes_from_array":
         return HIR_TYPE_STR
@@ -959,7 +959,7 @@ def hir_find_global_type(program: HirProgram, source: str, name_start: int, name
 
 # 计算 let (a, b) = ... 解构中名字对应的序号；非绑定名返回 -1
 def hir_let_tuple_bound_ordinal(records: list[int], source: str, stmt_offset: int, name_start: int, name_end: int) -> int:
-    let source_length = text_length(source)
+    let source_length = text_len(source)
     let scan = records[stmt_offset + 3]
     while scan < source_length and source[scan] != '(':
         scan = scan + 1
@@ -995,7 +995,7 @@ def hir_let_tuple_bound_ordinal(records: list[int], source: str, stmt_offset: in
 
 # 从函数源码注解解析第 ordinal 个返回元素的类型
 def hir_function_return_element_type(records: list[int], source: str, function_offset: int, ordinal: int) -> int:
-    let source_length = text_length(source)
+    let source_length = text_len(source)
     let scan = records[function_offset + 10]
     while scan < source_length - 1 and not (source[scan] == '-' and source[scan + 1] == '>'):
         scan = scan + 1
@@ -1417,7 +1417,7 @@ def hir_signature_int(program: HirProgram, record_offset: int, index: int) -> in
 
 def hir_parameter_type_range(source: str, name_start: int, name_end: int) -> (int, int):
     # 扫描参数名后的类型注解区间（不创建 slice）
-    let source_length = text_length(source)
+    let source_length = text_len(source)
     let type_start = name_end
     while type_start < source_length and source[type_start] != ':' and source[type_start] != ',' and source[type_start] != ')' and source[type_start] != '\n':
         type_start = type_start + 1
@@ -1482,7 +1482,7 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
         if records[offset] == HIR_RECORD_FUNCTION:
             let name_start = records[offset + 9]
             let name_end = records[offset + 10]
-            if name_end <= name_start or name_end > text_length(source):
+            if name_end <= name_start or name_end > text_len(source):
                 return hir_semantic_error("function name range")
             if records[offset + 8] < HIR_SIGNATURE_PARAM_BASE:
                 return hir_semantic_error("function signature")
@@ -1498,7 +1498,7 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
                 let parameter_name_end = hir_signature_int(program, offset, metadata_index + 2)
                 if parameter_type < HIR_TYPE_UNKNOWN or parameter_type > HIR_TYPE_MAX:
                     return hir_semantic_error("parameter type")
-                if parameter_name_start < 0 or parameter_name_end <= parameter_name_start or parameter_name_end > text_length(source):
+                if parameter_name_start < 0 or parameter_name_end <= parameter_name_start or parameter_name_end > text_len(source):
                     return hir_semantic_error("parameter name range")
                 let previous_index = 0
                 while previous_index < parameter_index:

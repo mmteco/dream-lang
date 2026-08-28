@@ -76,6 +76,7 @@
         ("const", CONST);
         ("enum", ENUM);
         ("if", IF);
+        ("with", WITH);
         ("else", ELSE);
         ("elif", ELIF);
         ("switch", SWITCH);

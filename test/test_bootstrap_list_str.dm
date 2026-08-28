@@ -1,7 +1,7 @@
 # list[str] ABI 测试：指针元素列表统一为 dynarray_ptr 变体
-# 覆盖：空列表 append、字面量、len、索引读/写、C 侧数组（split）、join
+# 覆盖：空列表 append、字面量、len、索引读/写、C 侧数组
 
-from string import split, join
+from str import split, join
 
 def main():
     let items: list[str] = []
