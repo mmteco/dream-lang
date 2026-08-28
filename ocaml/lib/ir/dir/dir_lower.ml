@@ -1952,6 +1952,8 @@ let runtime_externs = [
   { name = "__c_build_llvm"; parameters = [Str; Str; Bool]; return_type = I32 };
   { name = "__c_file_read_bytes"; parameters = [Str]; return_type = Bytes };
   { name = "__c_file_write_bytes"; parameters = [Str; Bytes]; return_type = I32 };
+  { name = "__c_file_append"; parameters = [Str; Str]; return_type = I32 };
+  { name = "__c_file_append_bytes"; parameters = [Str; Bytes]; return_type = I32 };
   { name = "__c_bytes_length"; parameters = [Bytes]; return_type = I32 };
   { name = "__c_bytes_get"; parameters = [Bytes; I32]; return_type = I32 };
   { name = "__c_bytes_slice"; parameters = [Bytes; I32; I32]; return_type = Bytes };

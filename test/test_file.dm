@@ -1,103 +1,59 @@
-# Dream 文件 I/O 综合测试
-# 包含：字符串读写、字节读写、追加、删除、类型模式匹配
+# dream-test: dir
+# Dream 文件 I/O 综合测试（bootstrap 子集）
+# 包含：文本读写、字节读写、追加、删除、错误处理
 
-from file import write_file, read_file, append_file, delete_file, exists_file
+from file import read_text, read_bytes, write_text, write_bytes, append_text, delete_file, exists_file
+from bytes import str_to_bytes
 
-print("=== File I/O Test ===")
+def report_result(r: Result[int, str]) -> int:
+    return match r:
+        Ok(bytes): bytes
+        Err(msg): -1
 
-print("--- String Read/Write ---")
+def main():
+    print("=== File I/O Test ===")
 
-let result1 = write_file("test1.txt", "Hello Dream")
-match result1:
-    Ok(bytes):
-        print(bytes)
-    Err(msg):
-        print(msg)
-    _:
-        print("Unknown error")
+    print("--- Text Write/Read ---")
 
-let content1 = read_file("test1.txt")
-print(content1)
+    let result1 = write_text("test1.txt", "Hello Dream")
+    print(report_result(result1))
 
-let exists1 = exists_file("test1.txt")
-print(exists1)
+    let content1 = read_text("test1.txt")
+    print(content1)
 
-print("--- Bytes Read/Write ---")
+    let exists1 = exists_file("test1.txt")
+    print(exists1)
 
-let bytes_content = read_file("test1.txt", true)
-print("Read bytes successfully")
+    print("--- Bytes Write/Read ---")
 
-let result2 = write_file("test2.txt", "Hello")
-match result2:
-    Ok(bytes):
-        print(bytes)
-    Err(msg):
-        print(msg)
-    _:
-        print("Unknown error")
+    let result2 = write_bytes("test2.txt", str_to_bytes("Hello"))
+    print(report_result(result2))
 
-let bytes_read = read_file("test2.txt", true)
-print("Read bytes from test2.txt")
+    let bytes_read = read_bytes("test2.txt")
+    print(len(bytes_read))
 
-print("--- Append ---")
+    print("--- Append ---")
 
-let result3 = append_file("test1.txt", " World")
-match result3:
-    Ok(bytes):
-        print(bytes)
-    Err(msg):
-        print(msg)
-    _:
-        print("Unknown error")
+    let result3 = append_text("test1.txt", " World")
+    print(report_result(result3))
 
-let content2 = read_file("test1.txt")
-print(content2)
+    let content2 = read_text("test1.txt")
+    print(content2)
 
-print("--- Union Type File I/O ---")
+    print("--- Error Case ---")
 
-def write_unified_file(path: str, content: str) -> Result[int, str]:
-    return write_file(path, content)
+    let result4 = write_text("/nonexistent_dir/test.txt", "fail")
+    print(report_result(result4))
 
-let result4 = write_unified_file("test3.txt", "Hello Union")
-match result4:
-    Ok(bytes):
-        print(bytes)
-    Err(msg):
-        print(msg)
-    _:
-        print("Unknown error")
+    print("--- Cleanup ---")
 
-let content3 = read_file("test3.txt")
-print(content3)
+    let del1 = delete_file("test1.txt")
+    print(del1)
 
-print("--- Cleanup ---")
+    let del2 = delete_file("test2.txt")
+    print(del2)
 
-let del1 = delete_file("test1.txt")
-match del1:
-    Ok(success):
-        print("Deleted test1.txt")
-    Err(msg):
-        print(msg)
-    _:
-        print("Unknown error")
+    print("=== All File I/O Tests Passed ===")
+    print(999)
 
-let del2 = delete_file("test2.txt")
-match del2:
-    Ok(success):
-        print("Deleted test2.txt")
-    Err(msg):
-        print(msg)
-    _:
-        print("Unknown error")
-
-let del3 = delete_file("test3.txt")
-match del3:
-    Ok(success):
-        print("Deleted test3.txt")
-    Err(msg):
-        print(msg)
-    _:
-        print("Unknown error")
-
-print("=== All File I/O Tests Passed ===")
-print(999)
+main()

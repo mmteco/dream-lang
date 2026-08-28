@@ -1,7 +1,5 @@
-# Dream Standard Library - String Module
-# 字符串操作相关函数
-
-# TODO: 实现字符串操作
+# 字符串操作标准库（bootstrap 子集）
+# int_to_str 为纯 Dream 实现，其余直接映射 C 运行时字符串函数
 
 def int_to_str(value: int) -> str:
     '''将整数转换为十进制字符串'''
@@ -12,9 +10,18 @@ def int_to_str(value: int) -> str:
     if is_negative:
         value = 0 - value
 
-    let digits: list[str] = []
+    let digits: list[int] = []
     while value > 0:
-        let digit_text = match value % 10:
+        append(digits, value % 10)
+        value = value / 10
+
+    let result = ""
+    if is_negative:
+        result = "-"
+
+    let index = len(digits) - 1
+    while index >= 0:
+        let digit_text = match digits[index]:
             0: "0"
             1: "1"
             2: "2"
@@ -26,51 +33,36 @@ def int_to_str(value: int) -> str:
             8: "8"
             9: "9"
             _: "0"
-        append(digits, digit_text)
-        value = value / 10
-
-    let result = ""
-    if is_negative:
-        result = "-"
-
-    let index = len(digits) - 1
-    while index >= 0:
-        result = result + digits[index]
+        result = result + digit_text
         index = index - 1
     return result
 
 def upper(s: str) -> str:
-    '''转换为大写'''
-    pass
+    return string_upper(s)
 
 def lower(s: str) -> str:
-    '''转换为小写'''
-    pass
+    return string_lower(s)
+
+def strip(s: str) -> str:
+    return string_strip(s)
 
 def split(s: str, separator: str) -> list[str]:
-    '''分割字符串'''
-    pass
+    return string_split(s, separator)
 
 def join(items: list[str], separator: str) -> str:
-    '''连接字符串列表'''
-    pass
-
-def trim(s: str) -> str:
-    '''去除首尾空白'''
-    pass
+    return string_join(items, separator)
 
 def starts_with(s: str, prefix: str) -> bool:
-    '''检查是否以指定前缀开头'''
-    pass
+    return string_starts_with(s, prefix)
 
 def ends_with(s: str, suffix: str) -> bool:
-    '''检查是否以指定后缀结尾'''
-    pass
+    return string_ends_with(s, suffix)
 
 def replace(s: str, old: str, new: str) -> str:
-    '''替换字符串'''
-    pass
+    return string_replace(s, old, new)
 
 def substring(s: str, start: int, end: int) -> str:
-    '''获取子字符串'''
-    pass
+    return s[start:end]
+
+def find(s: str, sub: str) -> int:
+    return string_find(s, sub)

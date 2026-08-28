@@ -1,7 +1,7 @@
 # dream-test: smoke
 # 语法综合导览：覆盖 Dream 语言的主要语法特性，作为宿主与自举回归的覆盖用例。
 from bytes import str_to_bytes, bytes_to_str
-from file import read_file, write_file
+from file import read_text, write_text
 
 interface Shape:
     def area(self) -> int
@@ -448,8 +448,8 @@ def main():
     print(nested_result)
     print(add_default(10))
     print(add_default(10, 20))
-    write_file("/tmp/dream_tour_io.txt", "tour io")
-    print(read_file("/tmp/dream_tour_io.txt"))
+    write_text("/tmp/dream_tour_io.txt", "tour io")
+    print(read_text("/tmp/dream_tour_io.txt"))
     let shape_value: Shape = Rect{width: 5, height: 6}
     print(shape_value.area())
 

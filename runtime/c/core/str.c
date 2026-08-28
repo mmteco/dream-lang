@@ -274,7 +274,7 @@ char* string_replace(const char* str, const char* old, const char* new_str) {
         const char* q = strstr(p, old);
         if (q == NULL) {
             strcpy(dst, p);
-            break;
+            return result;
         }
 
         size_t prefix_length = (size_t)(q - p);
