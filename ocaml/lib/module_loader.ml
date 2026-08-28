@@ -1,26 +1,30 @@
 open Ast
 
 (* 模块路径解析 *)
+let configured_module_paths () =
+  match Sys.getenv_opt "DREAM_MODULE_PATH" with
+  | None -> []
+  | Some paths ->
+      paths
+      |> String.split_on_char ':'
+      |> List.filter (fun path -> path <> "")
+
 let resolve_module_path module_path =
   (* module_path 是 string list，例如 ["file"] 或 ["os", "path"] *)
   let module_name = String.concat "." module_path in
-
-  (* 尝试在 stdlib 目录查找 *)
-  let stdlib_path = "runtime/stdlib/" ^ module_name ^ ".dm" in
-  if Sys.file_exists stdlib_path then
-    Some stdlib_path
-  else
-    (* 尝试在 bootstrap 目录查找 *)
-    let bootstrap_path = "bootstrap/" ^ module_name ^ ".dm" in
-    if Sys.file_exists bootstrap_path then
-      Some bootstrap_path
-    else
-      (* 尝试在当前目录查找 *)
-      let local_path = module_name ^ ".dm" in
-      if Sys.file_exists local_path then
-        Some local_path
-      else
-        None
+  let standard_paths = [
+    "runtime/stdlib";
+    "bootstrap";
+    "."
+  ] in
+  let search_paths = standard_paths @ configured_module_paths () in
+  let rec find_path = function
+    | [] -> None
+    | directory :: rest ->
+        let path = Filename.concat directory (module_name ^ ".dm") in
+        if Sys.file_exists path then Some path else find_path rest
+  in
+  find_path search_paths
 
 (* 读取文件内容 *)
 let read_file filename =

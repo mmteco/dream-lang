@@ -4,6 +4,7 @@ set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
 set compiler "$root_dir/ocaml/_build/default/bin/main.exe"
 cd "$root_dir"
+set -lx DREAM_MODULE_PATH "$root_dir/test/fixtures"
 
 function build_source
     set source_file $argv[1]
