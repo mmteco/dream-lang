@@ -1,6 +1,7 @@
 from bootstrap_io import text_length
 from compiler_operator import ir_binary_operator_from_token, ir_unary_operator_from_token, ir_operator_is_comparison, ir_operator_is_boolean_result, IR_OPERATOR_ADD, IR_OPERATOR_NOT
 from compiler_lex import find_struct_declaration_index, is_identifier_start, is_identifier_continue, STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS, STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_KINDS, STRUCT_FIELD_TYPE_DECLS
+from compiler_external import external_id_from_name, external_return_type, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
 
 const HIR_MODEL_VERSION: int = 3
 const HIR_MODEL_RECORD_SIZE: int = 11
@@ -908,17 +909,28 @@ def hir_find_function_return_type(program: HirProgram, source: str, name_start: 
 def hir_is_builtin_name(name: str) -> bool:
     return name == "print" or name == "eprint" or name == "append" or name == "len"
 
-def hir_external_return_type(name: str) -> int:
-    switch name:
-        case "ord", "text_length", "__c_utf8_rune_at", "__c_utf8_rune_count", "__c_process_arg_count", "__c_time_ms", "__c_file_write_bytes", "__c_file_append", "__c_file_read_bytes", "__c_bytes_length", "__c_bytes_get":
-            return HIR_TYPE_I32
-        case "__c_debug_on":
-            return HIR_TYPE_BOOL
-        case "__c_process_arg", "__c_bytes_from_array", "__c_bytes_to_array", "__c_file_read_text", "__c_string_from_bytes", "__c_string_to_bytes":
-            return HIR_TYPE_STR
-        case "__c_eprint_int", "__c_eprint_text", "__c_eprint_bool", "__c_process_set_args", "__c_file_close", "append":
+# extern 调用返回类型：统一查外部表；表外特例保持历史 HIR 语义
+def hir_external_type_for_name(name: str) -> int:
+    if name == "ord" or name == "text_length":
+        return HIR_TYPE_I32
+    if name == "__c_process_arg" or name == "__c_bytes_from_array":
+        return HIR_TYPE_STR
+    let external_id = external_id_from_name(name)
+    if external_id < 0:
+        return HIR_TYPE_UNKNOWN
+    let return_type = external_return_type(external_id)
+    switch return_type:
+        case EXTERNAL_RETURN_UNIT:
             return HIR_TYPE_UNIT
-    return HIR_TYPE_UNKNOWN
+        case EXTERNAL_RETURN_INT:
+            return HIR_TYPE_I32
+        case EXTERNAL_RETURN_BOOL:
+            return HIR_TYPE_BOOL
+        case EXTERNAL_RETURN_FLOAT:
+            return HIR_TYPE_F64
+        case EXTERNAL_RETURN_STRING:
+            return HIR_TYPE_STR
+    return HIR_TYPE_DYNAMIC
 
 def hir_set_constant_index(starts: list[int], ends: list[int], types: list[int]):
     HIR_CONSTANT_BASE = len(HIR_CONSTANT_DATA)
@@ -1127,7 +1139,7 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, functi
                         if name == "len":
                             return HIR_TYPE_I32
                         return HIR_TYPE_UNIT
-                    let external_type = hir_external_return_type(name)
+                    let external_type = hir_external_type_for_name(name)
                     if external_type != HIR_TYPE_UNKNOWN:
                         return external_type
                     let function_type = hir_find_function_return_type(program, source, program.records[callee_record_offset + 3], program.records[callee_record_offset + 4], function_offsets, function_name_hashes)

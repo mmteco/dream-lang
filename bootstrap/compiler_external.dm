@@ -100,8 +100,10 @@ const EXTERNAL_ID_ENUM_GET_BOOL: int = 1097
 const EXTERNAL_ID_INTERFACE_BOX: int = 1098
 const EXTERNAL_ID_INTERFACE_OBJ: int = 1099
 const EXTERNAL_ID_INTERFACE_TAG: int = 1100
+const EXTERNAL_ID_FILE_APPEND: int = 1101
+const EXTERNAL_ID_FILE_APPEND_BYTES: int = 1102
 
-const EXTERNAL_COUNT: int = 101
+const EXTERNAL_COUNT: int = 103
 const EXTERNAL_ID_BASE: int = 1000
 const EXTERNAL_RETURN_UNIT: int = 1
 const EXTERNAL_RETURN_INT: int = 2
@@ -110,226 +112,13 @@ const EXTERNAL_RETURN_FLOAT: int = 4
 const EXTERNAL_RETURN_POINTER: int = 5
 const EXTERNAL_RETURN_STRING: int = 6
 
-const RUNTIME_EXTERN_NAMES: str = "dream_print_int\ndream_print_float\ndream_print_bool\ndream_print_string\ndream_eprint_int\ndream_eprint_float\ndream_eprint_bool\ndream_eprint_string\nstring_concat\nstring_length\nstring_find\nstring_upper\nstring_lower\nstring_strip\nstring_split\nstring_join\ndict_items_tuples\nstring_starts_with\nstring_ends_with\nstring_replace\nint_floordiv\nfloat_floordiv\nint_pow\nfloat_pow\nstring_is_digit\nstring_is_alpha\n__c_time_ms\n__c_debug_on\n__c_eprint_text\n__c_eprint_int\n__c_range_equal\n__c_fnv_hash_range\nstring_is_whitespace\nunion_create_int\nunion_create_float\nunion_create_string\nunion_create_bool\nunion_create_bytes\nunion_is_int\nunion_is_float\nunion_is_string\nunion_is_bool\nunion_is_bytes\nunion_get_int\nunion_get_float\nunion_get_string\nunion_get_bool\nunion_get_bytes\nunion_print_value\n__c_process_arg_count\n__c_process_arg\n__c_file_read\n__c_file_write\n__c_file_exists\n__c_file_delete\n__c_build_llvm\n__c_file_read_bytes\n__c_file_write_bytes\n__c_bytes_length\n__c_bytes_get\n__c_bytes_slice\n__c_bytes_from_array\n__c_str_to_bytes\n__c_bytes_to_str\ndict_set_int_int\ndict_set_int_str\ndict_set_str_int\ndict_set_str_str\ndream_dict_create_int_int\ndream_dict_create_int_str\ndream_dict_create_str_int\ndream_dict_create_str_str\ndream_dict_get_int_int\ndream_dict_get_int_str\ndream_dict_get_str_int\ndream_dict_get_str_str\ndream_dict_size_int_int\ndream_dict_size_int_str\ndream_dict_size_str_int\ndream_dict_size_str_str\n__c_utf8_rune_count\n__c_utf8_rune_at\nprint\neprint\nlen\nappend\n__c_range_equals_cstr\n__c_utf8_encode_rune\nenum_create_simple\nenum_create_int\nenum_create_float\nenum_create_string\nenum_create_bool\nenum_get_tag\nenum_get_int\nenum_get_float\nenum_get_string\nenum_get_bool\n__c_interface_box\n__c_interface_obj\n__c_interface_tag"
-const RUNTIME_EXTERN_LLVM_NAMES: str = "@dream_print_int\n@dream_print_float\n@dream_print_bool\n@dream_print_string\n@dream_eprint_int\n@dream_eprint_float\n@dream_eprint_bool\n@dream_eprint_string\n@string_concat\n@string_length\n@string_find\n@string_upper\n@string_lower\n@string_strip\n@string_split\n@string_join\n@dict_items_tuples\n@string_starts_with\n@string_ends_with\n@string_replace\n@int_floordiv\n@float_floordiv\n@int_pow\n@float_pow\n@string_is_digit\n@string_is_alpha\n@__c_time_ms\n@__c_debug_on\n@__c_eprint_text\n@__c_eprint_int\n@__c_range_equal\n@__c_fnv_hash_range\n@string_is_whitespace\n@union_create_int\n@union_create_float\n@union_create_string\n@union_create_bool\n@union_create_bytes\n@union_is_int\n@union_is_float\n@union_is_string\n@union_is_bool\n@union_is_bytes\n@union_get_int\n@union_get_float\n@union_get_string\n@union_get_bool\n@union_get_bytes\n@union_print_value\n@__c_process_arg_count\n@__c_process_arg\n@__c_file_read\n@__c_file_write\n@__c_file_exists\n@__c_file_delete\n@__c_build_llvm\n@__c_file_read_bytes\n@__c_file_write_bytes\n@__c_bytes_length\n@__c_bytes_get\n@__c_bytes_slice\n@__c_bytes_from_array\n@__c_str_to_bytes\n@__c_bytes_to_str\n@dict_set_int_int\n@dict_set_int_str\n@dict_set_str_int\n@dict_set_str_str\n@dream_dict_create_int_int\n@dream_dict_create_int_str\n@dream_dict_create_str_int\n@dream_dict_create_str_str\n@dream_dict_get_int_int\n@dream_dict_get_int_str\n@dream_dict_get_str_int\n@dream_dict_get_str_str\n@dream_dict_size_int_int\n@dream_dict_size_int_str\n@dream_dict_size_str_int\n@dream_dict_size_str_str\n@__c_utf8_rune_count\n@__c_utf8_rune_at\n@dream_print_string\n@dream_eprint_string\n@len_dynarray_i32\n@append_i32\n@__c_range_equals_cstr\n@__c_utf8_encode_rune\n@enum_create_simple\n@enum_create_int\n@enum_create_float\n@enum_create_string\n@enum_create_bool\n@enum_get_tag\n@enum_get_int\n@enum_get_float\n@enum_get_string\n@enum_get_bool\n@__c_interface_box\n@__c_interface_obj\n@__c_interface_tag"
-let runtime_extern_return_types: list[int] = []
-let runtime_extern_declarations: list[int] = []
-let runtime_externs_initialized: list[int] = [0]
-
-def runtime_extern_int_get(values: list[int], index: int) -> int:
-    if index < 0 or index >= len(values):
-        return 0
-    return values[index]
-
-def runtime_extern_int_set(values: list[int], index: int, value: int):
-    values[index] = value
-
-def runtime_externs_init():
-    if runtime_extern_int_get(runtime_externs_initialized, 0) != 0:
-        return
-    runtime_extern_int_set(runtime_externs_initialized, 0, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_FLOAT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_FLOAT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_FLOAT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_FLOAT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_UNIT)
-    append(runtime_extern_declarations, 0)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_FLOAT)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_STRING)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_BOOL)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_POINTER)
-    append(runtime_extern_declarations, 1)
-    append(runtime_extern_return_types, EXTERNAL_RETURN_INT)
-    append(runtime_extern_declarations, 1)
+# 外部 C 函数单一数据源：三个常量按行/按字符对齐，行序即 external_id 序（id = EXTERNAL_ID_BASE + 行号 - 1）。
+# EXTERN_NAMES：C 符号名，每行一个。
+const EXTERN_NAMES: str = "dream_print_int\ndream_print_float\ndream_print_bool\ndream_print_string\ndream_eprint_int\ndream_eprint_float\ndream_eprint_bool\ndream_eprint_string\nstring_concat\nstring_length\nstring_find\nstring_upper\nstring_lower\nstring_strip\nstring_split\nstring_join\ndict_items_tuples\nstring_starts_with\nstring_ends_with\nstring_replace\nint_floordiv\nfloat_floordiv\nint_pow\nfloat_pow\nstring_is_digit\nstring_is_alpha\n__c_time_ms\n__c_debug_on\n__c_eprint_text\n__c_eprint_int\n__c_range_equal\n__c_fnv_hash_range\nstring_is_whitespace\nunion_create_int\nunion_create_float\nunion_create_string\nunion_create_bool\nunion_create_bytes\nunion_is_int\nunion_is_float\nunion_is_string\nunion_is_bool\nunion_is_bytes\nunion_get_int\nunion_get_float\nunion_get_string\nunion_get_bool\nunion_get_bytes\nunion_print_value\n__c_process_arg_count\n__c_process_arg\n__c_file_read\n__c_file_write\n__c_file_exists\n__c_file_delete\n__c_build_llvm\n__c_file_read_bytes\n__c_file_write_bytes\n__c_bytes_length\n__c_bytes_get\n__c_bytes_slice\n__c_bytes_from_array\n__c_str_to_bytes\n__c_bytes_to_str\ndict_set_int_int\ndict_set_int_str\ndict_set_str_int\ndict_set_str_str\ndream_dict_create_int_int\ndream_dict_create_int_str\ndream_dict_create_str_int\ndream_dict_create_str_str\ndream_dict_get_int_int\ndream_dict_get_int_str\ndream_dict_get_str_int\ndream_dict_get_str_str\ndream_dict_size_int_int\ndream_dict_size_int_str\ndream_dict_size_str_int\ndream_dict_size_str_str\n__c_utf8_rune_count\n__c_utf8_rune_at\nprint\neprint\nlen\nappend\n__c_range_equals_cstr\n__c_utf8_encode_rune\nenum_create_simple\nenum_create_int\nenum_create_float\nenum_create_string\nenum_create_bool\nenum_get_tag\nenum_get_int\nenum_get_float\nenum_get_string\nenum_get_bool\n__c_interface_box\n__c_interface_obj\n__c_interface_tag\n__c_file_append\n__c_file_append_bytes"
+# EXTERN_RETURN_CODES：每字符一个返回类型码（'1'-'6' 对应 EXTERNAL_RETURN_*），与 EXTERN_NAMES 行对齐。
+const EXTERN_RETURN_CODES: str = "1111111162266666633624243323113235455533333545351255533255225555111155555555222222112135555552246355222"
+# EXTERN_DECL_CODES：每字符一个 LLVM 声明标志（'1'=通用 declare；'0'=专用 declare，由 LLVM 发射器硬编码），与 EXTERN_NAMES 行对齐。
+const EXTERN_DECL_CODES: str = "1111111111111111111111111111111111111111111111111111111111111111000000000000111111001011111111111111111"
 
 def runtime_extern_at(source: str, external_id: int) -> str:
     let current_id = 1
@@ -345,61 +134,38 @@ def runtime_extern_at(source: str, external_id: int) -> str:
     return source[line_start:line_end]
 
 def external_llvm_name(external_id: int) -> str:
+    # print/eprint/len/append 是内置多态函数，LLVM 层按操作数类型分派，这里只保留占位名
+    if external_id == EXTERNAL_ID_PRINT:
+        return "@dream_print_string"
+    if external_id == EXTERNAL_ID_EPRINT:
+        return "@dream_eprint_string"
+    if external_id == EXTERNAL_ID_LEN:
+        return "@len_dynarray_i32"
+    if external_id == EXTERNAL_ID_APPEND:
+        return "@append_i32"
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
         return "@llvm.trap"
-    return runtime_extern_at(RUNTIME_EXTERN_LLVM_NAMES, external_id - EXTERNAL_ID_BASE + 1)
+    return string_concat("@", runtime_extern_at(EXTERN_NAMES, external_id - EXTERNAL_ID_BASE + 1))
 
 def external_return_type(external_id: int) -> int:
-    if external_id == EXTERNAL_ID_BYTES_LENGTH or external_id == EXTERNAL_ID_BYTES_GET:
-        return EXTERNAL_RETURN_INT
-    if external_id >= EXTERNAL_ID_BYTES_SLICE and external_id <= EXTERNAL_ID_BYTES_TO_STR:
-        return EXTERNAL_RETURN_POINTER
-    if external_id == EXTERNAL_ID_APPEND or external_id == EXTERNAL_ID_PRINT or external_id == EXTERNAL_ID_EPRINT:
-        return EXTERNAL_RETURN_UNIT
-    runtime_externs_init()
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
         return EXTERNAL_RETURN_POINTER
-    return runtime_extern_int_get(runtime_extern_return_types, external_id - EXTERNAL_ID_BASE)
+    return ord(EXTERN_RETURN_CODES[external_id - EXTERNAL_ID_BASE]) - 48
 
 def external_has_declaration(external_id: int) -> bool:
-    runtime_externs_init()
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
         return false
-    return runtime_extern_int_get(runtime_extern_declarations, external_id - EXTERNAL_ID_BASE) != 0
+    return ord(EXTERN_DECL_CODES[external_id - EXTERNAL_ID_BASE]) - 48 != 0
 
 def external_id_from_name(name: str) -> int:
-    if name == "__c_bytes_length":
-        return EXTERNAL_ID_BYTES_LENGTH
-    if name == "__c_bytes_get":
-        return EXTERNAL_ID_BYTES_GET
-    if name == "__c_bytes_slice":
-        return EXTERNAL_ID_BYTES_SLICE
-    if name == "__c_bytes_from_array":
-        return EXTERNAL_ID_BYTES_FROM_ARRAY
-    if name == "__c_str_to_bytes":
-        return EXTERNAL_ID_STR_TO_BYTES
-    if name == "__c_bytes_to_str":
-        return EXTERNAL_ID_BYTES_TO_STR
-    if name == "__c_utf8_rune_count":
-        return EXTERNAL_ID_RUNE_COUNT
-    if name == "__c_utf8_rune_at":
-        return EXTERNAL_ID_RUNE_AT
-    if name == "print":
-        return EXTERNAL_ID_PRINT
-    if name == "eprint":
-        return EXTERNAL_ID_EPRINT
-    if name == "len":
-        return EXTERNAL_ID_LEN
-    if name == "append":
-        return EXTERNAL_ID_APPEND
     let external_id = 1
     let line_start = 0
-    let source_length = text_length(RUNTIME_EXTERN_NAMES)
+    let source_length = text_length(EXTERN_NAMES)
     while external_id <= EXTERNAL_COUNT:
         let line_end = line_start
-        while line_end < source_length and RUNTIME_EXTERN_NAMES[line_end] != '\n':
+        while line_end < source_length and EXTERN_NAMES[line_end] != '\n':
             line_end = line_end + 1
-        if RUNTIME_EXTERN_NAMES[line_start:line_end] == name:
+        if EXTERN_NAMES[line_start:line_end] == name:
             return external_id + EXTERNAL_ID_BASE - 1
         external_id = external_id + 1
         line_start = line_end + 1
