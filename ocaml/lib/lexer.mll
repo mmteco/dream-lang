@@ -586,7 +586,11 @@ and read_byte_literal = parse
             (* 括号内行首：缩进不产生 INDENT/DEDENT *)
             let (tok, start_pos, end_pos) = token lexbuf in
             update_bracket_depth tok;
-            next_tokens ((tok, start_pos, end_pos) :: acc) (tok = NEWLINE)
+            let next_acc =
+              if tok = NEWLINE then acc
+              else (tok, start_pos, end_pos) :: acc
+            in
+            next_tokens next_acc (tok = NEWLINE)
         | _ ->
             let pos = make_lexing_pos () in
             let (indent_tokens, has_dedent) = handle_indent indent_level in
@@ -606,7 +610,11 @@ and read_byte_literal = parse
           let final_with_pos = (EOF, eof_pos, eof_pos) :: dedents_with_pos in
           List.rev (final_with_pos @ acc)
         end else
-          next_tokens ((tok, start_pos, end_pos) :: acc) (tok = NEWLINE)
+          let next_acc =
+            if !bracket_depth > 0 && tok = NEWLINE then acc
+            else (tok, start_pos, end_pos) :: acc
+          in
+          next_tokens next_acc (tok = NEWLINE)
       end
     in
     let raw_tokens = next_tokens [] true in

@@ -62,7 +62,8 @@ def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
         module_start = module_end + 1
     return false
 
-def append_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: Buffer) -> str:
+def add_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int],
+    file_ends: list[int], file_paths: Buffer) -> str:
     let imported_path = module_path(module_name)
     let module_source = read(imported_path)
     let start_offset = len(imported_source)
@@ -110,15 +111,19 @@ def rewrite_module_namespace(source: str, module_names: str) -> str:
         while token_kind(kinds, token_index) != TOKEN_EOF:
             let token_start_offset = token_start(starts, token_index)
             let token_end_offset = token_end(ends, token_index)
-            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset, token_end_offset, "import") and not (token_index > 1 and token_kind(kinds, token_index - 2) == TOKEN_IDENTIFIER and source_equals(source, token_start(starts, token_index - 2), token_end(ends, token_index - 2), "from")):
+            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset,
+                token_end_offset, "import") and not (token_index > 1 and token_kind(kinds,
+                token_index - 2) == TOKEN_IDENTIFIER and source_equals(source, token_start(starts,
+                token_index - 2), token_end(ends, token_index - 2), "from")):
                 let line_end_index = token_index
-                while token_kind(kinds, line_end_index) != TOKEN_NEWLINE and token_kind(kinds, line_end_index) != TOKEN_EOF:
+                while token_kind(kinds, line_end_index) not in [TOKEN_NEWLINE, TOKEN_EOF]:
                     line_end_index = line_end_index + 1
                 let line_end_offset = token_end_offset
                 if token_kind(kinds, line_end_index) == TOKEN_NEWLINE:
                     line_end_offset = token_start(starts, line_end_index)
                 rewritten_source = mask_source_range(rewritten_source, token_start_offset, line_end_offset)
-            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset, token_end_offset, module_name):
+            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset,
+                token_end_offset, module_name):
                 let dot_index = token_index + 1
                 if token_kind(kinds, dot_index) == TOKEN_DOT:
                     let dot_end_offset = token_end(ends, dot_index)
@@ -127,7 +132,8 @@ def rewrite_module_namespace(source: str, module_names: str) -> str:
         module_start = module_end + 1
     return rewritten_source
 
-def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: Buffer) -> str:
+def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int],
+    file_ends: list[int], file_paths: Buffer) -> str:
     let imported_source = ""
     let loaded_modules = ""
     let namespace_modules = ""
@@ -148,21 +154,35 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         found_new_module = false
         let token_index = 0
         while token_kind(import_kinds, token_index) != TOKEN_EOF:
-            if token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and source_equals(scan_source, token_start(import_starts, token_index), token_end(import_ends, token_index), "from"):
+            if token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and source_equals(scan_source,
+                token_start(import_starts, token_index), token_end(import_ends, token_index), "from"):
                 let module_index = token_index + 1
                 if token_kind(import_kinds, module_index) == TOKEN_IDENTIFIER:
-                    let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends, module_index)]
+                    let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends,
+                        module_index)]
                     if not module_is_loaded(loaded_modules, module_name):
-                        imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends, file_paths)
+                        imported_source = add_imported_module(imported_source, module_name, file_packages,
+                            file_starts, file_ends, file_paths)
                         loaded_modules = loaded_modules + module_name
                         loaded_modules = loaded_modules + "\n"
                         found_new_module = true
-            if token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and scan_source[token_start(import_starts, token_index):token_end(import_ends, token_index)] == "import" and not (token_index > 1 and token_kind(import_kinds, token_index - 2) == TOKEN_IDENTIFIER and scan_source[token_start(import_starts, token_index - 2):token_end(import_ends, token_index - 2)] == "from"):
+            if (
+                token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and
+                scan_source[token_start(import_starts, token_index):token_end(import_ends, token_index)] == "import" and
+                not (
+                    token_index > 1 and
+                    token_kind(import_kinds, token_index - 2) == TOKEN_IDENTIFIER and
+                    scan_source[token_start(import_starts, token_index - 2):token_end(import_ends,
+                        token_index - 2)] == "from"
+                )
+            ):
                 let module_index = token_index + 1
                 if token_kind(import_kinds, module_index) == TOKEN_IDENTIFIER:
-                    let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends, module_index)]
+                    let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends,
+                        module_index)]
                     if not module_is_loaded(loaded_modules, module_name):
-                        imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends, file_paths)
+                        imported_source = add_imported_module(imported_source, module_name, file_packages,
+                            file_starts, file_ends, file_paths)
                         loaded_modules = loaded_modules + module_name
                         loaded_modules = loaded_modules + "\n"
                         found_new_module = true
@@ -211,12 +231,23 @@ def compiler_debug_checkpoint(label: str, previous_time: int) -> int:
     __c_eprint_text("ms\n")
     return current_time
 
-def build_ast_compilation(context: ParseContext, function_bodies: list[int], function_body_ends: list[int], global_let_expression_indexes: list[int], nodes: list[int], function_nodes_start: list[int], function_nodes_end: list[int], global_nodes: list[int]) -> bool:
-    if not ast_build_program(context, nodes, function_nodes_start, function_nodes_end, global_nodes, function_bodies, function_body_ends, global_let_expression_indexes):
+def build_ast_compilation(
+    context: ParseContext,
+    function_bodies: list[int],
+    function_body_ends: list[int],
+    global_let_expression_indexes: list[int],
+    nodes: list[int],
+    function_nodes_start: list[int],
+    function_nodes_end: list[int],
+    global_nodes: list[int]
+) -> bool:
+    if not ast_build_program(context, nodes, function_nodes_start, function_nodes_end, global_nodes, function_bodies,
+        function_body_ends, global_let_expression_indexes):
         return false
     return ast_validate_program(nodes)
 
-def write_ast_output(output_path: str, source: str, function_starts: list[int], function_ends: list[int], nodes: list[int], function_nodes_start: list[int], function_nodes_end: list[int]):
+def write_ast_output(output_path: str, source: str, function_starts: list[int], function_ends: list[int],
+    nodes: list[int], function_nodes_start: list[int], function_nodes_end: list[int]):
     let ast = nodes
     let output = Buffer{data: []}
     append(output, "module dream\nfunctions=")
@@ -395,18 +426,43 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         expression_indexes: global_let_expression_indexes
     }
     collect_global_lets(tokens, globals)
-    let is_ast_valid = build_ast_compilation(parse_context, function_bodies, function_body_ends, global_let_expression_indexes, ast_nodes, ast_function_nodes_start, ast_function_nodes_end, ast_global_nodes)
+    let is_ast_valid = build_ast_compilation(parse_context, function_bodies, function_body_ends,
+        global_let_expression_indexes, ast_nodes, ast_function_nodes_start, ast_function_nodes_end, ast_global_nodes)
     phase_time = compiler_debug_checkpoint("ast", phase_time)
     if not is_ast_valid:
         __c_eprint_text("error: AST validation failed\n")
         return false
     if output_mode == COMPILE_OUTPUT_AST:
-        write_ast_output(output_path, source, function_starts, function_ends, ast_nodes, ast_function_nodes_start, ast_function_nodes_end)
+        write_ast_output(output_path, source, function_starts, function_ends, ast_nodes, ast_function_nodes_start,
+            ast_function_nodes_end)
         return true
     let hir_records: list[int] = []
     let hir_values: list[int] = []
     let hir_struct_decls: list[int] = []
-    if not hir_model_build_program(ast_nodes, ast_function_nodes_start, ast_function_nodes_end, ast_global_nodes, global_let_name_starts, global_let_name_ends, global_let_collected_types, function_starts, function_ends, function_param_offsets, function_param_counts, parameter_starts, parameter_ends, parameter_types, function_return_types, parameter_default_indexes, constant_starts, constant_ends, constant_types, hir_records, hir_values, hir_struct_decls):
+    if not hir_model_build_program(
+        ast_nodes,
+        ast_function_nodes_start,
+        ast_function_nodes_end,
+        ast_global_nodes,
+        global_let_name_starts,
+        global_let_name_ends,
+        global_let_collected_types,
+        function_starts,
+        function_ends,
+        function_param_offsets,
+        function_param_counts,
+        parameter_starts,
+        parameter_ends,
+        parameter_types,
+        function_return_types,
+        parameter_default_indexes,
+        constant_starts,
+        constant_ends,
+        constant_types,
+        hir_records,
+        hir_values,
+        hir_struct_decls,
+    ):
         __c_eprint_text("error: HIR build failed\n")
         return false
     let hir_output_records: list[int] = []
@@ -423,13 +479,22 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     phase_time = compiler_debug_checkpoint("hir-build", phase_time)
     let validated_hir_records: list[int] = []
     let validated_hir_struct_decls: list[int] = []
-    if not hir_validate_semantics(hir_records, hir_values, hir_struct_decls, source, validated_hir_records, validated_hir_struct_decls):
+    if not hir_validate_semantics(hir_records, hir_values, hir_struct_decls, source, validated_hir_records,
+        validated_hir_struct_decls):
         __c_eprint_text("error: HIR semantic validation failed\n")
         return false
-    let hir_program = HirProgram{records: validated_hir_records, values: hir_values, struct_decls: validated_hir_struct_decls}
+    let hir_program = HirProgram{
+        records: validated_hir_records,
+        values: hir_values,
+        struct_decls: validated_hir_struct_decls
+    }
     phase_time = compiler_debug_checkpoint("hir-validate", phase_time)
     if output_mode == COMPILE_OUTPUT_HIR:
-        let raw_hir_program = HirProgram{records: hir_output_records, values: hir_values, struct_decls: hir_output_struct_decls}
+        let raw_hir_program = HirProgram{
+            records: hir_output_records,
+            values: hir_values,
+            struct_decls: hir_output_struct_decls
+        }
         let hir_output = Buffer{data: []}
         if not hir_model_dump_program(raw_hir_program, hir_output):
             __c_eprint_text("error: HIR validation failed while dumping\n")
@@ -437,7 +502,33 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         write_buffer(output_path, hir_output)
         compiler_debug_checkpoint("hir-dump", phase_time)
         return true
-    let mir_program = mir_model_build_program(validated_hir_records, hir_values, validated_hir_struct_decls, source, constant_starts, constant_ends, constant_values, constant_types, constant_literal_starts, constant_literal_ends, function_return_struct_decls, function_param_offsets, parameter_struct_decls, parameter_default_indexes, parameter_annotation_starts, parameter_annotation_ends, impl_func_indexes, impl_func_decls, impl_func_interface_types, interface_name_starts, interface_name_ends, impl_function_indexes, impl_decl_indexes, impl_interface_name_starts, impl_interface_name_ends)
+    let mir_program = mir_model_build_program(
+        validated_hir_records,
+        hir_values,
+        validated_hir_struct_decls,
+        source,
+        constant_starts,
+        constant_ends,
+        constant_values,
+        constant_types,
+        constant_literal_starts,
+        constant_literal_ends,
+        function_return_struct_decls,
+        function_param_offsets,
+        parameter_struct_decls,
+        parameter_default_indexes,
+        parameter_annotation_starts,
+        parameter_annotation_ends,
+        impl_func_indexes,
+        impl_func_decls,
+        impl_func_interface_types,
+        interface_name_starts,
+        interface_name_ends,
+        impl_function_indexes,
+        impl_decl_indexes,
+        impl_interface_name_starts,
+        impl_interface_name_ends,
+    )
     phase_time = compiler_debug_checkpoint("mir-build", phase_time)
     let optimized_mir_program = mir_optimize_program(mir_program)
     phase_time = compiler_debug_checkpoint("mir-opt", phase_time)

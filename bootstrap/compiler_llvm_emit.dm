@@ -1,6 +1,22 @@
-from compiler_lir_model import LirProgram, lir_record_count, lir_value_count, lir_record_offset, lir_value_offset, lir_value_type_in_function, lir_value_exists, lir_block_parameter_offset, LIR_RECORD_MODULE, LIR_RECORD_FUNCTION, LIR_RECORD_BLOCK, LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR, LIR_FUNCTION_ENTRY, LIR_EXTERNAL_BASE, LIR_TYPE_VOID, LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_PTR, LIR_TYPE_AGGREGATE, LIR_TYPE_DYNAMIC, LIR_TYPE_STR, LIR_TYPE_LIST, LIR_TYPE_BYTES, LIR_TYPE_DICT, LIR_TYPE_TUPLE, LIR_TYPE_STRUCT, LIR_OPERAND_VALUE, LIR_OPERAND_IMMEDIATE, LIR_OPERAND_BLOCK, LIR_OPERAND_TYPE, LIR_OPERAND_SYMBOL, LIR_OP_CONST, LIR_OP_COPY, LIR_OP_BINARY, LIR_OP_UNARY, LIR_OP_CALL, LIR_OP_RUNTIME_CALL, LIR_OP_SELECT, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE, LIR_OP_CAST, LIR_OP_BOUNDS_CHECK, LIR_OP_GLOBAL_LOAD, LIR_OP_GLOBAL_STORE, LIR_TERM_JUMP, LIR_TERM_BRANCH, LIR_TERM_SWITCH, LIR_TERM_RETURN, LIR_TERM_UNREACHABLE
-from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_IN, IR_OPERATOR_AND, IR_OPERATOR_OR, IR_OPERATOR_NOT, IR_OPERATOR_POS, IR_OPERATOR_NEG
-from compiler_external import EXTERNAL_COUNT, EXTERNAL_ID_BASE, EXTERNAL_ID_APPEND, EXTERNAL_ID_LEN, external_llvm_name, external_return_type, external_has_declaration, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
+from compiler_lir_model import LirProgram, lir_record_count, lir_value_count, lir_record_offset, lir_value_offset
+from compiler_lir_model import lir_value_type_in_function, lir_value_exists, lir_block_parameter_offset
+from compiler_lir_model import LIR_RECORD_MODULE, LIR_RECORD_FUNCTION, LIR_RECORD_BLOCK, LIR_RECORD_PARAMETER
+from compiler_lir_model import LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR, LIR_FUNCTION_ENTRY, LIR_EXTERNAL_BASE
+from compiler_lir_model import LIR_TYPE_VOID, LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_PTR, LIR_TYPE_AGGREGATE
+from compiler_lir_model import LIR_TYPE_DYNAMIC, LIR_TYPE_STR, LIR_TYPE_LIST, LIR_TYPE_BYTES, LIR_TYPE_DICT
+from compiler_lir_model import LIR_TYPE_TUPLE, LIR_TYPE_STRUCT, LIR_OPERAND_VALUE, LIR_OPERAND_IMMEDIATE
+from compiler_lir_model import LIR_OPERAND_BLOCK, LIR_OPERAND_TYPE, LIR_OPERAND_SYMBOL, LIR_OP_CONST, LIR_OP_COPY
+from compiler_lir_model import LIR_OP_BINARY, LIR_OP_UNARY, LIR_OP_CALL, LIR_OP_RUNTIME_CALL, LIR_OP_SELECT
+from compiler_lir_model import LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE, LIR_OP_CAST
+from compiler_lir_model import LIR_OP_BOUNDS_CHECK, LIR_OP_GLOBAL_LOAD, LIR_OP_GLOBAL_STORE, LIR_TERM_JUMP
+from compiler_lir_model import LIR_TERM_BRANCH, LIR_TERM_SWITCH, LIR_TERM_RETURN, LIR_TERM_UNREACHABLE
+from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD
+from compiler_operator import IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ
+from compiler_operator import IR_OPERATOR_NE, IR_OPERATOR_IN, IR_OPERATOR_AND, IR_OPERATOR_OR, IR_OPERATOR_NOT
+from compiler_operator import IR_OPERATOR_POS, IR_OPERATOR_NEG
+from compiler_external import EXTERNAL_COUNT, EXTERNAL_ID_BASE, EXTERNAL_ID_APPEND, EXTERNAL_ID_LEN, external_llvm_name
+from compiler_external import external_return_type, external_has_declaration, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT
+from compiler_external import EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
 from buffer import Buffer
 
 let llvm_lir_function_record_cache: list[int] = []
@@ -47,13 +63,28 @@ def llvm_lir_type(type_tag: int) -> str:
     return "i8*"
 
 def llvm_lir_is_pointer_like(type_tag: int) -> bool:
-    return type_tag == LIR_TYPE_PTR or type_tag == LIR_TYPE_AGGREGATE or type_tag == LIR_TYPE_DYNAMIC or type_tag == LIR_TYPE_STR or type_tag == LIR_TYPE_LIST or type_tag == LIR_TYPE_LIST_PTR or type_tag == LIR_TYPE_BYTES or type_tag == LIR_TYPE_DICT or type_tag == LIR_TYPE_TUPLE or type_tag == LIR_TYPE_STRUCT
+    return (
+        type_tag == LIR_TYPE_PTR or
+        type_tag == LIR_TYPE_AGGREGATE or
+        type_tag == LIR_TYPE_DYNAMIC or
+        type_tag == LIR_TYPE_STR or
+        type_tag == LIR_TYPE_LIST or
+        type_tag == LIR_TYPE_LIST_PTR or
+        type_tag == LIR_TYPE_BYTES or
+        type_tag == LIR_TYPE_DICT or
+        type_tag == LIR_TYPE_TUPLE or
+        type_tag == LIR_TYPE_STRUCT
+    )
 
 def llvm_lir_is_string(type_tag: int) -> bool:
     return type_tag == LIR_TYPE_STR
 
 def llvm_lir_types_compatible(actual_type: int, expected_type: int) -> bool:
-    return actual_type == expected_type or llvm_lir_is_pointer_like(actual_type) and llvm_lir_is_pointer_like(expected_type)
+    return (
+        actual_type == expected_type or
+        llvm_lir_is_pointer_like(actual_type) and
+        llvm_lir_is_pointer_like(expected_type)
+    )
 
 def llvm_lir_join_int(prefix: str, value: int, suffix: str) -> str:
     let buffer = Buffer{data: []}
@@ -99,8 +130,10 @@ def llvm_lir_external_call_name(program: LirProgram, record_offset: int, symbol:
     if symbol == LIR_EXTERNAL_BASE + EXTERNAL_ID_LEN:
         # len 按操作数类型分派：字符串数 rune 数，其余读 dynarray 长度
         let operand_type = LIR_TYPE_I32
-        if program.records[record_offset + 7] > 1 and llvm_lir_operand_kind(program, record_offset, 1) == LIR_OPERAND_VALUE:
-            operand_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, 1))
+        if program.records[record_offset + 7] > 1 and llvm_lir_operand_kind(program, record_offset,
+            1) == LIR_OPERAND_VALUE:
+            operand_type = llvm_lir_value_type(program, program.records[record_offset + 1],
+                llvm_lir_operand_value(program, record_offset, 1))
         if operand_type == LIR_TYPE_STR:
             return "@__c_utf8_rune_count"
         if operand_type == LIR_TYPE_BYTES:
@@ -114,7 +147,8 @@ def llvm_lir_external_call_name(program: LirProgram, record_offset: int, symbol:
         return llvm_lir_external_name(symbol)
     let operand_type = LIR_TYPE_I32
     if program.records[record_offset + 7] > 2 and llvm_lir_operand_kind(program, record_offset, 2) == LIR_OPERAND_VALUE:
-        operand_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, 2))
+        operand_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program,
+            record_offset, 2))
     if llvm_lir_is_pointer_like(operand_type):
         return "@append_ptr"
     if operand_type == LIR_TYPE_F64:
@@ -126,7 +160,7 @@ def llvm_lir_external_call_name(program: LirProgram, record_offset: int, symbol:
 def llvm_lir_string_global_name(record_offset: int) -> str:
     return llvm_lir_join_int("@.dm_str_", record_offset, "")
 
-def llvm_lir_append_hex_byte(value: int, output: Buffer):
+def llvm_emit_hex_byte(value: int, output: Buffer):
     let digits = "0123456789ABCDEF"
     append(output, "\\")
     append(output, digits[(value / 16) % 16:(value / 16) % 16 + 1])
@@ -160,7 +194,11 @@ def llvm_lir_decoded_content_length(source_start: int, source_end: int) -> int:
     let index = source_start
     let count = 0
     while index < source_end:
-        if ord(llvm_lir_source[index]) == 92 and index + 1 < source_end and llvm_lir_escape_value(ord(llvm_lir_source[index + 1])) >= 0:
+        if (
+            ord(llvm_lir_source[index]) == 92 and
+            index + 1 < source_end and
+            llvm_lir_escape_value(ord(llvm_lir_source[index + 1])) >= 0
+        ):
             index = index + 2
             count = count + 1
         else:
@@ -176,24 +214,24 @@ def llvm_lir_decoded_content_length(source_start: int, source_end: int) -> int:
             index = index + 1
     return count
 
-def llvm_lir_append_rune_utf8(value: int, output: Buffer):
+def llvm_emit_rune_utf8(value: int, output: Buffer):
     # rune 码 → UTF-8 字节序列（LLVM 字符串常量按字节存储）
     if value < 0x80:
-        llvm_lir_append_hex_byte(value, output)
+        llvm_emit_hex_byte(value, output)
     elif value < 0x800:
-        llvm_lir_append_hex_byte(0xC0 + value / 64, output)
-        llvm_lir_append_hex_byte(0x80 + value % 64, output)
+        llvm_emit_hex_byte(0xC0 + value / 64, output)
+        llvm_emit_hex_byte(0x80 + value % 64, output)
     elif value < 0x10000:
-        llvm_lir_append_hex_byte(0xE0 + value / 0x1000, output)
-        llvm_lir_append_hex_byte(0x80 + (value / 64) % 64, output)
-        llvm_lir_append_hex_byte(0x80 + value % 64, output)
+        llvm_emit_hex_byte(0xE0 + value / 0x1000, output)
+        llvm_emit_hex_byte(0x80 + (value / 64) % 64, output)
+        llvm_emit_hex_byte(0x80 + value % 64, output)
     else:
-        llvm_lir_append_hex_byte(0xF0 + value / 0x40000, output)
-        llvm_lir_append_hex_byte(0x80 + (value / 0x1000) % 64, output)
-        llvm_lir_append_hex_byte(0x80 + (value / 64) % 64, output)
-        llvm_lir_append_hex_byte(0x80 + value % 64, output)
+        llvm_emit_hex_byte(0xF0 + value / 0x40000, output)
+        llvm_emit_hex_byte(0x80 + (value / 0x1000) % 64, output)
+        llvm_emit_hex_byte(0x80 + (value / 64) % 64, output)
+        llvm_emit_hex_byte(0x80 + value % 64, output)
 
-def llvm_lir_append_string_global(record_id: int, source_start: int, source_end: int, output: Buffer):
+def llvm_emit_string_global(record_id: int, source_start: int, source_end: int, output: Buffer):
     let content_length = llvm_lir_decoded_content_length(source_start, source_end)
     append(output, llvm_lir_string_global_name(record_id))
     append(output, " = private unnamed_addr constant [")
@@ -207,10 +245,10 @@ def llvm_lir_append_string_global(record_id: int, source_start: int, source_end:
         if is_escape:
             escaped_value = llvm_lir_escape_value(ord(llvm_lir_source[index + 1]))
         if escaped_value >= 0:
-            llvm_lir_append_hex_byte(escaped_value, output)
+            llvm_emit_hex_byte(escaped_value, output)
             index = index + 2
         else:
-            llvm_lir_append_rune_utf8(current, output)
+            llvm_emit_rune_utf8(current, output)
             index = index + 1
     append(output, "\\00\"\n")
 
@@ -219,7 +257,8 @@ def llvm_lir_print_name(program: LirProgram, record_offset: int) -> str:
     if program.records[record_offset + 7] > 0:
         let operand_kind = llvm_lir_operand_kind(program, record_offset, 0)
         if operand_kind == LIR_OPERAND_VALUE:
-            value_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, 0))
+            value_type = llvm_lir_value_type(program, program.records[record_offset + 1],
+                llvm_lir_operand_value(program, record_offset, 0))
         elif operand_kind == LIR_OPERAND_IMMEDIATE:
             value_type = LIR_TYPE_I32
     if value_type == LIR_TYPE_I32:
@@ -256,7 +295,8 @@ def llvm_lir_prepare_function_cache(program: LirProgram):
                 if llvm_lir_function_terminator_start_cache[function_index] < 0:
                     llvm_lir_function_terminator_start_cache[function_index] = len(llvm_lir_terminator_record_cache)
                 append(llvm_lir_terminator_record_cache, record_id)
-                llvm_lir_function_terminator_count_cache[function_index] = llvm_lir_function_terminator_count_cache[function_index] + 1
+                let terminator_count = llvm_lir_function_terminator_count_cache[function_index] + 1
+                llvm_lir_function_terminator_count_cache[function_index] = terminator_count
         record_id = record_id + 1
 
 def llvm_lir_operand_kind(program: LirProgram, record_offset: int, operand_index: int) -> int:
@@ -282,7 +322,7 @@ def llvm_lir_zero(type_tag: int) -> str:
         return "0.000000e+00"
     return "0"
 
-def llvm_lir_append_zero_definition(type_tag: int, result_name: str, output: Buffer):
+def llvm_emit_zero_definition(type_tag: int, result_name: str, output: Buffer):
     append(output, "  ")
     append(output, result_name)
     if llvm_lir_is_pointer_like(type_tag):
@@ -320,7 +360,8 @@ def llvm_lir_operand(program: LirProgram, record_offset: int, operand_index: int
         return "1"
     return llvm_lir_join_int("", operand_value, "")
 
-def llvm_lir_append_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
+def llvm_emit_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int,
+    output: Buffer):
     let operand_kind = llvm_lir_operand_kind(program, record_offset, operand_index)
     let operand_value = llvm_lir_operand_value(program, record_offset, operand_index)
     if operand_kind == LIR_OPERAND_VALUE:
@@ -372,7 +413,7 @@ def llvm_lir_runtime_name(runtime_id: int, result_type: int) -> str:
         return "@slice_dynarray_i32"
     return "@llvm.trap"
 
-def llvm_lir_append_dynamic_truthy(program: LirProgram, record_offset: int, operand_index: int, output: Buffer) -> str:
+def llvm_emit_dynamic_truthy(program: LirProgram, record_offset: int, operand_index: int, output: Buffer) -> str:
     let operand_type = llvm_lir_binary_operand_type(program, record_offset, operand_index)
     let result_name = llvm_lir_join_int("%dynamic_truthy_", record_offset + operand_index, "")
     append(output, "  ")
@@ -380,23 +421,23 @@ def llvm_lir_append_dynamic_truthy(program: LirProgram, record_offset: int, oper
     append(output, " = ")
     if operand_type == LIR_TYPE_I1:
         append(output, "add i1 0, ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
     elif operand_type == LIR_TYPE_I32:
         append(output, "icmp ne i32 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
         append(output, ", 0")
     elif operand_type == LIR_TYPE_F64:
         append(output, "fcmp one double ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
         append(output, ", 0.000000e+00")
     else:
         append(output, "icmp ne i8* ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
         append(output, ", null")
     append(output, "\n")
     return result_name
 
-def llvm_lir_append_dynamic_i64(program: LirProgram, record_offset: int, operand_index: int, output: Buffer) -> str:
+def llvm_emit_dynamic_i64(program: LirProgram, record_offset: int, operand_index: int, output: Buffer) -> str:
     let operand_type = llvm_lir_binary_operand_type(program, record_offset, operand_index)
     let result_name = llvm_lir_join_int("%dynamic_i64_", record_offset + operand_index, "")
     append(output, "  ")
@@ -404,33 +445,34 @@ def llvm_lir_append_dynamic_i64(program: LirProgram, record_offset: int, operand
     append(output, " = ")
     if operand_type == LIR_TYPE_I1:
         append(output, "zext i1 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
         append(output, " to i64")
     elif operand_type == LIR_TYPE_I32:
         append(output, "sext i32 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
         append(output, " to i64")
     elif operand_type == LIR_TYPE_F64:
         append(output, "fptosi double ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
         append(output, " to i64")
     else:
         append(output, "ptrtoint i8* ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
         append(output, " to i64")
     append(output, "\n")
     return result_name
 
-def llvm_lir_append_dynamic_membership(program: LirProgram, offset: int, left_type: int, right_type: int, output: Buffer, result_name: str) -> bool:
+def llvm_emit_dynamic_membership(program: LirProgram, offset: int, left_type: int, right_type: int,
+    output: Buffer, result_name: str) -> bool:
     if right_type in [LIR_TYPE_LIST, LIR_TYPE_BYTES]:
         if left_type == LIR_TYPE_F64:
             let match_name = llvm_lir_join_int("%dynamic_membership_match_", offset, "")
             append(output, "  ")
             append(output, match_name)
             append(output, " = call i32 @contains_dynarray_f64(i8* ")
-            llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+            llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
             append(output, ", double ")
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_F64, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_F64, output)
             append(output, ")\n  ")
             append(output, result_name)
             append(output, " = icmp ne i32 ")
@@ -438,7 +480,7 @@ def llvm_lir_append_dynamic_membership(program: LirProgram, offset: int, left_ty
             append(output, ", 0\n")
             return true
 
-        if left_type != LIR_TYPE_I1 and left_type != LIR_TYPE_I32:
+        if left_type not in [LIR_TYPE_I1, LIR_TYPE_I32]:
             return false
 
         let needle_name = llvm_lir_join_int("%dynamic_membership_needle_", offset, "")
@@ -446,19 +488,19 @@ def llvm_lir_append_dynamic_membership(program: LirProgram, offset: int, left_ty
             append(output, "  ")
             append(output, needle_name)
             append(output, " = zext i1 ")
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I1, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_I1, output)
             append(output, " to i32\n")
 
         let match_name = llvm_lir_join_int("%dynamic_membership_match_", offset, "")
         append(output, "  ")
         append(output, match_name)
         append(output, " = call i32 @contains_dynarray_i32(i8* ")
-        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ", i32 ")
         if left_type == LIR_TYPE_I1:
             append(output, needle_name)
         else:
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
         append(output, ")\n  ")
         append(output, result_name)
         append(output, " = icmp ne i32 ")
@@ -471,9 +513,9 @@ def llvm_lir_append_dynamic_membership(program: LirProgram, offset: int, left_ty
         append(output, "  ")
         append(output, match_name)
         append(output, " = call i32 @contains_dynarray_str(i8* ")
-        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ")\n  ")
         append(output, "  ")
         append(output, result_name)
@@ -484,12 +526,12 @@ def llvm_lir_append_dynamic_membership(program: LirProgram, offset: int, left_ty
 
     return false
 
-def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: int, output: Buffer, result_name: str):
+def llvm_emit_dynamic_boolean(program: LirProgram, offset: int, operator: int, output: Buffer, result_name: str):
     let left_type = llvm_lir_binary_operand_type(program, offset, 1)
     let right_type = llvm_lir_binary_operand_type(program, offset, 2)
     if operator in [IR_OPERATOR_AND, IR_OPERATOR_OR]:
-        let left_truthy = llvm_lir_append_dynamic_truthy(program, offset, 1, output)
-        let right_truthy = llvm_lir_append_dynamic_truthy(program, offset, 2, output)
+        let left_truthy = llvm_emit_dynamic_truthy(program, offset, 1, output)
+        let right_truthy = llvm_emit_dynamic_truthy(program, offset, 2, output)
         let instruction = "and"
         if operator == IR_OPERATOR_OR:
             instruction = "or"
@@ -503,15 +545,16 @@ def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: 
         append(output, right_truthy)
         append(output, "\n")
         return
-    if operator == IR_OPERATOR_IN and llvm_lir_append_dynamic_membership(program, offset, left_type, right_type, output, result_name):
+    if operator == IR_OPERATOR_IN and llvm_emit_dynamic_membership(program, offset, left_type, right_type, output,
+        result_name):
         return
     if operator == IR_OPERATOR_IN and left_type == LIR_TYPE_STR and right_type == LIR_TYPE_STR:
         append(output, "  %dynamic_find_")
         append(output, offset)
         append(output, " = call i32 @string_find(i8* ")
-        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ")\n  ")
         append(output, result_name)
         append(output, " = icmp sge i32 %dynamic_find_")
@@ -522,9 +565,9 @@ def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: 
         append(output, "  %dynamic_compare_")
         append(output, offset)
         append(output, " = call i32 @string_compare(i8* ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
-        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ")\n")
         append(output, "  ")
         append(output, result_name)
@@ -545,8 +588,8 @@ def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: 
         append(output, offset)
         append(output, ", 0\n")
         return
-    let left_integer = llvm_lir_append_dynamic_i64(program, offset, 1, output)
-    let right_integer = llvm_lir_append_dynamic_i64(program, offset, 2, output)
+    let left_integer = llvm_emit_dynamic_i64(program, offset, 1, output)
+    let right_integer = llvm_emit_dynamic_i64(program, offset, 2, output)
     append(output, "  ")
     append(output, result_name)
     append(output, " = icmp ")
@@ -568,7 +611,7 @@ def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: 
     append(output, right_integer)
     append(output, "\n")
 
-def llvm_lir_append_dynamic_unary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
+def llvm_emit_dynamic_unary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let operator = llvm_lir_operand_value(program, offset, 0)
     let operand_type = llvm_lir_binary_operand_type(program, offset, 1)
     if operator == IR_OPERATOR_NOT:
@@ -580,18 +623,18 @@ def llvm_lir_append_dynamic_unary(program: LirProgram, offset: int, output: Buff
         append(output, " = ")
         if operand_type == LIR_TYPE_I1:
             append(output, "xor i1 1, ")
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I1, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_I1, output)
         elif operand_type == LIR_TYPE_I32:
             append(output, "icmp eq i32 ")
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
             append(output, ", 0")
         elif operand_type == LIR_TYPE_F64:
             append(output, "fcmp oeq double ")
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_F64, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_F64, output)
             append(output, ", 0.000000e+00")
         else:
             append(output, "icmp eq i8* ")
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
             append(output, ", null")
         append(output, "\n")
         if result_type == LIR_TYPE_I1:
@@ -621,53 +664,54 @@ def llvm_lir_append_dynamic_unary(program: LirProgram, offset: int, output: Buff
             append(output, "  ")
             append(output, result_name)
             append(output, " = getelementptr i8, i8* ")
-            llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+            llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
             append(output, ", i32 0\n")
         return
     if operator == IR_OPERATOR_NEG and result_type == LIR_TYPE_I32:
         append(output, "  ")
         append(output, result_name)
         append(output, " = sub i32 0, ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
         append(output, "\n")
 
-def llvm_lir_append_dynamic_binary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
+def llvm_emit_dynamic_binary(program: LirProgram, offset: int, output: Buffer, result_name: str,
+    result_type: int):
     let operator = llvm_lir_operand_value(program, offset, 0)
     let left_type = llvm_lir_binary_operand_type(program, offset, 1)
     let right_type = llvm_lir_binary_operand_type(program, offset, 2)
     if result_type == LIR_TYPE_I1:
-        llvm_lir_append_dynamic_boolean(program, offset, operator, output, result_name)
+        llvm_emit_dynamic_boolean(program, offset, operator, output, result_name)
         return
     if operator == IR_OPERATOR_ADD and llvm_lir_is_string(left_type) and llvm_lir_is_string(right_type):
         append(output, "  ")
         append(output, result_name)
         append(output, " = call i8* @string_concat(i8* ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
-        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ")\n")
         return
     if operator == IR_OPERATOR_ADD and left_type == LIR_TYPE_LIST and right_type == LIR_TYPE_LIST:
         append(output, "  ")
         append(output, result_name)
         append(output, " = call i8* @concat_dynarray_i32(i8* ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
-        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ")\n")
         return
     if operator == IR_OPERATOR_ADD and left_type == LIR_TYPE_LIST_PTR and right_type == LIR_TYPE_LIST_PTR:
         append(output, "  ")
         append(output, result_name)
         append(output, " = call i8* @concat_dynarray_ptr(i8* ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
-        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ")\n")
         return
     if llvm_lir_is_pointer_like(result_type):
         let boolean_name = llvm_lir_join_int("%dynamic_bool_", offset, "")
-        llvm_lir_append_dynamic_boolean(program, offset, operator, output, boolean_name)
+        llvm_emit_dynamic_boolean(program, offset, operator, output, boolean_name)
         let integer_name = llvm_lir_join_int("%dynamic_bool_int_", offset, "")
         append(output, "  ")
         append(output, integer_name)
@@ -679,8 +723,8 @@ def llvm_lir_append_dynamic_binary(program: LirProgram, offset: int, output: Buf
         append(output, integer_name)
         append(output, " to i8*\n")
         return
-    let left_integer = llvm_lir_append_dynamic_i64(program, offset, 1, output)
-    let right_integer = llvm_lir_append_dynamic_i64(program, offset, 2, output)
+    let left_integer = llvm_emit_dynamic_i64(program, offset, 1, output)
+    let right_integer = llvm_emit_dynamic_i64(program, offset, 2, output)
     let instruction = "add"
     if operator == IR_OPERATOR_SUB:
         instruction = "sub"
@@ -713,7 +757,7 @@ def llvm_lir_append_dynamic_binary(program: LirProgram, offset: int, output: Buf
         append(output, integer_result)
         append(output, " to double\n")
 
-def llvm_lir_append_container_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
+def llvm_emit_container_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
     let is_ptr_list = program.records[offset + 4] == LIR_TYPE_LIST_PTR
     let operand_count = program.records[offset + 7]
     let capacity = operand_count - 1
@@ -737,14 +781,14 @@ def llvm_lir_append_container_create(program: LirProgram, offset: int, output: B
             append(output, "  ")
             append(output, integer_name)
             append(output, " = zext i1 ")
-            llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_I1, output)
+            llvm_emit_operand(program, offset, operand_index, LIR_TYPE_I1, output)
             append(output, " to i32\n")
         append(output, "  call void @")
         if operand_type == LIR_TYPE_F64:
             append(output, "append_f64(i8* ")
             append(output, result_name)
             append(output, ", double ")
-            llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_F64, output)
+            llvm_emit_operand(program, offset, operand_index, LIR_TYPE_F64, output)
         elif llvm_lir_is_pointer_like(operand_type):
             if is_ptr_list:
                 append(output, "append_ptr(i8* ")
@@ -752,7 +796,7 @@ def llvm_lir_append_container_create(program: LirProgram, offset: int, output: B
                 append(output, "append_pointer(i8* ")
             append(output, result_name)
             append(output, ", i8* ")
-            llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_PTR, output)
+            llvm_emit_operand(program, offset, operand_index, LIR_TYPE_PTR, output)
         else:
             append(output, "append_i32(i8* ")
             append(output, result_name)
@@ -760,11 +804,11 @@ def llvm_lir_append_container_create(program: LirProgram, offset: int, output: B
             if operand_type == LIR_TYPE_I1:
                 append(output, integer_name)
             else:
-                llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, operand_index, LIR_TYPE_I32, output)
         append(output, ")\n")
         operand_index = operand_index + 1
 
-def llvm_lir_append_struct_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
+def llvm_emit_struct_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
     let operand_count = program.records[offset + 7]
     let capacity = 0
     let capacity_index = 0
@@ -789,19 +833,19 @@ def llvm_lir_append_struct_create(program: LirProgram, offset: int, output: Buff
             append(output, "  ")
             append(output, integer_name)
             append(output, " = zext i1 ")
-            llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_I1, output)
+            llvm_emit_operand(program, offset, operand_index, LIR_TYPE_I1, output)
             append(output, " to i32\n")
         append(output, "  call void @")
         if operand_type == LIR_TYPE_F64:
             append(output, "append_f64(i8* ")
             append(output, result_name)
             append(output, ", double ")
-            llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_F64, output)
+            llvm_emit_operand(program, offset, operand_index, LIR_TYPE_F64, output)
         elif llvm_lir_is_pointer_like(operand_type):
             append(output, "append_pointer(i8* ")
             append(output, result_name)
             append(output, ", i8* ")
-            llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_PTR, output)
+            llvm_emit_operand(program, offset, operand_index, LIR_TYPE_PTR, output)
         else:
             append(output, "append_i32(i8* ")
             append(output, result_name)
@@ -809,7 +853,7 @@ def llvm_lir_append_struct_create(program: LirProgram, offset: int, output: Buff
             if operand_type == LIR_TYPE_I1:
                 append(output, integer_name)
             else:
-                llvm_lir_append_operand(program, offset, operand_index, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, operand_index, LIR_TYPE_I32, output)
         append(output, ")\n")
         operand_index = operand_index + 1
 
@@ -840,7 +884,7 @@ def llvm_lir_dict_function_name(key_type: int, value_type: int, operation: int) 
         return "@dream_dict_get_int_str"
     return "@llvm.trap"
 
-def llvm_lir_append_dict_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
+def llvm_emit_dict_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
     let operand_count = program.records[offset + 7]
     let key_type = LIR_TYPE_I32
     let value_type = LIR_TYPE_I32
@@ -854,7 +898,7 @@ def llvm_lir_append_dict_create(program: LirProgram, offset: int, output: Buffer
     append(output, llvm_lir_dict_function_name(key_type, value_type, 1))
     append(output, "(i32 ")
     if operand_count > 0:
-        llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
     else:
         append(output, "0")
     append(output, ")\n")
@@ -867,20 +911,20 @@ def llvm_lir_append_dict_create(program: LirProgram, offset: int, output: Buffer
         append(output, ", ")
         append(output, llvm_lir_type(key_type))
         append(output, " ")
-        llvm_lir_append_operand(program, offset, operand_index, key_type, output)
+        llvm_emit_operand(program, offset, operand_index, key_type, output)
         append(output, ", ")
         append(output, llvm_lir_type(value_type))
         append(output, " ")
-        llvm_lir_append_operand(program, offset, operand_index + 1, value_type, output)
+        llvm_emit_operand(program, offset, operand_index + 1, value_type, output)
         append(output, ")\n")
         operand_index = operand_index + 2
 
-def llvm_lir_append_dict_get(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
+def llvm_emit_dict_get(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let key_type = LIR_TYPE_I32
     if program.records[offset + 7] > 1:
         key_type = llvm_lir_binary_operand_type(program, offset, 1)
     let value_type = result_type
-    if value_type != LIR_TYPE_I32 and value_type != LIR_TYPE_STR:
+    if value_type not in [LIR_TYPE_I32, LIR_TYPE_STR]:
         value_type = LIR_TYPE_I32
     append(output, "  ")
     append(output, result_name)
@@ -889,17 +933,17 @@ def llvm_lir_append_dict_get(program: LirProgram, offset: int, output: Buffer, r
     append(output, " ")
     append(output, llvm_lir_dict_function_name(key_type, value_type, 3))
     append(output, "(i8* ")
-    llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+    llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
     append(output, ", ")
     append(output, llvm_lir_type(key_type))
     append(output, " ")
     if program.records[offset + 7] > 1:
-        llvm_lir_append_operand(program, offset, 1, key_type, output)
+        llvm_emit_operand(program, offset, 1, key_type, output)
     else:
         append(output, llvm_lir_zero(key_type))
     append(output, ")\n")
 
-def llvm_lir_append_tuple_get(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
+def llvm_emit_tuple_get(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let operand_count = program.records[offset + 7]
     if operand_count < 2:
         append(output, "  ")
@@ -914,7 +958,7 @@ def llvm_lir_append_tuple_get(program: LirProgram, offset: int, output: Buffer, 
             append(output, "  ")
             append(output, base_integer)
             append(output, " = zext i1 ")
-            llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I1, output)
+            llvm_emit_operand(program, offset, 0, LIR_TYPE_I1, output)
             append(output, " to i32\n")
             append(output, "  ")
             append(output, base_name)
@@ -925,7 +969,7 @@ def llvm_lir_append_tuple_get(program: LirProgram, offset: int, output: Buffer, 
             append(output, "  ")
             append(output, base_name)
             append(output, " = inttoptr i32 ")
-            llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+            llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
             append(output, " to i8*\n")
         else:
             append(output, "  ")
@@ -937,11 +981,11 @@ def llvm_lir_append_tuple_get(program: LirProgram, offset: int, output: Buffer, 
         append(output, bool_integer)
         append(output, " = call i32 @get_dynarray_i32(i8* ")
         if llvm_lir_is_pointer_like(base_type):
-            llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+            llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
         else:
             append(output, base_name)
         append(output, ", i32 ")
-        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
         append(output, ")\n")
         append(output, "  ")
         append(output, result_name)
@@ -957,11 +1001,11 @@ def llvm_lir_append_tuple_get(program: LirProgram, offset: int, output: Buffer, 
     else:
         append(output, " = call i8* @get_pointer(i8* ")
     if llvm_lir_is_pointer_like(base_type):
-        llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
     else:
         append(output, base_name)
     append(output, ", i32 ")
-    llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+    llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
     append(output, ")\n")
 
 def llvm_lir_find_function_record(program: LirProgram, function_index: int) -> int:
@@ -988,7 +1032,7 @@ def llvm_lir_function_parameter_type(program: LirProgram, function_index: int, p
         return LIR_TYPE_DYNAMIC
     return program.values[value_offset + 1]
 
-def llvm_lir_append_runtime_declarations(output: Buffer):
+def llvm_emit_runtime_declarations(output: Buffer):
     append(output, "declare void @llvm.trap()\n")
     append(output, "declare void @__c_process_set_args(i32, i8**)\n")
     append(output, "declare i8* @create_dynarray_i32(i32)\n")
@@ -1012,7 +1056,7 @@ def llvm_lir_append_runtime_declarations(output: Buffer):
     append(output, "declare i8* @concat_dynarray_ptr(i8*, i8*)\n")
     append(output, "declare i8* @string_substring(i8*, i32, i32)\n")
 
-def llvm_lir_append_function_signature(program: LirProgram, record_id: int, output: Buffer):
+def llvm_emit_function_signature(program: LirProgram, record_id: int, output: Buffer):
     # 写函数 LLVM 签名 "return_type (param_types...)"，供函数指针表 bitcast 使用
     let function_offset = lir_record_offset(record_id)
     append(output, llvm_lir_type(llvm_lir_function_return_type(program, function_offset)))
@@ -1034,7 +1078,7 @@ def llvm_lir_append_function_signature(program: LirProgram, record_id: int, outp
             scan_record = scan_record + 1
     append(output, ")")
 
-def llvm_lir_append_function_table(program: LirProgram, output: Buffer):
+def llvm_emit_function_table(program: LirProgram, output: Buffer):
     # 函数指针表：@dm_function_table = [ptr @dm_function_N, ...]
     let function_count = len(llvm_lir_function_record_cache)
     append(output, "@dm_function_table = private global [")
@@ -1069,7 +1113,7 @@ def llvm_lir_append_function_table(program: LirProgram, output: Buffer):
     append(output, "declare i32 @dream_dict_get_str_int(i8*, i8*)\n")
     append(output, "declare i8* @dream_dict_get_str_str(i8*, i8*)\n")
 
-def llvm_lir_append_external_declarations(output: Buffer):
+def llvm_emit_external_declarations(output: Buffer):
     let external_id = EXTERNAL_ID_BASE
     while external_id < EXTERNAL_ID_BASE + EXTERNAL_COUNT:
         if external_has_declaration(external_id):
@@ -1081,15 +1125,19 @@ def llvm_lir_append_external_declarations(output: Buffer):
         external_id = external_id + 1
     append(output, "declare void @append_f64(i8*, double)\n")
 
-def llvm_lir_append_string_globals(program: LirProgram, output: Buffer):
+def llvm_emit_string_globals(program: LirProgram, output: Buffer):
     let record_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
-        if program.records[offset] == LIR_RECORD_INSTRUCTION and program.records[offset + 3] == LIR_OP_CONST and llvm_lir_is_string(program.records[offset + 4]):
+        if (
+            program.records[offset] == LIR_RECORD_INSTRUCTION and
+            program.records[offset + 3] == LIR_OP_CONST and
+            llvm_lir_is_string(program.records[offset + 4])
+        ):
             let source_start = program.records[offset + 12]
             let source_end = program.records[offset + 13]
             if source_start >= 0 and source_end >= source_start:
-                llvm_lir_append_string_global(record_id, source_start, source_end, output)
+                llvm_emit_string_global(record_id, source_start, source_end, output)
         record_id = record_id + 1
 
 def llvm_lir_render_call_arguments_from(program: LirProgram, record_offset: int, first_operand: int, output: Buffer):
@@ -1101,12 +1149,13 @@ def llvm_lir_render_call_arguments_from(program: LirProgram, record_offset: int,
             append(output, ", ")
         let operand_type = LIR_TYPE_DYNAMIC
         if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_VALUE:
-            operand_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, operand_index))
+            operand_type = llvm_lir_value_type(program, program.records[record_offset + 1],
+                llvm_lir_operand_value(program, record_offset, operand_index))
         elif llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_IMMEDIATE:
             operand_type = LIR_TYPE_I32
         append(output, llvm_lir_type(operand_type))
         append(output, " ")
-        llvm_lir_append_operand(program, record_offset, operand_index, operand_type, output)
+        llvm_emit_operand(program, record_offset, operand_index, operand_type, output)
         operand_index = operand_index + 1
         rendered_count = rendered_count + 1
 
@@ -1127,7 +1176,7 @@ def llvm_lir_global_slot_type(lir_type: int) -> str:
         return "i1"
     return "i8*"
 
-def llvm_lir_append_global_declarations(program: LirProgram, output: Buffer):
+def llvm_emit_global_declarations(program: LirProgram, output: Buffer):
     # 按出现顺序收集全局 slot 的类型（LOAD 的 result 类型优先）
     let slot_types: list[int] = []
     let record_id = 0
@@ -1153,13 +1202,15 @@ def llvm_lir_append_global_declarations(program: LirProgram, output: Buffer):
             append(output, " zeroinitializer\n")
         slot_index = slot_index + 1
 
-def llvm_lir_append_coerced_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
+def llvm_emit_coerced_operand(program: LirProgram, record_offset: int, operand_index: int, expected_type: int,
+    output: Buffer):
     let actual_type = LIR_TYPE_I32
     if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_VALUE:
         let operand_value = llvm_lir_operand_value(program, record_offset, operand_index)
         actual_type = llvm_lir_value_type(program, program.records[record_offset + 1], operand_value)
         # 幽灵值或 void 结果都没有可引用的定义：以零占位，避免 SSA 未定义引用
-        if actual_type == LIR_TYPE_VOID or not lir_value_exists(program.records, program.records[record_offset + 1], operand_value):
+        if actual_type == LIR_TYPE_VOID or not lir_value_exists(program.records, program.records[record_offset + 1],
+            operand_value):
             if expected_type in [LIR_TYPE_DYNAMIC, LIR_TYPE_AGGREGATE, LIR_TYPE_VOID]:
                 append(output, "inttoptr i32 0 to i8*")
             else:
@@ -1167,36 +1218,47 @@ def llvm_lir_append_coerced_operand(program: LirProgram, record_offset: int, ope
             return
     if expected_type in [LIR_TYPE_DYNAMIC, LIR_TYPE_AGGREGATE]:
         expected_type = LIR_TYPE_PTR
-    if expected_type == actual_type or llvm_lir_is_pointer_like(actual_type) and llvm_lir_is_pointer_like(expected_type):
-        llvm_lir_append_operand(program, record_offset, operand_index, actual_type, output)
+    if (
+        expected_type == actual_type or
+        llvm_lir_is_pointer_like(actual_type) and
+        llvm_lir_is_pointer_like(expected_type)
+    ):
+        llvm_emit_operand(program, record_offset, operand_index, actual_type, output)
     elif expected_type in [LIR_TYPE_PTR, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_I1]:
         append(output, llvm_lir_join_int("%phi_arg_", record_offset + operand_index, ""))
     else:
         append(output, llvm_lir_zero(expected_type))
 
-def llvm_lir_append_direct_call_argument(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
+def llvm_emit_direct_call_argument(program: LirProgram, record_offset: int, operand_index: int,
+    expected_type: int, output: Buffer):
     let actual_type = LIR_TYPE_I32
     if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_VALUE:
-        actual_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, operand_index))
+        actual_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program,
+            record_offset, operand_index))
     if expected_type == LIR_TYPE_DYNAMIC:
         expected_type = LIR_TYPE_PTR
     if expected_type == LIR_TYPE_VOID:
         expected_type = actual_type
     append(output, llvm_lir_type(expected_type))
     append(output, " ")
-    if expected_type == actual_type or llvm_lir_is_pointer_like(actual_type) and llvm_lir_is_pointer_like(expected_type):
-        llvm_lir_append_operand(program, record_offset, operand_index, actual_type, output)
+    if (
+        expected_type == actual_type or
+        llvm_lir_is_pointer_like(actual_type) and
+        llvm_lir_is_pointer_like(expected_type)
+    ):
+        llvm_emit_operand(program, record_offset, operand_index, actual_type, output)
     else:
         append(output, llvm_lir_join_int("%call_arg_", record_offset + operand_index, ""))
 
 def llvm_lir_direct_call_argument_needs_cast(actual_type: int, expected_type: int) -> bool:
-            if expected_type in [LIR_TYPE_DYNAMIC, LIR_TYPE_AGGREGATE]:
+    if expected_type in [LIR_TYPE_DYNAMIC, LIR_TYPE_AGGREGATE]:
         expected_type = LIR_TYPE_PTR
     if llvm_lir_is_pointer_like(actual_type) and llvm_lir_is_pointer_like(expected_type):
         return false
     return actual_type != expected_type
 
-def llvm_lir_block_parameter_type(program: LirProgram, function_index: int, block_index: int, parameter_index: int) -> int:
+def llvm_lir_block_parameter_type(program: LirProgram, function_index: int, block_index: int,
+    parameter_index: int) -> int:
     let offset = lir_block_parameter_offset(function_index, block_index, parameter_index)
     if offset < 0:
         return LIR_TYPE_DYNAMIC
@@ -1212,12 +1274,14 @@ def llvm_lir_block_parameter_type(program: LirProgram, function_index: int, bloc
 
 def llvm_lir_edge_operand_type(program: LirProgram, record_offset: int, operand_index: int) -> int:
     if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_VALUE:
-        return llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, operand_index))
+        return llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program,
+            record_offset, operand_index))
     if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_IMMEDIATE:
         return LIR_TYPE_I32
     return LIR_TYPE_DYNAMIC
 
-def llvm_lir_append_edge_cast(program: LirProgram, record_offset: int, operand_index: int, expected_type: int, output: Buffer):
+def llvm_emit_edge_cast(program: LirProgram, record_offset: int, operand_index: int, expected_type: int,
+    output: Buffer):
     let actual_type = llvm_lir_edge_operand_type(program, record_offset, operand_index)
     # void 操作数由占位端发零；cast 端不再生成定义
     if actual_type == LIR_TYPE_VOID or expected_type == LIR_TYPE_VOID:
@@ -1231,14 +1295,14 @@ def llvm_lir_append_edge_cast(program: LirProgram, record_offset: int, operand_i
         append(output, temp_name)
         append(output, " = ")
         append(output, "inttoptr i32 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
         append(output, " to i8*\n")
     elif expected_type == LIR_TYPE_PTR and actual_type == LIR_TYPE_I1:
         let integer_name = llvm_lir_join_int("%phi_arg_int_", record_offset + operand_index, "")
         append(output, "  ")
         append(output, integer_name)
         append(output, " = zext i1 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
         append(output, " to i32\n  ")
         append(output, temp_name)
         append(output, " = inttoptr i32 ")
@@ -1249,62 +1313,63 @@ def llvm_lir_append_edge_cast(program: LirProgram, record_offset: int, operand_i
         append(output, temp_name)
         append(output, " = ")
         append(output, "ptrtoint i8* ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
         append(output, " to i32\n")
     elif expected_type == LIR_TYPE_F64 and actual_type == LIR_TYPE_I32:
         append(output, "  ")
         append(output, temp_name)
         append(output, " = ")
         append(output, "sitofp i32 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
         append(output, " to double\n")
     elif expected_type == LIR_TYPE_I32 and actual_type == LIR_TYPE_F64:
         append(output, "  ")
         append(output, temp_name)
         append(output, " = ")
         append(output, "fptosi double ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
         append(output, " to i32\n")
     elif expected_type == LIR_TYPE_I32 and actual_type == LIR_TYPE_I1:
         append(output, "  ")
         append(output, temp_name)
         append(output, " = ")
         append(output, "zext i1 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
         append(output, " to i32\n")
     elif expected_type == LIR_TYPE_I1 and actual_type == LIR_TYPE_I32:
         append(output, "  ")
         append(output, temp_name)
         append(output, " = ")
         append(output, "icmp ne i32 ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
         append(output, ", 0\n")
     elif expected_type == LIR_TYPE_I1 and llvm_lir_is_pointer_like(actual_type):
         append(output, "  ")
         append(output, temp_name)
         append(output, " = ")
         append(output, "icmp ne i8* ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
         append(output, ", null\n")
     elif expected_type == LIR_TYPE_I1 and actual_type == LIR_TYPE_F64:
         append(output, "  ")
         append(output, temp_name)
         append(output, " = ")
         append(output, "fcmp one double ")
-        llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
+        llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
         append(output, ", 0.000000e+00\n")
     else:
-        llvm_lir_append_zero_definition(expected_type, temp_name, output)
+        llvm_emit_zero_definition(expected_type, temp_name, output)
 
-def llvm_lir_append_edge_casts(program: LirProgram, record_offset: int, target_block: int, argument_start: int, argument_count: int, output: Buffer):
+def llvm_emit_edge_casts(program: LirProgram, record_offset: int, target_block: int, argument_start: int,
+    argument_count: int, output: Buffer):
     let parameter_index = 0
     let function_index = program.records[record_offset + 1]
     while parameter_index < argument_count:
         let expected_type = llvm_lir_block_parameter_type(program, function_index, target_block, parameter_index)
-        llvm_lir_append_edge_cast(program, record_offset, argument_start + parameter_index, expected_type, output)
+        llvm_emit_edge_cast(program, record_offset, argument_start + parameter_index, expected_type, output)
         parameter_index = parameter_index + 1
 
-def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, function_index: int, output: Buffer):
+def llvm_emit_direct_call_casts(program: LirProgram, record_offset: int, function_index: int, output: Buffer):
     let operand_count = program.records[record_offset + 7]
     let operand_index = 1
     let argument_index = 0
@@ -1314,7 +1379,8 @@ def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, f
             expected_type = LIR_TYPE_PTR
         let actual_type = LIR_TYPE_I32
         if llvm_lir_operand_kind(program, record_offset, operand_index) == LIR_OPERAND_VALUE:
-            actual_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program, record_offset, operand_index))
+            actual_type = llvm_lir_value_type(program, program.records[record_offset + 1],
+                llvm_lir_operand_value(program, record_offset, operand_index))
         if llvm_lir_direct_call_argument_needs_cast(actual_type, expected_type):
             let temp_name = llvm_lir_join_int("%call_arg_", record_offset + operand_index, "")
             if expected_type == LIR_TYPE_PTR and actual_type == LIR_TYPE_I32:
@@ -1322,14 +1388,14 @@ def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, f
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "inttoptr i32 ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
                 append(output, " to i8*\n")
             elif expected_type == LIR_TYPE_PTR and actual_type == LIR_TYPE_I1:
                 let integer_name = llvm_lir_join_int("%call_arg_int_", record_offset + operand_index, "")
                 append(output, "  ")
                 append(output, integer_name)
                 append(output, " = zext i1 ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
                 append(output, " to i32\n  ")
                 append(output, temp_name)
                 append(output, " = inttoptr i32 ")
@@ -1340,7 +1406,7 @@ def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, f
                 append(output, "  ")
                 append(output, integer_name)
                 append(output, " = fptosi double ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
                 append(output, " to i32\n  ")
                 append(output, temp_name)
                 append(output, " = inttoptr i32 ")
@@ -1351,52 +1417,52 @@ def llvm_lir_append_direct_call_casts(program: LirProgram, record_offset: int, f
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "ptrtoint i8* ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
                 append(output, " to i32\n")
             elif expected_type == LIR_TYPE_F64 and actual_type == LIR_TYPE_I32:
                 append(output, "  ")
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "sitofp i32 ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
                 append(output, " to double\n")
             elif expected_type == LIR_TYPE_I32 and actual_type == LIR_TYPE_F64:
                 append(output, "  ")
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "fptosi double ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
                 append(output, " to i32\n")
             elif expected_type == LIR_TYPE_I32 and actual_type == LIR_TYPE_I1:
                 append(output, "  ")
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "zext i1 ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I1, output)
                 append(output, " to i32\n")
             elif expected_type == LIR_TYPE_I1 and actual_type == LIR_TYPE_I32:
                 append(output, "  ")
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "icmp ne i32 ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
                 append(output, ", 0\n")
             elif expected_type == LIR_TYPE_I1 and llvm_lir_is_pointer_like(actual_type):
                 append(output, "  ")
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "icmp ne i8* ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
                 append(output, ", null\n")
             elif expected_type == LIR_TYPE_I1 and actual_type == LIR_TYPE_F64:
                 append(output, "  ")
                 append(output, temp_name)
                 append(output, " = ")
                 append(output, "fcmp one double ")
-                llvm_lir_append_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
+                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_F64, output)
                 append(output, ", 0.000000e+00\n")
             else:
-                llvm_lir_append_zero_definition(expected_type, temp_name, output)
+                llvm_emit_zero_definition(expected_type, temp_name, output)
         operand_index = operand_index + 1
         argument_index = argument_index + 1
 
@@ -1408,38 +1474,50 @@ def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: in
         if argument_index > 0:
             append(output, ", ")
         let expected_type = llvm_lir_function_parameter_type(program, function_index, argument_index)
-        llvm_lir_append_direct_call_argument(program, record_offset, operand_index, expected_type, output)
+        llvm_emit_direct_call_argument(program, record_offset, operand_index, expected_type, output)
         operand_index = operand_index + 1
         argument_index = argument_index + 1
 
-def llvm_lir_append_token_call(program: LirProgram, offset: int, result_name: str, result_type: int, output: Buffer):
+def llvm_emit_token_call(program: LirProgram, offset: int, result_name: str, result_type: int, output: Buffer):
     append(output, "  call void @append_i32(i8* ")
-    llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+    llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
     append(output, ", i32 ")
-    llvm_lir_append_operand(program, offset, 4, LIR_TYPE_I32, output)
+    llvm_emit_operand(program, offset, 4, LIR_TYPE_I32, output)
     append(output, ")\n  call void @append_i32(i8* ")
-    llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+    llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
     append(output, ", i32 ")
-    llvm_lir_append_operand(program, offset, 5, LIR_TYPE_I32, output)
+    llvm_emit_operand(program, offset, 5, LIR_TYPE_I32, output)
     append(output, ")\n  call void @append_i32(i8* ")
-    llvm_lir_append_operand(program, offset, 3, LIR_TYPE_PTR, output)
+    llvm_emit_operand(program, offset, 3, LIR_TYPE_PTR, output)
     append(output, ", i32 ")
-    llvm_lir_append_operand(program, offset, 6, LIR_TYPE_I32, output)
+    llvm_emit_operand(program, offset, 6, LIR_TYPE_I32, output)
     append(output, ")\n")
     if result_name != "" and result_type != LIR_TYPE_VOID:
-        llvm_lir_append_zero_definition(result_type, result_name, output)
+        llvm_emit_zero_definition(result_type, result_name, output)
 
 def llvm_lir_binary_operand_type(program: LirProgram, offset: int, operand_index: int) -> int:
     let operand_kind = llvm_lir_operand_kind(program, offset, operand_index)
     if operand_kind == LIR_OPERAND_VALUE:
-        return llvm_lir_value_type(program, program.records[offset + 1], llvm_lir_operand_value(program, offset, operand_index))
+        return llvm_lir_value_type(program, program.records[offset + 1], llvm_lir_operand_value(program, offset,
+            operand_index))
     if operand_kind == LIR_OPERAND_IMMEDIATE:
         return LIR_TYPE_I32
     if operand_kind == LIR_OPERAND_TYPE:
         return llvm_lir_operand_value(program, offset, operand_index)
     return LIR_TYPE_DYNAMIC
 
-def llvm_lir_append_binary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
+def llvm_lir_can_emit_without_result(opcode: int) -> bool:
+    if opcode == LIR_OP_RUNTIME_CALL or opcode == LIR_OP_CALL:
+        return true
+    if opcode == LIR_OP_AGGREGATE or opcode == LIR_OP_EXTRACT:
+        return true
+    if opcode == LIR_OP_ENUM or opcode == LIR_OP_CLOSURE:
+        return true
+    if opcode == LIR_OP_BOUNDS_CHECK or opcode == LIR_OP_GLOBAL_STORE:
+        return true
+    return false
+
+def llvm_emit_binary(program: LirProgram, offset: int, output: Buffer, result_name: str, result_type: int):
     let operator = llvm_lir_operand_value(program, offset, 0)
     let left_type = llvm_lir_binary_operand_type(program, offset, 1)
     let right_type = llvm_lir_binary_operand_type(program, offset, 2)
@@ -1448,8 +1526,8 @@ def llvm_lir_append_binary(program: LirProgram, offset: int, output: Buffer, res
         operand_type = LIR_TYPE_DYNAMIC
     let instruction = "add"
     let is_compare = false
-    if operand_type != LIR_TYPE_I1 and operand_type != LIR_TYPE_I32 and operand_type != LIR_TYPE_F64:
-        llvm_lir_append_dynamic_binary(program, offset, output, result_name, result_type)
+    if operand_type not in [LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64]:
+        llvm_emit_dynamic_binary(program, offset, output, result_name, result_type)
         return
     if operator == IR_OPERATOR_SUB:
         instruction = "sub"
@@ -1521,25 +1599,25 @@ def llvm_lir_append_binary(program: LirProgram, offset: int, output: Buffer, res
     else:
         append(output, llvm_lir_type(operand_type))
         append(output, " ")
-    llvm_lir_append_operand(program, offset, 1, operand_type, output)
+    llvm_emit_operand(program, offset, 1, operand_type, output)
     append(output, ", ")
-    llvm_lir_append_operand(program, offset, 2, operand_type, output)
+    llvm_emit_operand(program, offset, 2, operand_type, output)
     append(output, "\n")
 
-def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer):
+def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
     let opcode = program.records[offset + 3]
     let result_value = program.records[offset + 5]
     let result_type = program.records[offset + 4]
     let result_name = llvm_lir_value_name(result_value)
-    if result_value < 0 and opcode != LIR_OP_RUNTIME_CALL and opcode != LIR_OP_CALL and opcode != LIR_OP_AGGREGATE and opcode != LIR_OP_EXTRACT and opcode != LIR_OP_ENUM and opcode != LIR_OP_CLOSURE and opcode != LIR_OP_BOUNDS_CHECK and opcode != LIR_OP_GLOBAL_STORE:
+    if result_value < 0 and not llvm_lir_can_emit_without_result(opcode):
         return
-    if program.records[offset + 7] == 0 and opcode != LIR_OP_RUNTIME_CALL and opcode != LIR_OP_CALL and opcode != LIR_OP_AGGREGATE and opcode != LIR_OP_EXTRACT and opcode != LIR_OP_ENUM and opcode != LIR_OP_CLOSURE and opcode != LIR_OP_BOUNDS_CHECK and opcode != LIR_OP_GLOBAL_STORE:
+    if program.records[offset + 7] == 0 and not llvm_lir_can_emit_without_result(opcode):
         return
     if opcode == LIR_OP_BINARY:
-        if result_type != LIR_TYPE_I1 and result_type != LIR_TYPE_I32 and result_type != LIR_TYPE_F64:
-            llvm_lir_append_dynamic_binary(program, offset, output, result_name, result_type)
+        if result_type not in [LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64]:
+            llvm_emit_dynamic_binary(program, offset, output, result_name, result_type)
             return
-        llvm_lir_append_binary(program, offset, output, result_name, result_type)
+        llvm_emit_binary(program, offset, output, result_name, result_type)
         return
     if opcode == LIR_OP_CONST:
         let string_start = program.records[offset + 12]
@@ -1558,7 +1636,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
         append(output, " = ")
         if llvm_lir_is_pointer_like(result_type):
             append(output, "inttoptr i32 ")
-            llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+            llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
             append(output, " to i8*\n")
         elif result_type == LIR_TYPE_F64:
             if string_start >= 0 and string_end > string_start and string_end <= len(llvm_lir_source):
@@ -1569,13 +1647,13 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                 append(output, "\n")
             else:
                 append(output, "sitofp i32 ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
                 append(output, " to double\n")
         else:
             append(output, "add ")
             append(output, llvm_lir_type(result_type))
             append(output, " 0, ")
-            llvm_lir_append_operand(program, offset, 0, result_type, output)
+            llvm_emit_operand(program, offset, 0, result_type, output)
             append(output, "\n")
         return
     if opcode == LIR_OP_COPY:
@@ -1583,7 +1661,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
             append(output, "  ")
             append(output, result_name)
             append(output, " = getelementptr i8, i8* ")
-            llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+            llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
             append(output, ", i32 0\n")
             return
         append(output, "  ")
@@ -1591,22 +1669,22 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
         append(output, " = add ")
         append(output, llvm_lir_type(result_type))
         append(output, " 0, ")
-        llvm_lir_append_operand(program, offset, 0, result_type, output)
+        llvm_emit_operand(program, offset, 0, result_type, output)
         append(output, "\n")
         return
     if opcode == LIR_OP_SELECT:
         append(output, "  ")
         append(output, result_name)
         append(output, " = select i1 ")
-        llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I1, output)
+        llvm_emit_operand(program, offset, 0, LIR_TYPE_I1, output)
         append(output, ", ")
         append(output, llvm_lir_type(result_type))
         append(output, " ")
-        llvm_lir_append_operand(program, offset, 1, result_type, output)
+        llvm_emit_operand(program, offset, 1, result_type, output)
         append(output, ", ")
         append(output, llvm_lir_type(result_type))
         append(output, " ")
-        llvm_lir_append_operand(program, offset, 2, result_type, output)
+        llvm_emit_operand(program, offset, 2, result_type, output)
         append(output, "\n")
         return
     if opcode == LIR_OP_GLOBAL_LOAD:
@@ -1624,7 +1702,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
         append(output, "  store ")
         append(output, llvm_lir_global_slot_type(result_type))
         append(output, " ")
-        llvm_lir_append_operand(program, offset, 1, result_type, output)
+        llvm_emit_operand(program, offset, 1, result_type, output)
         append(output, ", ")
         append(output, llvm_lir_global_slot_type(result_type))
         append(output, "* ")
@@ -1642,10 +1720,10 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                 let token_result_name = ""
                 if result_value >= 0:
                     token_result_name = result_name
-                llvm_lir_append_token_call(program, offset, token_result_name, result_type, output)
+                llvm_emit_token_call(program, offset, token_result_name, result_type, output)
                 return
             if not is_external_target:
-                llvm_lir_append_direct_call_casts(program, offset, target, output)
+                llvm_emit_direct_call_casts(program, offset, target, output)
             if result_type != LIR_TYPE_VOID and result_value >= 0:
                 append(output, "  ")
                 append(output, result_name)
@@ -1666,7 +1744,8 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                 llvm_lir_render_direct_call_arguments(program, offset, target, output)
             append(output, ")\n")
             return
-    if opcode in [LIR_OP_RUNTIME_CALL, LIR_OP_CALL, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE, LIR_OP_BOUNDS_CHECK]:
+    if opcode in [LIR_OP_RUNTIME_CALL, LIR_OP_CALL, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE,
+        LIR_OP_BOUNDS_CHECK]:
         let runtime_id = program.records[offset + 8]
         if runtime_id <= 0:
             runtime_id = 31
@@ -1679,11 +1758,11 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
             let fn_index_type = llvm_lir_binary_operand_type(program, offset, 0)
             if llvm_lir_is_pointer_like(fn_index_type):
                 append(output, " = ptrtoint i8* ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, " to i32\n")
             else:
                 append(output, " = add i32 0, ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
                 append(output, "\n")
             append(output, "  %fn_ptr_")
             append(output, offset)
@@ -1708,7 +1787,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                     append(output, "  ")
                     append(output, arg_int_name)
                     append(output, " = ptrtoint i8* ")
-                    llvm_lir_append_operand(program, offset, call_arg_index, LIR_TYPE_PTR, output)
+                    llvm_emit_operand(program, offset, call_arg_index, LIR_TYPE_PTR, output)
                     append(output, " to i32\n")
                 call_arg_index = call_arg_index + 1
             append(output, "  ")
@@ -1728,7 +1807,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                     append(output, arg_int_name)
                 else:
                     append(output, "i32 ")
-                    llvm_lir_append_operand(program, offset, call_arg_index, LIR_TYPE_I32, output)
+                    llvm_emit_operand(program, offset, call_arg_index, LIR_TYPE_I32, output)
                 first_argument_emitted = true
                 call_arg_index = call_arg_index + 1
             while call_arg_index <= 3:
@@ -1749,10 +1828,11 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
         if runtime_id == 7 and program.records[offset + 4] == LIR_TYPE_DICT:
             # dict 字面量与 list append 共用 runtime id 7；按结果类型分派
             if result_value >= 0:
-                llvm_lir_append_dict_create(program, offset, output, result_name)
+                llvm_emit_dict_create(program, offset, output, result_name)
             return
         if runtime_id == 7:
-            # LIR_RUNTIME_LIST_APPEND（含 dict 外的追加）：按值类型选 append_i32 / append_pointer / append_ptr
+            # LIR_RUNTIME_LIST_APPEND（含 dict 外的追加）：按值类型选 append_i32 /
+            # append_pointer / append_ptr
             let append_type = llvm_lir_binary_operand_type(program, offset, 1)
             if llvm_lir_is_pointer_like(append_type):
                 let append_name = "@append_pointer"
@@ -1761,15 +1841,15 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                 append(output, "  call void ")
                 append(output, append_name)
                 append(output, "(i8* ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i8* ")
-                llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
                 append(output, ")\n")
             else:
                 append(output, "  call void @append_i32(i8* ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 ")
-                llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
                 append(output, ")\n")
             return
         if runtime_id in [4, 5]:
@@ -1777,30 +1857,30 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
             if collection_type == LIR_TYPE_DICT and runtime_id in [4, 5]:
                 # 字典键赋值：dict[key] = value（int/int 变体）
                 append(output, "  call void @dict_set_int_int(i8* ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 ")
-                llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
                 append(output, ", i32 ")
-                llvm_lir_append_operand(program, offset, 2, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 2, LIR_TYPE_I32, output)
                 append(output, ")\n")
                 return
             if collection_type == LIR_TYPE_LIST_PTR:
                 # 指针元素列表：单槽写入
                 append(output, "  call void @set_dynarray_ptr(i8* ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 ")
-                llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
                 append(output, ", i8* ")
-                llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
                 append(output, ")\n")
                 return
             let collection_name = ""
-        if runtime_id == 5 or collection_type == LIR_TYPE_DYNAMIC:
+            if runtime_id == 5 or collection_type == LIR_TYPE_DYNAMIC:
                 collection_name = llvm_lir_join_int("%list_set_collection_", offset, "")
                 append(output, "  ")
                 append(output, collection_name)
                 append(output, " = call i8* @get_pointer(i8* ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 0)\n")
             let value_type = llvm_lir_binary_operand_type(program, offset, 2)
             let value_name = ""
@@ -1809,7 +1889,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                 append(output, "  ")
                 append(output, value_name)
                 append(output, " = ptrtoint i8* ")
-                llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
                 append(output, " to i32\n")
             let index_type = llvm_lir_binary_operand_type(program, offset, 1)
             let index_name = ""
@@ -1818,37 +1898,37 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                 append(output, "  ")
                 append(output, index_name)
                 append(output, " = ptrtoint i8* ")
-                llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
                 append(output, " to i32\n")
             append(output, "  call void @set_dynarray_i32(i8* ")
             if collection_name != "":
                 append(output, collection_name)
             else:
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
             append(output, ", i32 ")
             if index_name != "":
                 append(output, index_name)
             else:
-                llvm_lir_append_operand(program, offset, 1, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
             append(output, ", i32 ")
             if value_name != "":
                 append(output, value_name)
             else:
-                llvm_lir_append_operand(program, offset, 2, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 2, LIR_TYPE_I32, output)
             append(output, ")\n")
             return
         let return_type = result_type
         if runtime_id in [2, 10]:
             if result_value >= 0:
-                llvm_lir_append_container_create(program, offset, output, result_name)
+                llvm_emit_container_create(program, offset, output, result_name)
             return
         if runtime_id == 12:
             if result_value >= 0:
-                llvm_lir_append_struct_create(program, offset, output, result_name)
+                llvm_emit_struct_create(program, offset, output, result_name)
             return
         if runtime_id == 11:
             if result_value >= 0:
-                llvm_lir_append_tuple_get(program, offset, output, result_name, return_type)
+                llvm_emit_tuple_get(program, offset, output, result_name, return_type)
             return
         let runtime_name = llvm_lir_runtime_name(runtime_id, return_type)
         if runtime_id == 3 and program.records[offset + 7] > 1:
@@ -1856,7 +1936,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
             if base_type == LIR_TYPE_LIST_PTR:
                 runtime_name = "@get_dynarray_ptr"
             elif base_type == LIR_TYPE_DICT and result_value >= 0:
-                llvm_lir_append_dict_get(program, offset, output, result_name, return_type)
+                llvm_emit_dict_get(program, offset, output, result_name, return_type)
                 return
             elif llvm_lir_is_string(base_type):
                 runtime_name = "@__c_utf8_rune_at"
@@ -1867,10 +1947,10 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
             elif llvm_lir_is_string(base_type) or base_type in [LIR_TYPE_DYNAMIC, LIR_TYPE_PTR]:
                 runtime_name = "@string_substring"
         if runtime_id == 31 and program.records[offset + 7] == 2:
-            llvm_lir_append_dynamic_unary(program, offset, output, result_name, return_type)
+            llvm_emit_dynamic_unary(program, offset, output, result_name, return_type)
             return
         if runtime_id == 31 and program.records[offset + 7] >= 3:
-            llvm_lir_append_dynamic_binary(program, offset, output, result_name, return_type)
+            llvm_emit_dynamic_binary(program, offset, output, result_name, return_type)
             return
         if runtime_id == 31:
             if return_type == LIR_TYPE_VOID or result_value < 0:
@@ -1884,7 +1964,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                     append(output, "  ")
                     append(output, result_name)
                     append(output, " = getelementptr i8, i8* ")
-                    llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                    llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                     append(output, ", i32 0\n")
                 else:
                     append(output, "  ")
@@ -1892,32 +1972,32 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                     append(output, " = add ")
                     append(output, llvm_lir_type(return_type))
                     append(output, " 0, ")
-                    llvm_lir_append_operand(program, offset, 0, return_type, output)
+                    llvm_emit_operand(program, offset, 0, return_type, output)
                     append(output, "\n")
             elif return_type == LIR_TYPE_PTR and actual_type == LIR_TYPE_I32:
                 append(output, "  ")
                 append(output, result_name)
                 append(output, " = inttoptr i32 ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
                 append(output, " to i8*\n")
             elif return_type == LIR_TYPE_I32 and llvm_lir_is_pointer_like(actual_type):
                 append(output, "  ")
                 append(output, result_name)
                 append(output, " = ptrtoint i8* ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, " to i32\n")
             elif llvm_lir_is_pointer_like(return_type) and actual_type == LIR_TYPE_I32:
                 append(output, "  ")
                 append(output, result_name)
                 append(output, " = inttoptr i32 ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
                 append(output, " to i8*\n")
             elif llvm_lir_is_pointer_like(return_type) and actual_type == LIR_TYPE_I1:
                 let integer_name = llvm_lir_join_int("%dynamic_copy_int_", offset, "")
                 append(output, "  ")
                 append(output, integer_name)
                 append(output, " = zext i1 ")
-                llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I1, output)
+                llvm_emit_operand(program, offset, 0, LIR_TYPE_I1, output)
                 append(output, " to i32\n  ")
                 append(output, result_name)
                 append(output, " = inttoptr i32 ")
@@ -1939,7 +2019,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
         if runtime_name == "@llvm.trap":
             append(output, "  call void @llvm.trap()\n")
             if result_value >= 0 and return_type != LIR_TYPE_VOID:
-                llvm_lir_append_zero_definition(return_type, result_name, output)
+                llvm_emit_zero_definition(return_type, result_name, output)
             return
         if return_type != LIR_TYPE_VOID and result_value >= 0:
             append(output, "  ")
@@ -1959,18 +2039,18 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
         let operator = llvm_lir_operand_value(program, offset, 0)
         let operand_type = llvm_lir_binary_operand_type(program, offset, 1)
         if operator == IR_OPERATOR_NOT:
-            llvm_lir_append_dynamic_unary(program, offset, output, result_name, result_type)
+            llvm_emit_dynamic_unary(program, offset, output, result_name, result_type)
         elif operator == IR_OPERATOR_NEG and result_type == LIR_TYPE_I32:
             append(output, "  ")
             append(output, result_name)
             append(output, " = sub i32 0, ")
-            llvm_lir_append_operand(program, offset, 1, result_type, output)
+            llvm_emit_operand(program, offset, 1, result_type, output)
             append(output, "\n")
         elif operator == IR_OPERATOR_NEG and result_type == LIR_TYPE_F64:
             append(output, "  ")
             append(output, result_name)
             append(output, " = fneg double ")
-            llvm_lir_append_operand(program, offset, 1, result_type, output)
+            llvm_emit_operand(program, offset, 1, result_type, output)
             append(output, "\n")
         elif operator == IR_OPERATOR_POS and operand_type in [LIR_TYPE_I32, LIR_TYPE_F64]:
             append(output, "  ")
@@ -1979,7 +2059,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
                 append(output, " = fadd double 0.000000e+00, ")
             else:
                 append(output, " = add i32 0, ")
-            llvm_lir_append_operand(program, offset, 1, result_type, output)
+            llvm_emit_operand(program, offset, 1, result_type, output)
             append(output, "\n")
         return
     if opcode == LIR_OP_CAST:
@@ -1989,14 +2069,14 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
         append(output, llvm_lir_type(result_type))
         append(output, " ")
         append(output, "0, ")
-        llvm_lir_append_operand(program, offset, 0, result_type, output)
+        llvm_emit_operand(program, offset, 0, result_type, output)
         append(output, "\n")
 
-def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: int, output: Buffer):
+def llvm_emit_terminator(program: LirProgram, offset: int, return_type: int, output: Buffer):
     let opcode = program.records[offset + 3]
     if opcode == LIR_TERM_JUMP:
         let target_block = llvm_lir_operand_value(program, offset, 0)
-        llvm_lir_append_edge_casts(program, offset, target_block, 1, program.records[offset + 7] - 1, output)
+        llvm_emit_edge_casts(program, offset, target_block, 1, program.records[offset + 7] - 1, output)
         append(output, "  br label %")
         append(output, llvm_lir_block_name(target_block))
         append(output, "\n")
@@ -2006,12 +2086,14 @@ def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: in
             let operand_start = program.records[offset + 6]
             let true_count_offset = lir_value_offset(operand_start + 3)
             let true_count = program.values[true_count_offset + 1]
-            llvm_lir_append_edge_casts(program, offset, llvm_lir_operand_value(program, offset, 1), 4, true_count, output)
+            llvm_emit_edge_casts(program, offset, llvm_lir_operand_value(program, offset, 1), 4, true_count,
+                output)
             let false_count_index = 4 + true_count
             if false_count_index < operand_count:
                 let false_count_offset = lir_value_offset(operand_start + false_count_index)
                 let false_count = program.values[false_count_offset + 1]
-                llvm_lir_append_edge_casts(program, offset, llvm_lir_operand_value(program, offset, 2), false_count_index + 1, false_count, output)
+                llvm_emit_edge_casts(program, offset, llvm_lir_operand_value(program, offset, 2),
+                    false_count_index + 1, false_count, output)
         let condition = llvm_lir_operand(program, offset, 0, LIR_TYPE_I1)
         if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE:
             let condition_value = llvm_lir_operand_value(program, offset, 0)
@@ -2055,7 +2137,7 @@ def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: in
         append(output, "\n")
     elif opcode == LIR_TERM_SWITCH:
         append(output, "  switch i32 ")
-        llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
+        llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
         append(output, ", label %")
         append(output, llvm_lir_block_name(llvm_lir_operand_value(program, offset, 1)))
         append(output, " []\n")
@@ -2073,33 +2155,35 @@ def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: in
             let return_value = llvm_lir_operand_value(program, offset, 0)
             let function_index = program.records[offset + 1]
             let actual_type = LIR_TYPE_DYNAMIC
-            if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE and llvm_lir_has_value(program, function_index, return_value):
+            if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE and llvm_lir_has_value(program,
+                function_index, return_value):
                 actual_type = llvm_lir_value_type(program, function_index, return_value)
             let cast_name = llvm_lir_join_int("%return_cast_", offset, "")
             if llvm_lir_is_pointer_like(actual_type) and return_type == LIR_TYPE_I32:
                 append(output, "  ")
                 append(output, cast_name)
                 append(output, " = ptrtoint i8* ")
-                llvm_lir_append_operand(program, offset, 0, actual_type, output)
+                llvm_emit_operand(program, offset, 0, actual_type, output)
                 append(output, " to i32\n")
             elif actual_type == LIR_TYPE_I32 and return_type == LIR_TYPE_PTR:
                 append(output, "  ")
                 append(output, cast_name)
                 append(output, " = inttoptr i32 ")
-                llvm_lir_append_operand(program, offset, 0, actual_type, output)
+                llvm_emit_operand(program, offset, 0, actual_type, output)
                 append(output, " to i8*\n")
             elif actual_type == LIR_TYPE_I1 and return_type == LIR_TYPE_I32:
                 append(output, "  ")
                 append(output, cast_name)
                 append(output, " = zext i1 ")
-                llvm_lir_append_operand(program, offset, 0, actual_type, output)
+                llvm_emit_operand(program, offset, 0, actual_type, output)
                 append(output, " to i32\n")
             append(output, "  ret ")
             append(output, llvm_lir_type(return_type))
             append(output, " ")
-            if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE and llvm_lir_has_value(program, function_index, return_value):
+            if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE and llvm_lir_has_value(program,
+                function_index, return_value):
                 if llvm_lir_types_compatible(actual_type, return_type):
-                    llvm_lir_append_operand(program, offset, 0, return_type, output)
+                    llvm_emit_operand(program, offset, 0, return_type, output)
                 elif llvm_lir_is_pointer_like(actual_type) and return_type == LIR_TYPE_I32:
                     append(output, cast_name)
                 elif actual_type == LIR_TYPE_I32 and return_type == LIR_TYPE_PTR:
@@ -2109,7 +2193,7 @@ def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: in
                 else:
                     append(output, llvm_lir_zero(return_type))
             elif llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_IMMEDIATE:
-                llvm_lir_append_operand(program, offset, 0, return_type, output)
+                llvm_emit_operand(program, offset, 0, return_type, output)
             else:
                 append(output, llvm_lir_zero(return_type))
             append(output, "\n")
@@ -2123,7 +2207,8 @@ def llvm_lir_append_terminator(program: LirProgram, offset: int, return_type: in
             append(output, llvm_lir_zero(return_type))
             append(output, "\n")
 
-def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block: int, parameter_index: int, parameter_type: int, incoming: Buffer, incoming_count: list[int]) -> bool:
+def llvm_emit_edge_incoming(program: LirProgram, offset: int, target_block: int, parameter_index: int,
+    parameter_type: int, incoming: Buffer, incoming_count: list[int]) -> bool:
     let opcode = program.records[offset + 3]
     let operand_count = program.records[offset + 7]
     let target_index = -1
@@ -2139,7 +2224,8 @@ def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block
         let true_count = program.values[true_count_offset + 1]
         # false 参数计数的位置：在操作数数组中，位于 true 参数之后
         let false_count_index = 4 + true_count
-        # 只有当存在 false 目标块（操作数索引 2）且 false 参数计数在操作数范围内时，才处理两条入边
+        # 只有当存在 false 目标块（操作数索引 2）且 false 参数计数在操作数范围内时，
+        # 才处理两条入边。
         if false_count_index < operand_count:
             # 两条分支可能指向同一目标块，各自贡献一条入边，不能提前返回
             let matched_any = false
@@ -2159,13 +2245,18 @@ def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block
                 if candidate_target_index < operand_count:
                     # 检查目标操作数的类型和内容是否与期望的目标块匹配
                     let candidate_target_offset = lir_value_offset(program.records[offset + 6] + candidate_target_index)
-                    if program.values[candidate_target_offset] == LIR_OPERAND_BLOCK and program.values[candidate_target_offset + 1] == target_block and parameter_index < candidate_argument_count:
+                    if (
+                        program.values[candidate_target_offset] == LIR_OPERAND_BLOCK and
+                        program.values[candidate_target_offset + 1] == target_block and
+                        parameter_index < candidate_argument_count
+                    ):
                         # 只有当参数索引在该分支传递的参数范围内时，才生成入边
                         if incoming_count[0] > 0:
                             append(incoming, ",")
                         append(incoming, " [")
                         # 参数值在操作数数组中的索引：起始位置 + 参数索引
-                        llvm_lir_append_coerced_operand(program, offset, candidate_argument_start + parameter_index, parameter_type, incoming)
+                        llvm_emit_coerced_operand(program, offset, candidate_argument_start + parameter_index,
+                            parameter_type, incoming)
                         append(incoming, ", %")
                         append(incoming, llvm_lir_block_name(program.records[offset + 2]))
                         append(incoming, "]")
@@ -2175,11 +2266,15 @@ def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block
             return matched_any
     if target_index >= 0 and target_index < operand_count:
         let target_offset = lir_value_offset(program.records[offset + 6] + target_index)
-        if program.values[target_offset] == LIR_OPERAND_BLOCK and program.values[target_offset + 1] == target_block and parameter_index < edge_argument_count:
+        if (
+            program.values[target_offset] == LIR_OPERAND_BLOCK and
+            program.values[target_offset + 1] == target_block and
+            parameter_index < edge_argument_count
+        ):
             if incoming_count[0] > 0:
                 append(incoming, ",")
             append(incoming, " [")
-            llvm_lir_append_coerced_operand(program, offset, argument_start + parameter_index, parameter_type, incoming)
+            llvm_emit_coerced_operand(program, offset, argument_start + parameter_index, parameter_type, incoming)
             append(incoming, ", %")
             append(incoming, llvm_lir_block_name(program.records[offset + 2]))
             append(incoming, "]")
@@ -2187,7 +2282,8 @@ def llvm_lir_append_edge_incoming(program: LirProgram, offset: int, target_block
             return true
     return false
 
-def llvm_lir_append_block_parameter(program: LirProgram, block_record_id: int, parameter_record_id: int, parameter_index: int, output: Buffer):
+def llvm_emit_block_parameter(program: LirProgram, block_record_id: int, parameter_record_id: int,
+    parameter_index: int, output: Buffer):
     let block_offset = lir_record_offset(block_record_id)
     let parameter_offset = lir_record_offset(parameter_record_id)
     let function_index = program.records[block_offset + 1]
@@ -2211,7 +2307,8 @@ def llvm_lir_append_block_parameter(program: LirProgram, block_record_id: int, p
         let offset = lir_record_offset(llvm_lir_terminator_record_cache[term_index])
         if program.records[offset + 1] == function_index and program.records[offset] == LIR_RECORD_TERMINATOR:
             let incoming_count_box: list[int] = [incoming_count]
-            llvm_lir_append_edge_incoming(program, offset, block_index, parameter_index, type_tag, incoming, incoming_count_box)
+            llvm_emit_edge_incoming(program, offset, block_index, parameter_index, type_tag, incoming,
+                incoming_count_box)
             incoming_count = incoming_count_box[0]
         term_index = term_index + 1
     append(output, "  ")
@@ -2290,16 +2387,19 @@ def llvm_lir_emit_function(program: LirProgram, function_id: int, function_recor
             let parameter_index = 0
             while parameter_record_id < lir_record_count(program.records):
                 let parameter_offset = lir_record_offset(parameter_record_id)
-                if program.records[parameter_offset] != LIR_RECORD_PARAMETER or program.records[parameter_offset + 2] != program.records[offset + 2]:
+                if (
+                    program.records[parameter_offset] != LIR_RECORD_PARAMETER or
+                    program.records[parameter_offset + 2] != program.records[offset + 2]
+                ):
                     parameter_record_id = lir_record_count(program.records)
                 else:
-                    llvm_lir_append_block_parameter(program, record_id, parameter_record_id, parameter_index, output)
+                    llvm_emit_block_parameter(program, record_id, parameter_record_id, parameter_index, output)
                     parameter_index = parameter_index + 1
                     parameter_record_id = parameter_record_id + 1
         elif kind == LIR_RECORD_INSTRUCTION:
-            llvm_lir_append_instruction(program, offset, output)
+            llvm_emit_instruction(program, offset, output)
         elif kind == LIR_RECORD_TERMINATOR:
-            llvm_lir_append_terminator(program, offset, return_type, output)
+            llvm_emit_terminator(program, offset, return_type, output)
         record_id = record_id + 1
     append(output, "}\n")
 
@@ -2312,10 +2412,10 @@ def llvm_lower_lir(program: LirProgram, source: str, output: Buffer) -> bool:
     append(output, "; DIR records=")
     append(output, lir_record_count(program.records))
     append(output, "\n")
-    llvm_lir_append_runtime_declarations(output)
-    llvm_lir_append_external_declarations(output)
-    llvm_lir_append_global_declarations(program, output)
-    llvm_lir_append_string_globals(program, output)
+    llvm_emit_runtime_declarations(output)
+    llvm_emit_external_declarations(output)
+    llvm_emit_global_declarations(program, output)
+    llvm_emit_string_globals(program, output)
     append(output, "\n")
     phase_time = llvm_lir_debug_checkpoint("declarations", phase_time)
     let record_id = 0
@@ -2326,6 +2426,6 @@ def llvm_lower_lir(program: LirProgram, source: str, output: Buffer) -> bool:
             llvm_lir_emit_function(program, function_id, record_id, output)
             function_id = function_id + 1
         record_id = record_id + 1
-    llvm_lir_append_function_table(program, output)
+    llvm_emit_function_table(program, output)
     llvm_lir_debug_checkpoint("functions", phase_time)
     return true

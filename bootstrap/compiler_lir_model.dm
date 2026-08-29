@@ -1,4 +1,17 @@
-from compiler_mir_model import MirProgram, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset, MIR_RECORD_MODULE, MIR_RECORD_TYPE, MIR_RECORD_GLOBAL, MIR_RECORD_EXTERN, MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR, MIR_FUNCTION_ENTRY, MIR_EXTERNAL_BASE, MIR_TYPE_UNKNOWN, MIR_TYPE_UNIT, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_TYPE_F64, MIR_TYPE_STR, MIR_TYPE_BYTES, MIR_TYPE_PTR, MIR_TYPE_LIST, MIR_TYPE_DICT, MIR_TYPE_TUPLE, MIR_TYPE_STRUCT, MIR_TYPE_ENUM, MIR_TYPE_INTERFACE, MIR_TYPE_UNION, MIR_TYPE_FUNCTION, MIR_TYPE_CLOSURE, MIR_TYPE_DYNAMIC, MIR_TYPE_MAX, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK, MIR_OPERAND_TYPE, MIR_OPERAND_SYMBOL, MIR_OP_CONST, MIR_OP_LOCAL, MIR_OP_BINARY, MIR_OP_UNARY, MIR_OP_CALL, MIR_OP_SELECT, MIR_OP_LIST, MIR_OP_DICT, MIR_OP_TUPLE, MIR_OP_INDEX, MIR_OP_SLICE, MIR_OP_FIELD, MIR_OP_STRUCT, MIR_OP_ENUM, MIR_OP_PRINT, MIR_OP_CAST, MIR_OP_SEQUENCE, MIR_OP_ASSIGN, MIR_OP_CLOSURE, MIR_OP_RUNTIME, MIR_OP_MAX, MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH, MIR_TERM_RETURN, MIR_TERM_UNREACHABLE, MIR_TERM_MAX
+from compiler_mir_model import MirProgram, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset
+from compiler_mir_model import MIR_RECORD_MODULE, MIR_RECORD_TYPE, MIR_RECORD_GLOBAL, MIR_RECORD_EXTERN
+from compiler_mir_model import MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION
+from compiler_mir_model import MIR_RECORD_TERMINATOR, MIR_FUNCTION_ENTRY, MIR_EXTERNAL_BASE, MIR_TYPE_UNKNOWN
+from compiler_mir_model import MIR_TYPE_UNIT, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_TYPE_F64, MIR_TYPE_STR, MIR_TYPE_BYTES
+from compiler_mir_model import MIR_TYPE_PTR, MIR_TYPE_LIST, MIR_TYPE_DICT, MIR_TYPE_TUPLE, MIR_TYPE_STRUCT
+from compiler_mir_model import MIR_TYPE_ENUM, MIR_TYPE_INTERFACE, MIR_TYPE_UNION, MIR_TYPE_FUNCTION, MIR_TYPE_CLOSURE
+from compiler_mir_model import MIR_TYPE_DYNAMIC, MIR_TYPE_MAX, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK
+from compiler_mir_model import MIR_OPERAND_TYPE, MIR_OPERAND_SYMBOL, MIR_OP_CONST, MIR_OP_LOCAL, MIR_OP_BINARY
+from compiler_mir_model import MIR_OP_UNARY, MIR_OP_CALL, MIR_OP_SELECT, MIR_OP_LIST, MIR_OP_DICT, MIR_OP_TUPLE
+from compiler_mir_model import MIR_OP_INDEX, MIR_OP_SLICE, MIR_OP_FIELD, MIR_OP_STRUCT, MIR_OP_ENUM, MIR_OP_PRINT
+from compiler_mir_model import MIR_OP_CAST, MIR_OP_SEQUENCE, MIR_OP_ASSIGN, MIR_OP_CLOSURE, MIR_OP_RUNTIME, MIR_OP_MAX
+from compiler_mir_model import MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH, MIR_TERM_RETURN, MIR_TERM_UNREACHABLE
+from compiler_mir_model import MIR_TERM_MAX
 from buffer import Buffer
 
 let lir_value_type_cache: list[int] = []
@@ -156,7 +169,8 @@ def lir_layout_count(layouts: list[int]) -> int:
 def lir_layout_offset(layout_id: int) -> int:
     return layout_id * LIR_LAYOUT_SIZE
 
-def lir_append_layout(layouts: list[int], type_tag: int, size: int, alignment: int, element_layout: int, field_start: int, field_count: int):
+def lir_append_layout(layouts: list[int], type_tag: int, size: int, alignment: int, element_layout: int,
+    field_start: int, field_count: int):
     append(layouts, type_tag)
     append(layouts, size)
     append(layouts, alignment)
@@ -366,8 +380,9 @@ def lir_lower_mir_record(mir: MirProgram, record_id: int, records: list[int], va
     let auxiliary_count = mir.records[source_offset + 9]
     if record_kind == MIR_RECORD_INSTRUCTION:
         target_opcode = lir_opcode_from_mir(mir.records[source_offset + 3])
-        if (target_opcode == LIR_OP_BINARY or target_opcode == LIR_OP_UNARY or target_opcode == LIR_OP_CAST) and target_type != LIR_TYPE_I1 and target_type != LIR_TYPE_I32 and target_type != LIR_TYPE_F64:
-            target_opcode = LIR_OP_RUNTIME_CALL
+        if target_opcode == LIR_OP_BINARY or target_opcode == LIR_OP_UNARY or target_opcode == LIR_OP_CAST:
+            if target_type != LIR_TYPE_I1 and target_type != LIR_TYPE_I32 and target_type != LIR_TYPE_F64:
+                target_opcode = LIR_OP_RUNTIME_CALL
     elif record_kind == MIR_RECORD_TERMINATOR:
         target_opcode = lir_term_from_mir(mir.records[source_offset + 3])
     let target_auxiliary_start = -1
@@ -391,7 +406,22 @@ def lir_lower_mir_record(mir: MirProgram, record_id: int, records: list[int], va
     else:
         lir_copy_operands(mir, source_offset, values)
     let target_operand_count = lir_value_count(values) - target_operand_start
-    let target = LirRecord{record_kind: target_kind, function_index: mir.records[source_offset + 1], block_index: mir.records[source_offset + 2], opcode: target_opcode, type_tag: target_type, result_value: mir.records[source_offset + 5], operand_start: target_operand_start, operand_count: target_operand_count, auxiliary_start: target_auxiliary_start, auxiliary_count: target_auxiliary_count, layout_id: target_type - 1, flags: 0, source_start: mir.records[source_offset + 10], source_end: mir.records[source_offset + 11]}
+    let target = LirRecord{
+        record_kind: target_kind,
+        function_index: mir.records[source_offset + 1],
+        block_index: mir.records[source_offset + 2],
+        opcode: target_opcode,
+        type_tag: target_type,
+        result_value: mir.records[source_offset + 5],
+        operand_start: target_operand_start,
+        operand_count: target_operand_count,
+        auxiliary_start: target_auxiliary_start,
+        auxiliary_count: target_auxiliary_count,
+        layout_id: target_type - 1,
+        flags: 0,
+        source_start: mir.records[source_offset + 10],
+        source_end: mir.records[source_offset + 11]
+    }
     lir_append_record(records, target)
 
 def lir_model_build_program(mir: MirProgram) -> LirProgram:
@@ -505,11 +535,20 @@ def lir_value_exists(records: list[int], function_index: int, value: int) -> boo
 def lir_is_block_parameter_value(records: list[int], function_index: int, value: int) -> bool:
     if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
         let value_index = lir_value_cache_index(function_index, value)
-        return value_index >= 0 and value_index < len(lir_block_parameter_cache) and lir_block_parameter_cache[value_index] >= 0
+        return (
+            value_index >= 0 and
+            value_index < len(lir_block_parameter_cache) and
+            lir_block_parameter_cache[value_index] >= 0
+        )
     let record_id = 0
     while record_id < lir_record_count(records):
         let offset = lir_record_offset(record_id)
-        if records[offset] == LIR_RECORD_PARAMETER and records[offset + 1] == function_index and records[offset + 5] == value and records[offset + 2] >= 0:
+        if (
+            records[offset] == LIR_RECORD_PARAMETER and
+            records[offset + 1] == function_index and
+            records[offset + 5] == value and
+            records[offset + 2] >= 0
+        ):
             return true
         record_id = record_id + 1
     return false
@@ -544,7 +583,8 @@ def lir_edge_argument_type(program: LirProgram, term_offset: int, operand_index:
         return LIR_TYPE_I32
     return LIR_TYPE_DYNAMIC
 
-def lir_merge_block_parameter_type(program: LirProgram, term_offset: int, target_block: int, argument_index: int, parameter_index: int):
+def lir_merge_block_parameter_type(program: LirProgram, term_offset: int, target_block: int, argument_index: int,
+    parameter_index: int):
     let function_index = program.records[term_offset + 1]
     let parameter_offset = lir_block_parameter_offset(function_index, target_block, parameter_index)
     if parameter_offset < 0:
@@ -565,10 +605,12 @@ def lir_merge_block_parameter_type(program: LirProgram, term_offset: int, target
     elif lir_block_parameter_inferred_cache[cache_index] != incoming_type:
         lir_block_parameter_mismatch_cache[cache_index] = 1
 
-def lir_collect_block_edge_types(program: LirProgram, term_offset: int, target_block: int, argument_start: int, argument_count: int):
+def lir_collect_block_edge_types(program: LirProgram, term_offset: int, target_block: int, argument_start: int,
+    argument_count: int):
     let parameter_index = 0
     while parameter_index < argument_count:
-        lir_merge_block_parameter_type(program, term_offset, target_block, argument_start + parameter_index, parameter_index)
+        lir_merge_block_parameter_type(program, term_offset, target_block, argument_start + parameter_index,
+            parameter_index)
         parameter_index = parameter_index + 1
 
 def lir_infer_block_parameter_types(program: LirProgram):
@@ -599,7 +641,8 @@ def lir_infer_block_parameter_types(program: LirProgram):
                     let false_count_offset = lir_value_offset(operand_start + false_count_index)
                     let false_count = program.values[false_count_offset + 1]
                     let false_target_offset = lir_value_offset(operand_start + 2)
-                    lir_collect_block_edge_types(program, offset, program.values[false_target_offset + 1], false_count_index + 1, false_count)
+                    lir_collect_block_edge_types(program, offset, program.values[false_target_offset + 1],
+                        false_count_index + 1, false_count)
         record_id = record_id + 1
     record_id = 0
     while record_id < lir_record_count(program.records):
@@ -669,11 +712,17 @@ def lir_validate_model_program(program: LirProgram) -> bool:
             return lir_validation_error(record_id, "binary operands")
         if kind == LIR_RECORD_INSTRUCTION and opcode == LIR_OP_SELECT and operand_count < 3:
             return lir_validation_error(record_id, "select operands")
-        if kind == LIR_RECORD_INSTRUCTION and opcode == LIR_OP_BINARY and type_tag != LIR_TYPE_I1 and type_tag != LIR_TYPE_I32 and type_tag != LIR_TYPE_F64:
-            return lir_validation_error(record_id, "binary type")
+        if kind == LIR_RECORD_INSTRUCTION and opcode == LIR_OP_BINARY:
+            if type_tag != LIR_TYPE_I1 and type_tag != LIR_TYPE_I32 and type_tag != LIR_TYPE_F64:
+                return lir_validation_error(record_id, "binary type")
         if kind == LIR_RECORD_TERMINATOR and (opcode < LIR_TERM_JUMP or opcode > LIR_TERM_MAX):
             return lir_validation_error(record_id, "terminator opcode")
-        if operand_start < 0 or operand_count < 0 or operand_start > value_count or operand_count > value_count - operand_start:
+        if (
+            operand_start < 0 or
+            operand_count < 0 or
+            operand_start > value_count or
+            operand_count > value_count - operand_start
+        ):
             return lir_validation_error(record_id, "operand range")
         if auxiliary_count < 0 or (auxiliary_count > 0 and auxiliary_start < 0):
             return lir_validation_error(record_id, "auxiliary range")

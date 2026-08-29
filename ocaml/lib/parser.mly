@@ -638,13 +638,15 @@ expr:
   | e1 = expr LTE e2 = expr { EBinOp (e1, Lte, e2, { line = 0; column = 0 }) }
   | e1 = expr GTE e2 = expr { EBinOp (e1, Gte, e2, { line = 0; column = 0 }) }
   | e1 = expr IN e2 = expr { EBinOp (e1, In, e2, { line = 0; column = 0 }) }
+  | e1 = expr NOT IN e2 = expr %prec IN
+      { EUnOp (Not, EBinOp (e1, In, e2, { line = 0; column = 0 }), { line = 0; column = 0 }) }
   | e1 = expr AND e2 = expr { EBinOp (e1, And, e2, { line = 0; column = 0 }) }
   | e1 = expr OR e2 = expr { EBinOp (e1, Or, e2, { line = 0; column = 0 }) }
   | NOT e = expr { EUnOp (Not, e, { line = 0; column = 0 }) }
   | MINUS e = expr %prec UMINUS { EUnOp (Neg, e, { line = 0; column = 0 }) }
   | PLUS e = expr %prec UPLUS { EUnOp (Pos, e, { line = 0; column = 0 }) }
   | TILDE e = expr %prec TILDE { EUnOp (Invert, e, { line = 0; column = 0 }) }
-  | func = expr LPAREN args = separated_list(COMMA, expr) RPAREN
+  | func = expr LPAREN args = call_args RPAREN
       { ECall (func, args, get_expr_pos func) }
   | obj = expr DOT attr = IDENT
       { EAttr (obj, attr, get_expr_pos obj) }
@@ -652,7 +654,7 @@ expr:
       { EIndex (arr, idx, get_expr_pos arr) }
   | arr = expr LBRACKET start = slice_start COLON end_opt = slice_end RBRACKET
       { ESlice (arr, start, end_opt, get_expr_pos arr) }
-  | LBRACKET elems = separated_list(COMMA, expr) RBRACKET
+  | LBRACKET elems = list_expr RBRACKET
       { EList (elems, { line = 0; column = 0 }) }
   | LBRACE pairs = dict_pair_list RBRACE
       { EDict (pairs, { line = 0; column = 0 }) }
@@ -668,23 +670,23 @@ expr:
       { EListComp (elem, var, iter, None, { line = 0; column = 0 }) }
   | LBRACKET elem = expr FOR var = IDENT IN iter = expr IF cond = expr RBRACKET
       { EListComp (elem, var, iter, Some cond, { line = 0; column = 0 }) }
-  | OPTION DOT SOME LPAREN args = separated_list(COMMA, expr) RPAREN
+  | OPTION DOT SOME LPAREN args = call_args RPAREN
       { EEnumVariant ("Option", "Some", args, { line = 0; column = 0 }) }
   | OPTION DOT NONE
       { EEnumVariant ("Option", "None", [], { line = 0; column = 0 }) }
-  | RESULT DOT OK LPAREN args = separated_list(COMMA, expr) RPAREN
+  | RESULT DOT OK LPAREN args = call_args RPAREN
       { EEnumVariant ("Result", "Ok", args, { line = 0; column = 0 }) }
-  | RESULT DOT ERR LPAREN args = separated_list(COMMA, expr) RPAREN
+  | RESULT DOT ERR LPAREN args = call_args RPAREN
       { EEnumVariant ("Result", "Err", args, { line = 0; column = 0 }) }
-  | SOME LPAREN args = separated_list(COMMA, expr) RPAREN
+  | SOME LPAREN args = call_args RPAREN
       { EEnumVariant ("Option", "Some", args, { line = 0; column = 0 }) }
   | NONE
       { EEnumVariant ("Option", "None", [], { line = 0; column = 0 }) }
-  | OK LPAREN args = separated_list(COMMA, expr) RPAREN
+  | OK LPAREN args = call_args RPAREN
       { EEnumVariant ("Result", "Ok", args, { line = 0; column = 0 }) }
-  | ERR LPAREN args = separated_list(COMMA, expr) RPAREN
+  | ERR LPAREN args = call_args RPAREN
       { EEnumVariant ("Result", "Err", args, { line = 0; column = 0 }) }
-  | enum_name = IDENT DOT variant_name = IDENT LPAREN args = separated_list(COMMA, expr) RPAREN
+  | enum_name = IDENT DOT variant_name = IDENT LPAREN args = call_args RPAREN
       { EEnumVariant (enum_name, variant_name, args, { line = 0; column = 0 }) }
   | enum_name = IDENT DOT variant_name = IDENT
       { EEnumVariant (enum_name, variant_name, [], { line = 0; column = 0 }) }
@@ -707,6 +709,24 @@ lambda_param:
 
 dict_pair:
   | key = expr COLON value = expr { (key, value) }
+
+list_expr:
+  | { [] }
+  | first = expr rest = list_expr_rest { first :: rest }
+
+list_expr_rest:
+  | { [] }
+  | COMMA { [] }
+  | COMMA first = expr rest = list_expr_rest { first :: rest }
+
+call_args:
+  | { [] }
+  | first = expr rest = call_args_rest { first :: rest }
+
+call_args_rest:
+  | { [] }
+  | COMMA { [] }
+  | COMMA first = expr rest = call_args_rest { first :: rest }
 
 dict_pair_list:
   | NEWLINE* { [] }

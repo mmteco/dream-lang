@@ -1,5 +1,13 @@
-from compiler_mir_model import MirProgram, MirRecord, mir_record_count, mir_value_count, mir_record_offset, mir_value_offset, mir_append_record, mir_append_operand, MIR_RECORD_MODULE, MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK, MIR_OPERAND_TYPE, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_OP_CONST, MIR_OP_BINARY, MIR_OP_UNARY, MIR_OP_SELECT, MIR_OP_CAST, MIR_OP_LOCAL, MIR_OP_SEQUENCE, MIR_TERM_JUMP, MIR_TERM_BRANCH, MIR_TERM_SWITCH
-from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_AND, IR_OPERATOR_OR
+from compiler_mir_model import MirProgram, MirRecord, mir_record_count, mir_value_count, mir_record_offset
+from compiler_mir_model import mir_value_offset, mir_append_record, mir_append_operand, MIR_RECORD_MODULE
+from compiler_mir_model import MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION
+from compiler_mir_model import MIR_RECORD_TERMINATOR, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK
+from compiler_mir_model import MIR_OPERAND_TYPE, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_OP_CONST, MIR_OP_BINARY, MIR_OP_UNARY
+from compiler_mir_model import MIR_OP_SELECT, MIR_OP_CAST, MIR_OP_LOCAL, MIR_OP_SEQUENCE, MIR_TERM_JUMP, MIR_TERM_BRANCH
+from compiler_mir_model import MIR_TERM_SWITCH
+from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD
+from compiler_operator import IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ
+from compiler_operator import IR_OPERATOR_NE, IR_OPERATOR_AND, IR_OPERATOR_OR
 
 def mir_opt_max_result(program: MirProgram) -> int:
     let maximum = -1
@@ -21,7 +29,8 @@ def mir_opt_resolve(replacements: list[int], value: int) -> int:
         guard = guard + 1
     return current
 
-def mir_opt_operand_value(program: MirProgram, record_offset: int, operand_index: int, constant_flags: list[int], constant_values: list[int]) -> int:
+def mir_opt_operand_value(program: MirProgram, record_offset: int, operand_index: int, constant_flags: list[int],
+    constant_values: list[int]) -> int:
     let operand_start = program.records[record_offset + 6]
     let operand_count = program.records[record_offset + 7]
     if operand_index < 0 or operand_index >= operand_count:
@@ -37,7 +46,8 @@ def mir_opt_operand_value(program: MirProgram, record_offset: int, operand_index
                 return constant_values[operand_value]
     return -1
 
-def mir_opt_read_constant(program: MirProgram, record_offset: int, operand_index: int, constant_flags: list[int], constant_values: list[int], result: list[int]) -> bool:
+def mir_opt_read_constant(program: MirProgram, record_offset: int, operand_index: int, constant_flags: list[int],
+    constant_values: list[int], result: list[int]) -> bool:
     let operand_start = program.records[record_offset + 6]
     let operand_count = program.records[record_offset + 7]
     if operand_index < 0 or operand_index >= operand_count:
@@ -112,7 +122,8 @@ def mir_opt_binary(operator: int, left: int, right: int, result_type: int, resul
         return true
     return false
 
-def mir_opt_append_rewritten_operands(program: MirProgram, record_offset: int, replacements: list[int], constant_flags: list[int], constant_values: list[int], values: list[int]):
+def mir_opt_append_rewritten_operands(program: MirProgram, record_offset: int, replacements: list[int],
+    constant_flags: list[int], constant_values: list[int], values: list[int]):
     let operand_start = program.records[record_offset + 6]
     let operand_count = program.records[record_offset + 7]
     let operand_index = 0
@@ -184,7 +195,8 @@ def mir_opt_constant_fold(program: MirProgram) -> MirProgram:
             constant_keys = []
             constant_types = []
             constant_results = []
-        if record_kind == MIR_RECORD_INSTRUCTION and opcode == MIR_OP_CONST and type_tag in [MIR_TYPE_BOOL, MIR_TYPE_I32]:
+        if record_kind == MIR_RECORD_INSTRUCTION and opcode == MIR_OP_CONST and type_tag in [MIR_TYPE_BOOL,
+            MIR_TYPE_I32]:
             let immediate: list[int] = [0]
             if mir_opt_read_constant(program, source_offset, 0, constant_flags, constant_values, immediate):
                 folded = true
@@ -194,21 +206,26 @@ def mir_opt_constant_fold(program: MirProgram) -> MirProgram:
             let left_value: list[int] = [0]
             let right_value: list[int] = [0]
             let folded_result: list[int] = [0]
-            let has_operator = mir_opt_read_constant(program, source_offset, 0, constant_flags, constant_values, operator_value)
+            let has_operator = mir_opt_read_constant(program, source_offset, 0, constant_flags, constant_values,
+                operator_value)
             let has_left = mir_opt_read_constant(program, source_offset, 1, constant_flags, constant_values, left_value)
-            let has_right = mir_opt_read_constant(program, source_offset, 2, constant_flags, constant_values, right_value)
-            if has_operator and has_left and has_right and mir_opt_binary(operator_value[0], left_value[0], right_value[0], type_tag, folded_result):
+            let has_right = mir_opt_read_constant(program, source_offset, 2, constant_flags, constant_values,
+                right_value)
+            if has_operator and has_left and has_right and mir_opt_binary(operator_value[0], left_value[0],
+                right_value[0], type_tag, folded_result):
                 folded = true
                 folded_value = folded_result[0]
                 target_opcode = MIR_OP_CONST
         elif record_kind == MIR_RECORD_INSTRUCTION and opcode == MIR_OP_SELECT:
             let condition_value: list[int] = [0]
-            let has_condition = mir_opt_read_constant(program, source_offset, 0, constant_flags, constant_values, condition_value)
+            let has_condition = mir_opt_read_constant(program, source_offset, 0, constant_flags, constant_values,
+                condition_value)
             let selected_index = 1
             if has_condition and condition_value[0] == 0:
                 selected_index = 2
             let selected_value: list[int] = [0]
-            let has_selected = mir_opt_read_constant(program, source_offset, selected_index, constant_flags, constant_values, selected_value)
+            let has_selected = mir_opt_read_constant(program, source_offset, selected_index, constant_flags,
+                constant_values, selected_value)
             if has_condition and has_selected:
                 folded = true
                 folded_value = selected_value[0]
@@ -230,17 +247,39 @@ def mir_opt_constant_fold(program: MirProgram) -> MirProgram:
             if folded:
                 mir_append_operand(values, MIR_OPERAND_INT, folded_value)
             else:
-                mir_opt_append_rewritten_operands(program, source_offset, replacements, constant_flags, constant_values, values)
+                mir_opt_append_rewritten_operands(program, source_offset, replacements, constant_flags, constant_values,
+                    values)
             let operand_count = mir_value_count(values) - operand_start
             let auxiliary_start = mir_opt_append_auxiliary(program, source_offset, values)
             let auxiliary_count = program.records[source_offset + 9]
-            let target = MirRecord{record_kind: record_kind, function_index: program.records[source_offset + 1], block_index: program.records[source_offset + 2], opcode: target_opcode, type_tag: type_tag, result_value: result_value, operand_start: operand_start, operand_count: operand_count, auxiliary_start: auxiliary_start, auxiliary_count: auxiliary_count, source_start: program.records[source_offset + 10], source_end: program.records[source_offset + 11]}
+            let target = MirRecord{
+                record_kind: record_kind,
+                function_index: program.records[source_offset + 1],
+                block_index: program.records[source_offset + 2],
+                opcode: target_opcode,
+                type_tag: type_tag,
+                result_value: result_value,
+                operand_start: operand_start,
+                operand_count: operand_count,
+                auxiliary_start: auxiliary_start,
+                auxiliary_count: auxiliary_count,
+                source_start: program.records[source_offset + 10],
+                source_end: program.records[source_offset + 11]
+            }
             mir_append_record(records, target)
         record_id = record_id + 1
     return MirProgram{records: records, values: values}
 
 def mir_opt_is_pure(opcode: int) -> bool:
-    return opcode == MIR_OP_CONST or opcode == MIR_OP_LOCAL or opcode == MIR_OP_BINARY or opcode == MIR_OP_UNARY or opcode == MIR_OP_SELECT or opcode == MIR_OP_CAST or opcode == MIR_OP_SEQUENCE
+    return (
+        opcode == MIR_OP_CONST or
+        opcode == MIR_OP_LOCAL or
+        opcode == MIR_OP_BINARY or
+        opcode == MIR_OP_UNARY or
+        opcode == MIR_OP_SELECT or
+        opcode == MIR_OP_CAST or
+        opcode == MIR_OP_SEQUENCE
+    )
 
 def mir_opt_mark_used(program: MirProgram, used: list[int]):
     let record_id = 0
@@ -288,7 +327,20 @@ def mir_opt_dce(program: MirProgram) -> MirProgram:
                 mir_append_operand(values, program.values[value_offset], program.values[value_offset + 1])
                 operand_index = operand_index + 1
             let auxiliary_start = mir_opt_append_auxiliary(program, offset, values)
-            let target = MirRecord{record_kind: kind, function_index: program.records[offset + 1], block_index: program.records[offset + 2], opcode: opcode, type_tag: program.records[offset + 4], result_value: result_value, operand_start: operand_start, operand_count: operand_count, auxiliary_start: auxiliary_start, auxiliary_count: program.records[offset + 9], source_start: program.records[offset + 10], source_end: program.records[offset + 11]}
+            let target = MirRecord{
+                record_kind: kind,
+                function_index: program.records[offset + 1],
+                block_index: program.records[offset + 2],
+                opcode: opcode,
+                type_tag: program.records[offset + 4],
+                result_value: result_value,
+                operand_start: operand_start,
+                operand_count: operand_count,
+                auxiliary_start: auxiliary_start,
+                auxiliary_count: program.records[offset + 9],
+                source_start: program.records[offset + 10],
+                source_end: program.records[offset + 11]
+            }
             mir_append_record(records, target)
         record_id = record_id + 1
     return MirProgram{records: records, values: values}
@@ -356,7 +408,8 @@ def mir_opt_remove_unreachable(program: MirProgram) -> MirProgram:
             active_function = function_index
             reachable = mir_opt_reachable_blocks(program, function_index)
         let remove = false
-        if kind in [MIR_RECORD_BLOCK, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR] or kind == MIR_RECORD_PARAMETER and block >= 0:
+        if kind in [MIR_RECORD_BLOCK, MIR_RECORD_INSTRUCTION,
+            MIR_RECORD_TERMINATOR] or kind == MIR_RECORD_PARAMETER and block >= 0:
             if block < 0:
                 remove = true
             elif block >= len(reachable):
@@ -373,7 +426,20 @@ def mir_opt_remove_unreachable(program: MirProgram) -> MirProgram:
                 mir_append_operand(values, program.values[value_offset], program.values[value_offset + 1])
                 operand_index = operand_index + 1
             let auxiliary_start = mir_opt_append_auxiliary(program, offset, values)
-            let target = MirRecord{record_kind: kind, function_index: program.records[offset + 1], block_index: block, opcode: program.records[offset + 3], type_tag: program.records[offset + 4], result_value: program.records[offset + 5], operand_start: operand_start, operand_count: operand_count, auxiliary_start: auxiliary_start, auxiliary_count: program.records[offset + 9], source_start: program.records[offset + 10], source_end: program.records[offset + 11]}
+            let target = MirRecord{
+                record_kind: kind,
+                function_index: program.records[offset + 1],
+                block_index: block,
+                opcode: program.records[offset + 3],
+                type_tag: program.records[offset + 4],
+                result_value: program.records[offset + 5],
+                operand_start: operand_start,
+                operand_count: operand_count,
+                auxiliary_start: auxiliary_start,
+                auxiliary_count: program.records[offset + 9],
+                source_start: program.records[offset + 10],
+                source_end: program.records[offset + 11]
+            }
             mir_append_record(records, target)
         record_id = record_id + 1
     return MirProgram{records: records, values: values}

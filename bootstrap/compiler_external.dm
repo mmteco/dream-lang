@@ -124,26 +124,151 @@ const EXTERNAL_RETURN_FLOAT: int = 4
 const EXTERNAL_RETURN_POINTER: int = 5
 const EXTERNAL_RETURN_STRING: int = 6
 
-# 外部 C 函数单一数据源：三个常量按行/按字符对齐，行序即 external_id 序（id = EXTERNAL_ID_BASE + 行号 - 1）。
-# EXTERN_NAMES：C 符号名，每行一个。
-const EXTERN_NAMES: str = "dream_print_int\ndream_print_float\ndream_print_bool\ndream_print_string\ndream_eprint_int\ndream_eprint_float\ndream_eprint_bool\ndream_eprint_string\nstring_concat\nstring_length\nstring_find\nstring_upper\nstring_lower\nstring_strip\nstring_split\nstring_join\ndict_items_tuples\nstring_starts_with\nstring_ends_with\nstring_replace\nint_floordiv\nfloat_floordiv\nint_pow\nfloat_pow\nstring_is_digit\nstring_is_alpha\n__c_time_ms\n__c_debug_on\n__c_eprint_text\n__c_eprint_int\n__c_range_equal\n__c_fnv_hash_range\nstring_is_whitespace\nunion_create_int\nunion_create_float\nunion_create_string\nunion_create_bool\nunion_create_bytes\nunion_is_int\nunion_is_float\nunion_is_string\nunion_is_bool\nunion_is_bytes\nunion_get_int\nunion_get_float\nunion_get_string\nunion_get_bool\nunion_get_bytes\nunion_print_value\n__c_process_arg_count\n__c_process_arg\n__c_file_read\n__c_file_write\n__c_file_exists\n__c_file_delete\n__c_build_llvm\n__c_file_read_bytes\n__c_file_write_bytes\n__c_bytes_length\n__c_bytes_get\n__c_bytes_slice\n__c_bytes_from_array\n__c_str_to_bytes\n__c_bytes_to_str\ndict_set_int_int\ndict_set_int_str\ndict_set_str_int\ndict_set_str_str\ndream_dict_create_int_int\ndream_dict_create_int_str\ndream_dict_create_str_int\ndream_dict_create_str_str\ndream_dict_get_int_int\ndream_dict_get_int_str\ndream_dict_get_str_int\ndream_dict_get_str_str\ndream_dict_size_int_int\ndream_dict_size_int_str\ndream_dict_size_str_int\ndream_dict_size_str_str\n__c_utf8_rune_count\n__c_utf8_rune_at\nprint\neprint\nlen\nappend\n__c_range_equals_cstr\n__c_utf8_encode_rune\nenum_create_simple\nenum_create_int\nenum_create_float\nenum_create_string\nenum_create_bool\nenum_get_tag\nenum_get_int\nenum_get_float\nenum_get_string\nenum_get_bool\n__c_interface_box\n__c_interface_obj\n__c_interface_tag\n__c_file_append\n__c_file_append_bytes\n__c_rune_to_int\n__c_utf8_byte_offset\n__c_env\n__c_file_is_dir\n__c_file_mkdir\n__c_file_rename\n__c_file_size\nenum_create_tuple_ptr\nenum_get_data\n__c_net_connect\n__c_net_write\n__c_net_read\n__c_net_close\n__c_http_request"
-# EXTERN_RETURN_CODES：每字符一个返回类型码（'1'-'6' 对应 EXTERNAL_RETURN_*），与 EXTERN_NAMES 行对齐。
-const EXTERN_RETURN_CODES: str = "111111116226666663362424332311323545553333354535125523325222555511115555555522222211213555555224635522222633325522636"
-# EXTERN_DECL_CODES：每字符一个 LLVM 声明标志（'1'=通用 declare；'0'=专用 declare，由 LLVM 发射器硬编码），与 EXTERN_NAMES 行对齐。
-const EXTERN_DECL_CODES: str = "111111111111111111111111111111111111111111111111111111111111111100000000000011111100101111111111111111111111111111111"
+# 外部 C 函数单一数据源：名称顺序与返回码、声明码按 external_id 对齐。
+def extern_names() -> list[str]:
+    return [
+        "dream_print_int",
+        "dream_print_float",
+        "dream_print_bool",
+        "dream_print_string",
+        "dream_eprint_int",
+        "dream_eprint_float",
+        "dream_eprint_bool",
+        "dream_eprint_string",
+        "string_concat",
+        "string_length",
+        "string_find",
+        "string_upper",
+        "string_lower",
+        "string_strip",
+        "string_split",
+        "string_join",
+        "dict_items_tuples",
+        "string_starts_with",
+        "string_ends_with",
+        "string_replace",
+        "int_floordiv",
+        "float_floordiv",
+        "int_pow",
+        "float_pow",
+        "string_is_digit",
+        "string_is_alpha",
+        "__c_time_ms",
+        "__c_debug_on",
+        "__c_eprint_text",
+        "__c_eprint_int",
+        "__c_range_equal",
+        "__c_fnv_hash_range",
+        "string_is_whitespace",
+        "union_create_int",
+        "union_create_float",
+        "union_create_string",
+        "union_create_bool",
+        "union_create_bytes",
+        "union_is_int",
+        "union_is_float",
+        "union_is_string",
+        "union_is_bool",
+        "union_is_bytes",
+        "union_get_int",
+        "union_get_float",
+        "union_get_string",
+        "union_get_bool",
+        "union_get_bytes",
+        "union_print_value",
+        "__c_process_arg_count",
+        "__c_process_arg",
+        "__c_file_read",
+        "__c_file_write",
+        "__c_file_exists",
+        "__c_file_delete",
+        "__c_build_llvm",
+        "__c_file_read_bytes",
+        "__c_file_write_bytes",
+        "__c_bytes_length",
+        "__c_bytes_get",
+        "__c_bytes_slice",
+        "__c_bytes_from_array",
+        "__c_str_to_bytes",
+        "__c_bytes_to_str",
+        "dict_set_int_int",
+        "dict_set_int_str",
+        "dict_set_str_int",
+        "dict_set_str_str",
+        "dream_dict_create_int_int",
+        "dream_dict_create_int_str",
+        "dream_dict_create_str_int",
+        "dream_dict_create_str_str",
+        "dream_dict_get_int_int",
+        "dream_dict_get_int_str",
+        "dream_dict_get_str_int",
+        "dream_dict_get_str_str",
+        "dream_dict_size_int_int",
+        "dream_dict_size_int_str",
+        "dream_dict_size_str_int",
+        "dream_dict_size_str_str",
+        "__c_utf8_rune_count",
+        "__c_utf8_rune_at",
+        "print",
+        "eprint",
+        "len",
+        "append",
+        "__c_range_equals_cstr",
+        "__c_utf8_encode_rune",
+        "enum_create_simple",
+        "enum_create_int",
+        "enum_create_float",
+        "enum_create_string",
+        "enum_create_bool",
+        "enum_get_tag",
+        "enum_get_int",
+        "enum_get_float",
+        "enum_get_string",
+        "enum_get_bool",
+        "__c_interface_box",
+        "__c_interface_obj",
+        "__c_interface_tag",
+        "__c_file_append",
+        "__c_file_append_bytes",
+        "__c_rune_to_int",
+        "__c_utf8_byte_offset",
+        "__c_env",
+        "__c_file_is_dir",
+        "__c_file_mkdir",
+        "__c_file_rename",
+        "__c_file_size",
+        "enum_create_tuple_ptr",
+        "enum_get_data",
+        "__c_net_connect",
+        "__c_net_write",
+        "__c_net_read",
+        "__c_net_close",
+        "__c_http_request",
+    ]
 
-def runtime_extern_at(source: str, external_id: int) -> str:
-    let current_id = 1
-    let line_start = 0
-    let source_length = len(source)
-    while current_id < external_id and line_start < source_length:
-        if source[line_start] == '\n':
-            current_id = current_id + 1
-        line_start = line_start + 1
-    let line_end = line_start
-    while line_end < source_length and source[line_end] != '\n':
-        line_end = line_end + 1
-    return source[line_start:line_end]
+# EXTERN_RETURN_CODES：每字符一个返回类型码（'1'-'6' 对应 EXTERNAL_RETURN_*），与 EXTERN_NAMES 行对齐。
+const EXTERN_RETURN_CODES_PART_1: str = "11111111622666666336242433231132354555333335453512552332522255551111555555552222"
+const EXTERN_RETURN_CODES_PART_2: str = "2211213555555224635522222633325522636"
+
+def extern_return_codes() -> str:
+    return (
+        EXTERN_RETURN_CODES_PART_1 +
+        EXTERN_RETURN_CODES_PART_2
+    )
+# EXTERN_DECL_CODES：每字符一个 LLVM 声明标志（'1'=通用 declare；'0'=专用 declare，由 LLVM 发射器硬编码），与 EXTERN_NAMES 行对齐。
+const EXTERN_DECL_CODES_PART_1: str = "11111111111111111111111111111111111111111111111111111111111111110000000000001111"
+const EXTERN_DECL_CODES_PART_2: str = "1100101111111111111111111111111111111"
+
+def extern_decl_codes() -> str:
+    return (
+        EXTERN_DECL_CODES_PART_1 +
+        EXTERN_DECL_CODES_PART_2
+    )
+
+def runtime_extern_at(names: list[str], external_id: int) -> str:
+    if external_id <= 0 or external_id > len(names):
+        return ""
+    return names[external_id - 1]
 
 def external_llvm_name(external_id: int) -> str:
     # print/eprint/len/append 是内置多态函数，LLVM 层按操作数类型分派，这里只保留占位名
@@ -157,28 +282,252 @@ def external_llvm_name(external_id: int) -> str:
         return "@append_i32"
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
         return "@llvm.trap"
-    return "@" + runtime_extern_at(EXTERN_NAMES, external_id - EXTERNAL_ID_BASE + 1)
+    let names = extern_names()
+    return "@" + runtime_extern_at(names, external_id - EXTERNAL_ID_BASE + 1)
 
 def external_return_type(external_id: int) -> int:
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
         return EXTERNAL_RETURN_POINTER
-    return ord(EXTERN_RETURN_CODES[external_id - EXTERNAL_ID_BASE]) - 48
+    return ord(extern_return_codes()[external_id - EXTERNAL_ID_BASE]) - 48
 
 def external_has_declaration(external_id: int) -> bool:
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
         return false
-    return ord(EXTERN_DECL_CODES[external_id - EXTERNAL_ID_BASE]) - 48 != 0
+    return ord(extern_decl_codes()[external_id - EXTERNAL_ID_BASE]) - 48 != 0
 
 def external_id_from_name(name: str) -> int:
-    let external_id = 1
-    let line_start = 0
-    let source_length = len(EXTERN_NAMES)
-    while external_id <= EXTERNAL_COUNT:
-        let line_end = line_start
-        while line_end < source_length and EXTERN_NAMES[line_end] != '\n':
-            line_end = line_end + 1
-        if EXTERN_NAMES[line_start:line_end] == name:
-            return external_id + EXTERNAL_ID_BASE - 1
-        external_id = external_id + 1
-        line_start = line_end + 1
+    if name == "dream_print_int":
+        return 1000
+    if name == "dream_print_float":
+        return 1001
+    if name == "dream_print_bool":
+        return 1002
+    if name == "dream_print_string":
+        return 1003
+    if name == "dream_eprint_int":
+        return 1004
+    if name == "dream_eprint_float":
+        return 1005
+    if name == "dream_eprint_bool":
+        return 1006
+    if name == "dream_eprint_string":
+        return 1007
+    if name == "string_concat":
+        return 1008
+    if name == "string_length":
+        return 1009
+    if name == "string_find":
+        return 1010
+    if name == "string_upper":
+        return 1011
+    if name == "string_lower":
+        return 1012
+    if name == "string_strip":
+        return 1013
+    if name == "string_split":
+        return 1014
+    if name == "string_join":
+        return 1015
+    if name == "dict_items_tuples":
+        return 1016
+    if name == "string_starts_with":
+        return 1017
+    if name == "string_ends_with":
+        return 1018
+    if name == "string_replace":
+        return 1019
+    if name == "int_floordiv":
+        return 1020
+    if name == "float_floordiv":
+        return 1021
+    if name == "int_pow":
+        return 1022
+    if name == "float_pow":
+        return 1023
+    if name == "string_is_digit":
+        return 1024
+    if name == "string_is_alpha":
+        return 1025
+    if name == "__c_time_ms":
+        return 1026
+    if name == "__c_debug_on":
+        return 1027
+    if name == "__c_eprint_text":
+        return 1028
+    if name == "__c_eprint_int":
+        return 1029
+    if name == "__c_range_equal":
+        return 1030
+    if name == "__c_fnv_hash_range":
+        return 1031
+    if name == "string_is_whitespace":
+        return 1032
+    if name == "union_create_int":
+        return 1033
+    if name == "union_create_float":
+        return 1034
+    if name == "union_create_string":
+        return 1035
+    if name == "union_create_bool":
+        return 1036
+    if name == "union_create_bytes":
+        return 1037
+    if name == "union_is_int":
+        return 1038
+    if name == "union_is_float":
+        return 1039
+    if name == "union_is_string":
+        return 1040
+    if name == "union_is_bool":
+        return 1041
+    if name == "union_is_bytes":
+        return 1042
+    if name == "union_get_int":
+        return 1043
+    if name == "union_get_float":
+        return 1044
+    if name == "union_get_string":
+        return 1045
+    if name == "union_get_bool":
+        return 1046
+    if name == "union_get_bytes":
+        return 1047
+    if name == "union_print_value":
+        return 1048
+    if name == "__c_process_arg_count":
+        return 1049
+    if name == "__c_process_arg":
+        return 1050
+    if name == "__c_file_read":
+        return 1051
+    if name == "__c_file_write":
+        return 1052
+    if name == "__c_file_exists":
+        return 1053
+    if name == "__c_file_delete":
+        return 1054
+    if name == "__c_build_llvm":
+        return 1055
+    if name == "__c_file_read_bytes":
+        return 1056
+    if name == "__c_file_write_bytes":
+        return 1057
+    if name == "__c_bytes_length":
+        return 1058
+    if name == "__c_bytes_get":
+        return 1059
+    if name == "__c_bytes_slice":
+        return 1060
+    if name == "__c_bytes_from_array":
+        return 1061
+    if name == "__c_str_to_bytes":
+        return 1062
+    if name == "__c_bytes_to_str":
+        return 1063
+    if name == "dict_set_int_int":
+        return 1064
+    if name == "dict_set_int_str":
+        return 1065
+    if name == "dict_set_str_int":
+        return 1066
+    if name == "dict_set_str_str":
+        return 1067
+    if name == "dream_dict_create_int_int":
+        return 1068
+    if name == "dream_dict_create_int_str":
+        return 1069
+    if name == "dream_dict_create_str_int":
+        return 1070
+    if name == "dream_dict_create_str_str":
+        return 1071
+    if name == "dream_dict_get_int_int":
+        return 1072
+    if name == "dream_dict_get_int_str":
+        return 1073
+    if name == "dream_dict_get_str_int":
+        return 1074
+    if name == "dream_dict_get_str_str":
+        return 1075
+    if name == "dream_dict_size_int_int":
+        return 1076
+    if name == "dream_dict_size_int_str":
+        return 1077
+    if name == "dream_dict_size_str_int":
+        return 1078
+    if name == "dream_dict_size_str_str":
+        return 1079
+    if name == "__c_utf8_rune_count":
+        return 1080
+    if name == "__c_utf8_rune_at":
+        return 1081
+    if name == "print":
+        return 1082
+    if name == "eprint":
+        return 1083
+    if name == "len":
+        return 1084
+    if name == "append":
+        return 1085
+    if name == "__c_range_equals_cstr":
+        return 1086
+    if name == "__c_utf8_encode_rune":
+        return 1087
+    if name == "enum_create_simple":
+        return 1088
+    if name == "enum_create_int":
+        return 1089
+    if name == "enum_create_float":
+        return 1090
+    if name == "enum_create_string":
+        return 1091
+    if name == "enum_create_bool":
+        return 1092
+    if name == "enum_get_tag":
+        return 1093
+    if name == "enum_get_int":
+        return 1094
+    if name == "enum_get_float":
+        return 1095
+    if name == "enum_get_string":
+        return 1096
+    if name == "enum_get_bool":
+        return 1097
+    if name == "__c_interface_box":
+        return 1098
+    if name == "__c_interface_obj":
+        return 1099
+    if name == "__c_interface_tag":
+        return 1100
+    if name == "__c_file_append":
+        return 1101
+    if name == "__c_file_append_bytes":
+        return 1102
+    if name == "__c_rune_to_int":
+        return 1103
+    if name == "__c_utf8_byte_offset":
+        return 1104
+    if name == "__c_env":
+        return 1105
+    if name == "__c_file_is_dir":
+        return 1106
+    if name == "__c_file_mkdir":
+        return 1107
+    if name == "__c_file_rename":
+        return 1108
+    if name == "__c_file_size":
+        return 1109
+    if name == "enum_create_tuple_ptr":
+        return 1110
+    if name == "enum_get_data":
+        return 1111
+    if name == "__c_net_connect":
+        return 1112
+    if name == "__c_net_write":
+        return 1113
+    if name == "__c_net_read":
+        return 1114
+    if name == "__c_net_close":
+        return 1115
+    if name == "__c_http_request":
+        return 1116
     return -1

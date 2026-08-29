@@ -1,4 +1,6 @@
-from compiler_lex import TOKEN_PLUS, TOKEN_MINUS, TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_MODULO, TOKEN_LESS, TOKEN_GREATER, TOKEN_LESS_EQUAL, TOKEN_GREATER_EQUAL, TOKEN_EQUAL, TOKEN_NOT_EQUAL, TOKEN_AND, TOKEN_OR, TOKEN_NOT, TOKEN_IN
+from compiler_lex import TOKEN_PLUS, TOKEN_MINUS, TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_MODULO, TOKEN_LESS, TOKEN_GREATER
+from compiler_lex import TOKEN_LESS_EQUAL, TOKEN_GREATER_EQUAL, TOKEN_EQUAL, TOKEN_NOT_EQUAL, TOKEN_AND, TOKEN_OR
+from compiler_lex import TOKEN_NOT, TOKEN_IN
 
 const IR_OPERATOR_UNKNOWN: int = 0
 const IR_OPERATOR_ADD: int = 1
@@ -62,13 +64,26 @@ def ir_unary_operator_from_token(token: int) -> int:
     return IR_OPERATOR_UNKNOWN
 
 def ir_operator_is_comparison(operator: int) -> bool:
-    switch operator:
-        case IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_IN:
-            return true
-    return false
+    return operator in [
+        IR_OPERATOR_LT,
+        IR_OPERATOR_GT,
+        IR_OPERATOR_LE,
+        IR_OPERATOR_GE,
+        IR_OPERATOR_EQ,
+        IR_OPERATOR_NE,
+        IR_OPERATOR_IN,
+    ]
 
 def ir_operator_is_boolean_result(operator: int) -> bool:
-    switch operator:
-        case IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_IN, IR_OPERATOR_AND, IR_OPERATOR_OR, IR_OPERATOR_NOT:
-            return true
-    return false
+    return operator in [
+        IR_OPERATOR_LT,
+        IR_OPERATOR_GT,
+        IR_OPERATOR_LE,
+        IR_OPERATOR_GE,
+        IR_OPERATOR_EQ,
+        IR_OPERATOR_NE,
+        IR_OPERATOR_IN,
+        IR_OPERATOR_AND,
+        IR_OPERATOR_OR,
+        IR_OPERATOR_NOT,
+    ]
