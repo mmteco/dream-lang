@@ -175,7 +175,6 @@ let rec expression_type_hint = function
   | ECall (EVar ("arg", _), _, _)
   | ECall (EVar ("__c_process_arg", _), _, _) -> Some Str
   | ECall (EVar ("read", _), _, _) -> Some Str
-  | ECall (EVar ("write_codes", _), _, _) -> Some I32
   | ECall (EVar ("__c_file_read_bytes", _), _, _)
   | ECall (EVar ("__c_bytes_slice", _), _, _)
   | ECall (EVar ("__c_str_to_bytes", _), _, _) -> Some Bytes

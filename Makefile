@@ -77,7 +77,7 @@ bootstrap-verify:
 # 使用已自举的 Stage 2 编译器构建当前 bootstrap 语法子集。
 bootstrap-build:
 	@if [ -z "$(FILE)" ]; then \
-		echo "错误: 请指定文件路径，例如: make bootstrap-build FILE=bootstrap/sample_functions.dm"; \
+		echo "错误: 请指定文件路径，例如: make bootstrap-build FILE=test/fixtures/bootstrap_sample_functions.dm"; \
 		exit 1; \
 	fi
 	$(FISH) scripts/bootstrap_build.fish build "$(FILE)" $(if $(OUTPUT),"$(OUTPUT)")

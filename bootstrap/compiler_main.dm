@@ -1,4 +1,6 @@
 from buffer import Buffer
+from io import read, write, exists
+from sys import argc, arg, env, build
 
 const COMPILE_OUTPUT_AST: int = 0
 const COMPILE_OUTPUT_HIR: int = 1
@@ -8,8 +10,8 @@ const COMPILE_OUTPUT_LLVM: int = 4
 
 def module_path(module_name: str) -> str:
     switch module_name:
-        case "compiler_io":
-            return "runtime/stdlib/compiler_io.dm"
+        case "sys":
+            return "runtime/stdlib/sys.dm"
         case "compiler_lex":
             return "bootstrap/compiler_lex.dm"
         case "compiler_operator":

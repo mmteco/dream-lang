@@ -180,7 +180,7 @@ function check_bootstrapped_build
         exit 1
     end
     rm -f "$cli_binary_file"
-    check_bootstrapped_example bootstrap/sample_functions.dm tmp/dream_bootstrap_sample 48 stage2
+    check_bootstrapped_example test/fixtures/bootstrap_sample_functions.dm tmp/dream_bootstrap_sample 48 stage2
     check_bootstrapped_example examples/hello.dm tmp/dream_bootstrap_hello 'Hello, Dream!'
     check_bootstrapped_example examples/factorial.dm tmp/dream_bootstrap_factorial 120
     check_bootstrapped_example examples/dynarray_full.dm tmp/dream_bootstrap_dynarray 3 10 20 30 5 40 50 99
@@ -277,7 +277,7 @@ or exit 1
 compile_llvm "tmp/stage2" "tmp/stage2.ll"
 or exit 1
 
-"$stage1_binary" llvm bootstrap/sample_functions.dm -o "tmp/sample_functions.ll"
+"$stage1_binary" llvm test/fixtures/bootstrap_sample_functions.dm -o "tmp/sample_functions.ll"
 or exit 1
 
 compile_llvm "tmp/sample_functions" "tmp/sample_functions.ll"

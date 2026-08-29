@@ -1,5 +1,8 @@
 # 文件 I/O 标准库
 
+def read(path: str) -> str:
+    return __c_file_read(path)
+
 struct File:
     path: str
     mode: str
@@ -55,9 +58,6 @@ def exists(path: str) -> bool:
 
 def delete(path: str) -> bool:
     return __c_file_delete(path)
-
-def read(path: str) -> str:
-    return open(path, "r").read()
 
 def read_bytes(path: str) -> bytes:
     return open(path, "rb").read_bytes()

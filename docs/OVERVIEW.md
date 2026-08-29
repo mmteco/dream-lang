@@ -86,7 +86,7 @@ dream/
 ├── runtime/           # 运行时标准库
 │   ├── c/             # C 运行时（io.c / memory.c / dynarray.c / str.c / bytes.c / file.c
 │   │                  #  dict.c / tuple.c / union.c / enum.c / utf8.c / math.c 等）
-│   └── stdlib/        # Dream 标准库（compiler_io.dm、ops.dm、io.dm 等）
+│   └── stdlib/        # Dream 标准库（sys.dm、ops.dm、io.dm 等）
 ├── scripts/           # Fish 脚本（自举编排、测试、构建）
 ├── examples/          # 示例代码
 ├── test/              # .dm 语言测试（大而全的覆盖测试）

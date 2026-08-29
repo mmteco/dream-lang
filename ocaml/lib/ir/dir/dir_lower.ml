@@ -564,18 +564,6 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, Str, "__c_file_read",
         [Str], [lowered_path.operand]));
       { operand = Value value; ty = Str }
-  | ECall (EVar ("write_codes", _), [path; codes], position) ->
-      let lowered_path = lower_expr context function_builder environment path in
-      let lowered_codes = lower_expr context function_builder environment codes in
-      expect_type position Str lowered_path.ty "write_codes path";
-      expect_type position (List I32) lowered_codes.ty "write_codes codes";
-      let bytes = fresh_value function_builder in
-      emit function_builder (Call (Some bytes, Bytes, "__c_bytes_from_array",
-        [List I32], [lowered_codes.operand]));
-      let value = fresh_value function_builder in
-      emit function_builder (Call (Some value, I32, "__c_file_write_bytes",
-        [Str; Bytes], [lowered_path.operand; Value bytes]));
-      { operand = Value value; ty = I32 }
   | ECall (EVar ("__c_file_read_bytes", _), [path], position) ->
       let lowered_path = lower_expr context function_builder environment path in
       expect_type position Str lowered_path.ty "__c_file_read_bytes path";

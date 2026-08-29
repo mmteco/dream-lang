@@ -101,13 +101,13 @@ make bootstrap
 构建当前自举子集中的源文件：
 
 ```fish
-fish scripts/bootstrap_build.fish run bootstrap/sample_functions.dm
+fish scripts/bootstrap_build.fish run test/fixtures/bootstrap_sample_functions.dm
 ```
 
 或者：
 
 ```fish
-make bootstrap-build FILE=bootstrap/sample_functions.dm
+make bootstrap-build FILE=test/fixtures/bootstrap_sample_functions.dm
 ```
 
 这条路径使用 `tmp/stage2`，不会调用 `ocaml/_build/default/bin/main.exe` 编译目标文件。当前自举编译器已经稳定覆盖编译器自身和登记的 DIR 回归子集；超出该集合的语法仍会在 DIR/LLVM 验证或链接阶段报告失败，而不会被标记为完整语言支持。
