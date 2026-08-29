@@ -1,5 +1,5 @@
 from compiler_operator import ir_binary_operator_from_token, ir_unary_operator_from_token, ir_operator_is_comparison, ir_operator_is_boolean_result, IR_OPERATOR_ADD, IR_OPERATOR_NOT
-from compiler_lex import find_struct_declaration_index, is_identifier_start, is_identifier_continue, STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS, STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_KINDS, STRUCT_FIELD_TYPE_DECLS
+from compiler_lex import find_struct_declaration_index, source_type_is_enum, is_identifier_start, is_identifier_continue, STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS, STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_KINDS, STRUCT_FIELD_TYPE_DECLS
 from compiler_external import external_id_from_name, external_return_type, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
 
 const HIR_MODEL_VERSION: int = 3
@@ -245,13 +245,15 @@ def hir_type_from_annotation(source: str, name_start: int, name_end: int) -> int
         return HIR_TYPE_BYTES
     if type_name == "list[int]" or type_name == "list[byte]" or type_name == "list[rune]":
         return HIR_TYPE_LIST_INT
-    if type_name == "list[str]":
+    if type_name == "list[str]" or (len(type_name) >= 6 and type_name[0:5] == "list[" and source_type_is_enum(source, type_start + 5, name_end - 1)):
         return HIR_TYPE_LIST
     if len(type_name) >= 5 and type_name[0:5] == "dict[":
         return HIR_TYPE_DICT
     if type_name == "Result[int, str]" or type_name == "Result[int,str]":
         return HIR_TYPE_ENUM
     if type_name == "Option[int]":
+        return HIR_TYPE_ENUM
+    if source_type_is_enum(source, type_start, name_end):
         return HIR_TYPE_ENUM
     return HIR_TYPE_UNKNOWN
 
@@ -912,7 +914,11 @@ def hir_is_builtin_name(name: str) -> bool:
 def hir_external_type_for_name(name: str) -> int:
     if name == "ord":
         return HIR_TYPE_I32
-    if name == "__c_process_arg" or name == "__c_bytes_from_array":
+    if name == "string_split":
+        return HIR_TYPE_LIST
+    if name == "__c_file_read_bytes" or name == "__c_bytes_from_array" or name == "__c_bytes_slice" or name == "__c_str_to_bytes" or name == "__c_utf8_encode_rune":
+        return HIR_TYPE_BYTES
+    if name == "__c_process_arg" or name == "__c_bytes_to_str":
         return HIR_TYPE_STR
     let external_id = external_id_from_name(name)
     if external_id < 0:
@@ -1553,6 +1559,8 @@ def hir_type_from_collected_type(value_type: int) -> int:
         return HIR_TYPE_LIST_INT
     if value_type == 42:
         return HIR_TYPE_STRUCT
+    if value_type == 43:
+        return HIR_TYPE_ENUM
     if value_type >= 6 and value_type <= 9:
         return HIR_TYPE_DICT
     if value_type == 4:

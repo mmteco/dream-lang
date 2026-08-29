@@ -37,6 +37,8 @@ Stage 0: OCaml compiler
 - Stage 3 编译并运行程序（hello 输出 `hello`）验证功能；
 - 测试套件（含 `def main` 的用例）15 通过 / 7 待实现（enum/match/lambda lower）；
 - `make bootstrap-build` 产物（无 DEBUG）与 `DEBUG=1` 行为一致，均走新管线。
+- 标准库网络基础已接入：`runtime/stdlib/net.dm` 的 `Connection` 支持阻塞式 TCP 连接、`write`、`read`、`read_n` 和 `close`，Stage 2 可直接编译运行。
+- `runtime/stdlib/http.dm` 已接入基于 libcurl 的 HTTP/HTTPS GET/POST、状态码、headers 和 body 解析；运行时支持超时、重定向、压缩和自定义请求头，回归测试使用不联网的错误路径。
 
 本次自举打通修复的关键问题：
 
@@ -79,6 +81,8 @@ Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；�
 - 集合：整数列表字面量/索引/赋值/推导式、`for value in list[int]`、整数 tuple 字面量/解包、一元负号
 - 结构体：整数结构体构造/乱序初始化/字段访问、作为函数参数和返回值、模式匹配字段绑定
 - bytes 基础 ABI：`encode`/`decode`/`from_list`/`to_list`、索引、切片（链接用 `wrappers/bytes.c` 的 `__c_*` ABI）
+- 网络基础 ABI：`net.connect` 返回 `Connection`，支持 `connection.write(text)`、`connection.read()`、`connection.read_n(size)` 和 `connection.close()`；C 实现位于 `wrappers/net.c`，测试使用本地 loopback，不依赖公网
+- HTTP 基础：`http.get`、`http.post` 和 `http.request` 通过 libcurl 发送 HTTP/HTTPS 请求，返回 `Response{status, headers, body, error}`；headers 使用名称和值交替的 `list[str]`
 - match：`switch/case/default` 支持 int/bool/float/str；整数 `match`、通配符、`[tag, payload]` 基础 enum match（用户 enum + Some/None + Ok/Err）
 - 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/c/core/*.c` 和 `runtime/c/wrappers/*.c`
 - CLI 与格式：Stage 1/2 提供 `build`/`llvm`/`dir` CLI；宿主与 DM 统一输出正式 DreamIR 文本，typed record 仅为内部序列化 ABI，未映射指令以 `native llvm` 记录保留

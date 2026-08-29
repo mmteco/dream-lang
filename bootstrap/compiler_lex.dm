@@ -49,6 +49,7 @@ const TOKEN_CONS: int = 47
 const TOKEN_RUNE: int = 48
 const TOKEN_BREAK: int = 49
 const TOKEN_EPRINT: int = 50
+const TOKEN_IN: int = 51
 
 struct ParseContext:
     src: str
@@ -83,6 +84,7 @@ const VALUE_TYPE_UNKNOWN: int = 39
 const VALUE_TYPE_LIST_STRING: int = 40
 const VALUE_TYPE_LIST_INT: int = 41
 const VALUE_TYPE_STRUCT: int = 42
+const VALUE_TYPE_ENUM: int = 43
 
 
 const VALUE_TYPE_IMMEDIATE: int = 0
@@ -483,6 +485,8 @@ def keyword_kind(source: str, start: int, end: int) -> int:
         return TOKEN_BREAK
     if word == "for":
         return TOKEN_FOR
+    if word == "in":
+        return TOKEN_IN
     if word == "switch":
         return TOKEN_SWITCH
     if word == "case":
@@ -1158,6 +1162,8 @@ let STRUCT_DECLARATION_STARTS = []
 let STRUCT_DECLARATION_ENDS = []
 let STRUCT_DECLARATION_HASHES = []
 let STRUCT_DECLARATION_TOKENS = []
+let ENUM_DECLARATION_STARTS = []
+let ENUM_DECLARATION_ENDS = []
 let INTERFACE_DECLARATION_STARTS = []
 let INTERFACE_DECLARATION_ENDS = []
 
@@ -1166,6 +1172,8 @@ def collect_declared_types(source: str, kinds: list[int], starts: list[int], end
     STRUCT_DECLARATION_ENDS = []
     STRUCT_DECLARATION_HASHES = []
     STRUCT_DECLARATION_TOKENS = []
+    ENUM_DECLARATION_STARTS = []
+    ENUM_DECLARATION_ENDS = []
     INTERFACE_DECLARATION_STARTS = []
     INTERFACE_DECLARATION_ENDS = []
     let token_index = 0
@@ -1181,6 +1189,10 @@ def collect_declared_types(source: str, kinds: list[int], starts: list[int], end
                     append(STRUCT_DECLARATION_ENDS, token_end(ends, declaration_name_index))
                     append(STRUCT_DECLARATION_HASHES, __c_fnv_hash_range(source, token_start(starts, declaration_name_index), token_end(ends, declaration_name_index)))
                     append(STRUCT_DECLARATION_TOKENS, declaration_name_index)
+            if keyword_length == 4 and source_equals(source, keyword_start, keyword_end, "enum"):
+                if token_kind(kinds, declaration_name_index) == TOKEN_IDENTIFIER:
+                    append(ENUM_DECLARATION_STARTS, token_start(starts, declaration_name_index))
+                    append(ENUM_DECLARATION_ENDS, token_end(ends, declaration_name_index))
             if keyword_length == 9 and source_equals(source, keyword_start, keyword_end, "interface"):
                 if token_kind(kinds, declaration_name_index) == TOKEN_IDENTIFIER:
                     append(INTERFACE_DECLARATION_STARTS, token_start(starts, declaration_name_index))
@@ -1290,6 +1302,14 @@ def source_type_is_struct(source: str, kinds: list[int], starts: list[int], ends
         declaration_index = declaration_index + 1
     return false
 
+def source_type_is_enum(source: str, type_start: int, type_end: int) -> bool:
+    let declaration_index = 0
+    while declaration_index < len(ENUM_DECLARATION_STARTS):
+        if source_ranges_equal(source, ENUM_DECLARATION_STARTS[declaration_index], ENUM_DECLARATION_ENDS[declaration_index], type_start, type_end):
+            return true
+        declaration_index = declaration_index + 1
+    return false
+
 def source_type_is_interface(source: str, kinds: list[int], starts: list[int], ends: list[int], type_start: int, type_end: int) -> bool:
     let declaration_index = 0
     while declaration_index < len(INTERFACE_DECLARATION_STARTS):
@@ -1316,6 +1336,8 @@ def parameter_type_from_range(source: str, kinds: list[int], starts: list[int], 
     elif type_name == "int" or type_name == "rune" or type_name == "byte":
         found_type = VALUE_TYPE_INT
     if found_type == 0:
+        if source_type_is_enum(source, type_start, type_end):
+            return VALUE_TYPE_ENUM
         if source_type_is_interface(source, kinds, starts, ends, type_start, type_end):
             return VALUE_TYPE_INTERFACE
     return found_type
@@ -1329,6 +1351,8 @@ def get_parameter_type(source: str, kinds: list[int], starts: list[int], ends: l
     if parameter_type == VALUE_TYPE_LIST and token_kind(kinds, index + 1) == TOKEN_OPEN_BRACKET:
         let element_index = index + 2
         if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source[token_start(starts, element_index):token_end(ends, element_index)] == "str":
+            return VALUE_TYPE_LIST_STRING
+        if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source_type_is_enum(source, token_start(starts, element_index), token_end(ends, element_index)):
             return VALUE_TYPE_LIST_STRING
         return VALUE_TYPE_LIST_INT
     if parameter_type != 0:
@@ -1376,6 +1400,8 @@ def get_return_type(source: str, kinds: list[int], starts: list[int], ends: list
             let element_index = index + 2
             if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source[token_start(starts, element_index):token_end(ends, element_index)] == "str":
                 return VALUE_TYPE_LIST_STRING
+            if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source_type_is_enum(source, token_start(starts, element_index), token_end(ends, element_index)):
+                return VALUE_TYPE_LIST_STRING
             return VALUE_TYPE_LIST_INT
         return 3
     if source_equals(source, type_start, type_end, "dict"):
@@ -1390,6 +1416,8 @@ def get_return_type(source: str, kinds: list[int], starts: list[int], ends: list
         return 1
     if source_type_is_struct(source, kinds, starts, ends, type_start, type_end):
         return VALUE_TYPE_STRUCT
+    if source_type_is_enum(source, type_start, type_end):
+        return VALUE_TYPE_ENUM
     if source_type_is_interface(source, kinds, starts, ends, type_start, type_end):
         return VALUE_TYPE_INTERFACE
     return 1

@@ -73,9 +73,55 @@ def append_imported_module(imported_source: str, module_name: str, file_packages
     append(file_paths, "\n")
     return new_source
 
+def mask_source_range(source: str, start: int, end: int) -> str:
+    let masked = ""
+    let index = 0
+    while index < len(source):
+        if index >= start and index < end and source[index] != '\n':
+            masked = masked + " "
+        else:
+            masked = masked + source[index:index + 1]
+        index = index + 1
+    return masked
+
+def rewrite_module_namespace(source: str, module_names: str) -> str:
+    let rewritten_source = source
+    let kinds = []
+    let starts = []
+    let ends = []
+    lex(source, kinds, starts, ends)
+    let module_start = 0
+    let module_length = len(module_names)
+    while module_start < module_length:
+        let module_end = module_start
+        while module_end < module_length and module_names[module_end] != '\n':
+            module_end = module_end + 1
+        let module_name = module_names[module_start:module_end]
+        let token_index = 0
+        while token_kind(kinds, token_index) != TOKEN_EOF:
+            let token_start_offset = token_start(starts, token_index)
+            let token_end_offset = token_end(ends, token_index)
+            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset, token_end_offset, "import") and not (token_index > 1 and token_kind(kinds, token_index - 2) == TOKEN_IDENTIFIER and source_equals(source, token_start(starts, token_index - 2), token_end(ends, token_index - 2), "from")):
+                let line_end_index = token_index
+                while token_kind(kinds, line_end_index) != TOKEN_NEWLINE and token_kind(kinds, line_end_index) != TOKEN_EOF:
+                    line_end_index = line_end_index + 1
+                let line_end_offset = token_end_offset
+                if token_kind(kinds, line_end_index) == TOKEN_NEWLINE:
+                    line_end_offset = token_start(starts, line_end_index)
+                rewritten_source = mask_source_range(rewritten_source, token_start_offset, line_end_offset)
+            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset, token_end_offset, module_name):
+                let dot_index = token_index + 1
+                if token_kind(kinds, dot_index) == TOKEN_DOT:
+                    let dot_end_offset = token_end(ends, dot_index)
+                    rewritten_source = mask_source_range(rewritten_source, token_start_offset, dot_end_offset)
+            token_index = token_index + 1
+        module_start = module_end + 1
+    return rewritten_source
+
 def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: Buffer) -> str:
     let imported_source = ""
     let loaded_modules = ""
+    let namespace_modules = ""
     let scan_source = source
     let scan_round = 0
     let found_new_module = true
@@ -95,6 +141,16 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
                         imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends, file_paths)
                         loaded_modules = string_concat(loaded_modules, string_concat(module_name, "\n"))
                         found_new_module = true
+            if token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and scan_source[token_start(import_starts, token_index):token_end(import_ends, token_index)] == "import" and not (token_index > 1 and token_kind(import_kinds, token_index - 2) == TOKEN_IDENTIFIER and scan_source[token_start(import_starts, token_index - 2):token_end(import_ends, token_index - 2)] == "from"):
+                let module_index = token_index + 1
+                if token_kind(import_kinds, module_index) == TOKEN_IDENTIFIER:
+                    let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends, module_index)]
+                    if not module_is_loaded(loaded_modules, module_name):
+                        imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends, file_paths)
+                        loaded_modules = string_concat(loaded_modules, string_concat(module_name, "\n"))
+                        found_new_module = true
+                    if not module_is_loaded(namespace_modules, module_name):
+                        namespace_modules = string_concat(namespace_modules, string_concat(module_name, "\n"))
             token_index = token_index + 1
         if found_new_module:
             scan_source = imported_source
@@ -102,7 +158,8 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     let user_source_start = len(imported_source)
     if len(loaded_modules) != 0:
         user_source_start = user_source_start + 1
-        let final_source = string_concat(imported_source, string_concat("\n", source))
+        let rewritten_source = rewrite_module_namespace(source, namespace_modules)
+        let final_source = string_concat(imported_source, string_concat("\n", rewritten_source))
         append(file_packages, classify_package(source_path))
         append(file_starts, user_source_start)
         append(file_ends, len(final_source))
@@ -114,7 +171,7 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     append(file_ends, len(source))
     append(file_paths, source_path)
     append(file_paths, "\n")
-    return source
+    return rewrite_module_namespace(source, namespace_modules)
 
 def write_buffer(path: str, output: Buffer) -> int:
     let bytes = __c_bytes_from_array(output.data)

@@ -42,7 +42,7 @@ end
 function compile_llvm
     set output_file $argv[1]
     set llvm_file $argv[2]
-    if not clang $llvm_flags -O2 -flto=thin -o "$output_file" "$llvm_file" $runtime_sources -I "$runtime_dir/core" -I "$runtime_dir/wrappers"
+    if not clang $llvm_flags -O2 -flto=thin -o "$output_file" "$llvm_file" $runtime_sources -I "$runtime_dir/core" -I "$runtime_dir/wrappers" -lcurl
         echo '警告: clang -O2 + ThinLTO 失败' >&2
         return 1
     end
@@ -212,6 +212,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_bootstrap_bool.dm tmp/dream_bootstrap_bool true false false true
     check_bootstrapped_example test/test_bootstrap_elif_tail.dm tmp/dream_bootstrap_elif_tail 20
     check_bootstrapped_example test/test_string_add_dir.dm tmp/dream_bootstrap_string_add 'dream language' 'hello world' '[hello]'
+    check_bootstrapped_example test/test_in_dir.dm tmp/dream_bootstrap_in true false
     check_bootstrapped_example test/test_bootstrap_subset_dir.dm tmp/dream_bootstrap_subset 48 bootstrap
     check_bootstrapped_example test/test_const_dir.dm tmp/dream_bootstrap_const 42
     check_bootstrapped_example test/test_dict_dir.dm tmp/dream_bootstrap_dict_dir 10 25 2 two
@@ -229,6 +230,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_match_dir.dm tmp/dream_bootstrap_match_dir 100
     check_bootstrapped_example test/test_match_guard_dir.dm tmp/dream_bootstrap_match_guard_dir 2
     check_bootstrapped_example test/test_bytes_dir.dm tmp/dream_bootstrap_bytes 98 2 bc 120 2
+    check_bootstrapped_example test/test_http_dir.dm tmp/dream_bootstrap_http 0 'invalid HTTP method or URL' false 0 'only HTTP and HTTPS URLs are supported' 200 4 Content-Type text/plain X-Test yes text/plain hello true
     check_bootstrapped_example test/test_scalar_match_dir.dm tmp/dream_bootstrap_scalar_match 20 1 2 3
     check_bootstrapped_example test/test_switch_basic_types_dir.dm tmp/dream_bootstrap_switch_basic_types 25 1 1
     check_bootstrapped_example test/test_switch_multi_case.dm tmp/dream_bootstrap_switch_multi_case 10 10 20 0

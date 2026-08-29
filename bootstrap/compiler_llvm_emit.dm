@@ -1,5 +1,5 @@
 from compiler_lir_model import LirProgram, lir_record_count, lir_value_count, lir_record_offset, lir_value_offset, lir_value_type_in_function, lir_value_exists, lir_block_parameter_offset, LIR_RECORD_MODULE, LIR_RECORD_FUNCTION, LIR_RECORD_BLOCK, LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR, LIR_FUNCTION_ENTRY, LIR_EXTERNAL_BASE, LIR_TYPE_VOID, LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_PTR, LIR_TYPE_AGGREGATE, LIR_TYPE_DYNAMIC, LIR_TYPE_STR, LIR_TYPE_LIST, LIR_TYPE_BYTES, LIR_TYPE_DICT, LIR_TYPE_TUPLE, LIR_TYPE_STRUCT, LIR_OPERAND_VALUE, LIR_OPERAND_IMMEDIATE, LIR_OPERAND_BLOCK, LIR_OPERAND_TYPE, LIR_OPERAND_SYMBOL, LIR_OP_CONST, LIR_OP_COPY, LIR_OP_BINARY, LIR_OP_UNARY, LIR_OP_CALL, LIR_OP_RUNTIME_CALL, LIR_OP_SELECT, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE, LIR_OP_CAST, LIR_OP_BOUNDS_CHECK, LIR_OP_GLOBAL_LOAD, LIR_OP_GLOBAL_STORE, LIR_TERM_JUMP, LIR_TERM_BRANCH, LIR_TERM_SWITCH, LIR_TERM_RETURN, LIR_TERM_UNREACHABLE
-from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_AND, IR_OPERATOR_OR, IR_OPERATOR_NOT, IR_OPERATOR_POS, IR_OPERATOR_NEG
+from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_IN, IR_OPERATOR_AND, IR_OPERATOR_OR, IR_OPERATOR_NOT, IR_OPERATOR_POS, IR_OPERATOR_NEG
 from compiler_external import EXTERNAL_COUNT, EXTERNAL_ID_BASE, EXTERNAL_ID_APPEND, EXTERNAL_ID_LEN, external_llvm_name, external_return_type, external_has_declaration, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
 from buffer import Buffer
 
@@ -439,6 +439,19 @@ def llvm_lir_append_dynamic_boolean(program: LirProgram, offset: int, operator: 
         append(output, ", ")
         append(output, right_truthy)
         append(output, "\n")
+        return
+    if operator == IR_OPERATOR_IN and left_type == LIR_TYPE_STR and right_type == LIR_TYPE_STR:
+        append(output, "  %dynamic_find_")
+        append(output, offset)
+        append(output, " = call i32 @string_find(i8* ")
+        llvm_lir_append_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        append(output, ", i8* ")
+        llvm_lir_append_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        append(output, ")\n  ")
+        append(output, result_name)
+        append(output, " = icmp sge i32 %dynamic_find_")
+        append(output, offset)
+        append(output, ", 0\n")
         return
     if llvm_lir_is_pointer_like(left_type) and llvm_lir_is_pointer_like(right_type):
         append(output, "  %dynamic_compare_")

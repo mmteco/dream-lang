@@ -2,7 +2,7 @@
 # 节点索引 = 池中 kind 字段的下标;池首 dummy 节点(kind=0),真实节点 >= 1,0 表示"无节点"
 # 子节点区间 [child_start, child_end) 可走查:从 child_start 循环 ast_next_node 直到 child_end
 
-from compiler_lex import TOKEN_EOF, TOKEN_INTEGER, TOKEN_IDENTIFIER, TOKEN_LET, TOKEN_PRINT, TOKEN_PLUS, TOKEN_MINUS, TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_OPEN_PAREN, TOKEN_CLOSE_PAREN, TOKEN_ASSIGN, TOKEN_NEWLINE, TOKEN_DEF, TOKEN_RETURN, TOKEN_COLON, TOKEN_COMMA, TOKEN_ARROW, TOKEN_LESS, TOKEN_IF, TOKEN_ELIF, TOKEN_ELSE, TOKEN_WHILE, TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT, TOKEN_STRING, TOKEN_OPEN_BRACKET, TOKEN_CLOSE_BRACKET, TOKEN_EQUAL, TOKEN_NOT_EQUAL, TOKEN_LESS_EQUAL, TOKEN_GREATER_EQUAL, TOKEN_GREATER, TOKEN_AND, TOKEN_OR, TOKEN_MODULO, TOKEN_TRUE, TOKEN_FALSE, TOKEN_FOR, TOKEN_OPEN_BRACE, TOKEN_CLOSE_BRACE, TOKEN_DOT, TOKEN_QUESTION, TOKEN_FLOAT, TOKEN_NOT, TOKEN_CONS, TOKEN_RUNE, TOKEN_BREAK, TOKEN_EPRINT
+from compiler_lex import TOKEN_EOF, TOKEN_INTEGER, TOKEN_IDENTIFIER, TOKEN_LET, TOKEN_PRINT, TOKEN_PLUS, TOKEN_MINUS, TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_OPEN_PAREN, TOKEN_CLOSE_PAREN, TOKEN_ASSIGN, TOKEN_NEWLINE, TOKEN_DEF, TOKEN_RETURN, TOKEN_COLON, TOKEN_COMMA, TOKEN_ARROW, TOKEN_LESS, TOKEN_IF, TOKEN_ELIF, TOKEN_ELSE, TOKEN_WHILE, TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT, TOKEN_STRING, TOKEN_OPEN_BRACKET, TOKEN_CLOSE_BRACKET, TOKEN_EQUAL, TOKEN_NOT_EQUAL, TOKEN_LESS_EQUAL, TOKEN_GREATER_EQUAL, TOKEN_GREATER, TOKEN_AND, TOKEN_OR, TOKEN_MODULO, TOKEN_TRUE, TOKEN_FALSE, TOKEN_FOR, TOKEN_IN, TOKEN_OPEN_BRACE, TOKEN_CLOSE_BRACE, TOKEN_DOT, TOKEN_QUESTION, TOKEN_FLOAT, TOKEN_NOT, TOKEN_CONS, TOKEN_RUNE, TOKEN_BREAK, TOKEN_EPRINT
 
 # kind 编号按类别分组,组内连续,组间留空便于未来插入:
 # 表达式 1-31
@@ -536,6 +536,10 @@ def ast_validate_program(ast: list[int]) -> bool:
             __c_eprint_int(node)
             __c_eprint_text(" kind=")
             __c_eprint_int(ast_node_kind(ast, node))
+            __c_eprint_text(" start=")
+            __c_eprint_int(ast_node_start(ast, node))
+            __c_eprint_text(" end=")
+            __c_eprint_int(ast_node_end(ast, node))
             __c_eprint_text(" args=")
             let diagnostic_argument_index = 0
             while diagnostic_argument_index < ast_node_size(ast, node) - AST_HEADER_SIZE:
@@ -652,7 +656,7 @@ def ast_infix_binding_power(operator: int) -> (int, int):
         return (EXPR_BINDING_OR, EXPR_BINDING_OR + 1)
     if operator == TOKEN_AND:
         return (EXPR_BINDING_AND, EXPR_BINDING_AND + 1)
-    if operator == TOKEN_LESS or operator == TOKEN_EQUAL or operator == TOKEN_NOT_EQUAL or operator == TOKEN_LESS_EQUAL or operator == TOKEN_GREATER_EQUAL or operator == TOKEN_GREATER:
+    if operator == TOKEN_LESS or operator == TOKEN_EQUAL or operator == TOKEN_NOT_EQUAL or operator == TOKEN_LESS_EQUAL or operator == TOKEN_GREATER_EQUAL or operator == TOKEN_GREATER or operator == TOKEN_IN:
         return (EXPR_BINDING_COMPARE, EXPR_BINDING_COMPARE + 1)
     if operator == TOKEN_PLUS or operator == TOKEN_MINUS:
         return (EXPR_BINDING_ADD, EXPR_BINDING_ADD + 1)

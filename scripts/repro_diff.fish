@@ -104,7 +104,7 @@ if not test -x "$compiler_b"
     if test -f tmp/stage2.ll
         echo "提示: $compiler_b 不存在,正在从 tmp/stage2.ll 链接 ..."
         set runtime_sources (find runtime/c/core runtime/c/wrappers -type f -name '*.c' ! -path 'runtime/c/core/bytes.c' | sort)
-        if not clang -Wno-override-module -O2 -flto=thin -o "$compiler_b" tmp/stage2.ll $runtime_sources -I runtime/c/core -I runtime/c/wrappers
+        if not clang -Wno-override-module -O2 -flto=thin -o "$compiler_b" tmp/stage2.ll $runtime_sources -I runtime/c/core -I runtime/c/wrappers -lcurl
             echo "错误: 从 tmp/stage2.ll 链接被测编译器失败" >&2
             exit 1
         end
