@@ -1,9 +1,16 @@
 # 路径操作标准库
 
 def is_abs(value: str) -> bool:
-    if len(value) == 0:
-        return false
-    return value[0] == '/'
+    return value.startswith("/")
+
+def last_separator(value: str) -> int:
+    let result = -1
+    let index = 0
+    while index < len(value):
+        if value[index] == '/':
+            result = index
+        index = index + 1
+    return result
 
 def normalize(value: str) -> str:
     let absolute = is_abs(value)
@@ -57,31 +64,19 @@ def basename(value: str) -> str:
     if normalized == "/" or normalized == ".":
         return normalized
 
-    let last_separator = -1
-    let index = 0
-    while index < len(normalized):
-        if normalized[index] == '/':
-            last_separator = index
-        index = index + 1
-    return normalized[last_separator + 1:]
+    return normalized[last_separator(normalized) + 1:]
 
 def dirname(value: str) -> str:
     let normalized = normalize(value)
     if normalized == "/" or normalized == ".":
         return normalized
 
-    let last_separator = -1
-    let index = 0
-    while index < len(normalized):
-        if normalized[index] == '/':
-            last_separator = index
-        index = index + 1
-
-    if last_separator < 0:
+    let separator = last_separator(normalized)
+    if separator < 0:
         return "."
-    if last_separator == 0:
+    if separator == 0:
         return "/"
-    return normalized[:last_separator]
+    return normalized[:separator]
 
 def ext(value: str) -> str:
     let name = basename(value)

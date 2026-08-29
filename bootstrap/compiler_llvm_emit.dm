@@ -69,7 +69,7 @@ def llvm_lir_block_name(block: int) -> str:
     return llvm_lir_join_int("bb", block, "")
 
 def llvm_lir_block_ref_name(block: int) -> str:
-    return string_concat("%", llvm_lir_block_name(block))
+    return "%" + llvm_lir_block_name(block)
 
 def llvm_lir_function_name(function_index: int) -> str:
     return llvm_lir_join_int("@dm_function_", function_index, "")

@@ -762,8 +762,8 @@ def enclosing_method_prefix(source: str, kinds: list[int], starts: list[int], en
             if declaration_name == "struct":
                 if token_kind(kinds, scan_index + 1) == TOKEN_IDENTIFIER:
                     let struct_name = source[token_start(starts, scan_index + 1):token_end(ends, scan_index + 1)]
-                    let struct_suffix = string_concat(struct_name, "_")
-                    return string_concat("__dir_method_", struct_suffix)
+                    let struct_suffix = struct_name + "_"
+                    return "__dir_method_" + struct_suffix
                 return ""
             if declaration_name == "interface":
                 return ""
@@ -778,12 +778,12 @@ def enclosing_method_prefix(source: str, kinds: list[int], starts: list[int], en
                         if token_kind(kinds, interface_index) == TOKEN_IDENTIFIER and token_kind(kinds, target_index) == TOKEN_IDENTIFIER:
                             let interface_name = source[token_start(starts, interface_index):token_end(ends, interface_index)]
                             let target_name = source[token_start(starts, target_index):token_end(ends, target_index)]
-                            let target_suffix = string_concat(target_name, "_")
+                            let target_suffix = target_name + "_"
                             let separator = "_"
-                            let interface_target_name = string_concat(interface_name, separator)
-                            let interface_suffix = string_concat(interface_target_name, target_suffix)
+                            let interface_target_name = interface_name + separator
+                            let interface_suffix = interface_target_name + target_suffix
                             let implementation_prefix = "__dir_impl_"
-                            return string_concat(implementation_prefix, interface_suffix)
+                            return implementation_prefix + interface_suffix
                     target_keyword_index = target_keyword_index + 1
                 return ""
         scan_index = scan_index - 1
@@ -821,7 +821,7 @@ def function_symbol_name(source: str, kinds: list[int], starts: list[int], ends:
     if len(method_prefix) == 0:
         return source[function_name_start:function_name_end]
     let function_name = source[function_name_start:function_name_end]
-    return string_concat(method_prefix, function_name)
+    return method_prefix + function_name
 
 # 反查函数名所在 impl 行的接口泛型类型码；不在 impl 区段内返回 -1
 def enclosing_impl_interface_type(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> int:
@@ -961,8 +961,8 @@ def find_method_function_index(source: str, kinds: list[int], starts: list[int],
         let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
         if candidate_name == method_name:
             let candidate_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_starts[function_index])
-            let struct_suffix = string_concat(struct_name, "_")
-            let struct_prefix = string_concat("__dir_method_", struct_suffix)
+            let struct_suffix = struct_name + "_"
+            let struct_prefix = "__dir_method_" + struct_suffix
             if candidate_prefix == struct_prefix:
                 return function_index
             if len(candidate_prefix) > 0:
@@ -1033,10 +1033,10 @@ def interface_method_count(source: str, kinds: list[int], starts: list[int], end
     return 0
 
 def find_interface_method_function_index(source: str, kinds: list[int], starts: list[int], ends: list[int], interface_name: str, struct_name: str, method_name: str, function_starts: list[int], function_ends: list[int]) -> int:
-    let interface_target_prefix = string_concat(interface_name, "_")
-    let target_prefix = string_concat(interface_target_prefix, struct_name)
-    let target_prefix_with_separator = string_concat(target_prefix, "_")
-    let method_prefix_body = string_concat("__dir_impl_", target_prefix_with_separator)
+    let interface_target_prefix = interface_name + "_"
+    let target_prefix = interface_target_prefix + struct_name
+    let target_prefix_with_separator = target_prefix + "_"
+    let method_prefix_body = "__dir_impl_" + target_prefix_with_separator
     let function_index = 0
     while function_index < len(function_starts):
         let candidate_name = source[function_starts[function_index]:function_ends[function_index]]

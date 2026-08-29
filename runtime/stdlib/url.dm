@@ -27,33 +27,33 @@ def port_number(value: str) -> int:
 def parse(value: str) -> Url:
     let scheme = ""
     let rest = value
-    let scheme_end = string_find(value, "://")
+    let scheme_end = value.find("://")
     if scheme_end >= 0:
         scheme = value[:scheme_end]
         rest = value[scheme_end + 3:]
 
     let fragment = ""
-    let fragment_start = string_find(rest, "#")
+    let fragment_start = rest.find("#")
     if fragment_start >= 0:
         fragment = rest[fragment_start + 1:]
         rest = rest[:fragment_start]
 
     let query = ""
-    let query_start = string_find(rest, "?")
+    let query_start = rest.find("?")
     if query_start >= 0:
         query = rest[query_start + 1:]
         rest = rest[:query_start]
 
     let authority = rest
     let path = "/"
-    let path_start = string_find(rest, "/")
+    let path_start = rest.find("/")
     if path_start >= 0:
         authority = rest[:path_start]
         path = rest[path_start:]
 
     let host = authority
     let port = 0
-    let port_separator = string_find(authority, ":")
+    let port_separator = authority.find(":")
     if port_separator >= 0:
         host = authority[:port_separator]
         port = port_number(authority[port_separator + 1:])

@@ -40,13 +40,15 @@ def module_path(module_name: str) -> str:
         if path_end == path_length or configured_paths[path_end] == ':':
             if path_end > path_start:
                 let root = configured_paths[path_start:path_end]
-                let candidate = string_concat(string_concat(root, "/"), string_concat(module_name, ".dm"))
+                let candidate = root + "/"
+                candidate = candidate + module_name
+                candidate = candidate + ".dm"
                 if exists(candidate):
                     return candidate
             path_start = path_end + 1
         path_end = path_end + 1
-    let with_prefix = string_concat("runtime/stdlib/", module_name)
-    return string_concat(with_prefix, ".dm")
+    let with_prefix = "runtime/stdlib/" + module_name
+    return with_prefix + ".dm"
 
 def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
     let module_start = 0
@@ -64,7 +66,8 @@ def append_imported_module(imported_source: str, module_name: str, file_packages
     let imported_path = module_path(module_name)
     let module_source = read(imported_path)
     let start_offset = len(imported_source)
-    let new_source = string_concat(imported_source, string_concat(module_source, "\n"))
+    let new_source = imported_source + module_source
+    new_source = new_source + "\n"
     let end_offset = len(new_source)
     append(file_packages, classify_package(imported_path))
     append(file_starts, start_offset)
@@ -139,7 +142,8 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
                     let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends, module_index)]
                     if not module_is_loaded(loaded_modules, module_name):
                         imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends, file_paths)
-                        loaded_modules = string_concat(loaded_modules, string_concat(module_name, "\n"))
+                        loaded_modules = loaded_modules + module_name
+                        loaded_modules = loaded_modules + "\n"
                         found_new_module = true
             if token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and scan_source[token_start(import_starts, token_index):token_end(import_ends, token_index)] == "import" and not (token_index > 1 and token_kind(import_kinds, token_index - 2) == TOKEN_IDENTIFIER and scan_source[token_start(import_starts, token_index - 2):token_end(import_ends, token_index - 2)] == "from"):
                 let module_index = token_index + 1
@@ -147,10 +151,12 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
                     let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends, module_index)]
                     if not module_is_loaded(loaded_modules, module_name):
                         imported_source = append_imported_module(imported_source, module_name, file_packages, file_starts, file_ends, file_paths)
-                        loaded_modules = string_concat(loaded_modules, string_concat(module_name, "\n"))
+                        loaded_modules = loaded_modules + module_name
+                        loaded_modules = loaded_modules + "\n"
                         found_new_module = true
                     if not module_is_loaded(namespace_modules, module_name):
-                        namespace_modules = string_concat(namespace_modules, string_concat(module_name, "\n"))
+                        namespace_modules = namespace_modules + module_name
+                        namespace_modules = namespace_modules + "\n"
             token_index = token_index + 1
         if found_new_module:
             scan_source = imported_source
@@ -159,7 +165,8 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     if len(loaded_modules) != 0:
         user_source_start = user_source_start + 1
         let rewritten_source = rewrite_module_namespace(source, namespace_modules)
-        let final_source = string_concat(imported_source, string_concat("\n", rewritten_source))
+        let final_source = imported_source + "\n"
+        final_source = final_source + rewritten_source
         append(file_packages, classify_package(source_path))
         append(file_starts, user_source_start)
         append(file_ends, len(final_source))
@@ -476,7 +483,7 @@ def parse_build_arguments(argument_count: int):
     BA_is_valid = is_valid
 
 def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool:
-    let llvm_path = string_concat(output_path, ".ll")
+    let llvm_path = output_path + ".ll"
     if not compile_source(source_path, llvm_path, COMPILE_OUTPUT_LLVM):
         return false
     let is_built = build(llvm_path, output_path, is_optimized)
@@ -503,7 +510,7 @@ def main() -> int:
     if argument_count == 2:
         let command_name = arg(1)
         if command_name == "help" or command_name == "--help":
-            print(string_concat("用法: ", string_concat(arg(0), usage)))
+            print("用法: " + arg(0) + usage)
             return 0
     if argument_count >= 4 and arg(1) == "build" and arg(3) == "-o":
         if build_source(arg(2), arg(4), true):
@@ -529,5 +536,5 @@ def main() -> int:
         else:
             __c_eprint_text("error: use ast, hir, mir, lir, or llvm\n")
         return 1
-    print(string_concat("用法: ", string_concat(arg(0), usage)))
+    print("用法: " + arg(0) + usage)
     return 1

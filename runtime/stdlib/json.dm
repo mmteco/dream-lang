@@ -83,7 +83,7 @@ def json_read_unicode_escape() -> str:
         json_error("unexpected unicode low surrogate")
         return ""
 
-    return __c_bytes_to_str(__c_utf8_encode_rune(codepoint))
+    return __c_utf8_encode_rune(codepoint).decode()
 
 def json_parse_string() -> str:
     let result = ""

@@ -157,7 +157,7 @@ def external_llvm_name(external_id: int) -> str:
         return "@append_i32"
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
         return "@llvm.trap"
-    return string_concat("@", runtime_extern_at(EXTERN_NAMES, external_id - EXTERNAL_ID_BASE + 1))
+    return "@" + runtime_extern_at(EXTERN_NAMES, external_id - EXTERNAL_ID_BASE + 1)
 
 def external_return_type(external_id: int) -> int:
     if external_id < EXTERNAL_ID_BASE or external_id > EXTERNAL_ID_BASE + EXTERNAL_COUNT - 1:
