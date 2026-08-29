@@ -102,9 +102,27 @@
   - [ ] `range()`, `enumerate()`, `zip()`
   - [ ] `min()`, `max()`, `sum()`
 
-- [ ] I/O 模块
-  - [ ] 文件读写
-  - [ ] 标准输入
+- [ ] 网络 I/O 与爬虫标准库
+  - [x] `io`：文本/bytes 文件读写、追加、上下文管理
+  - [x] `path`：拼接、规范化、basename、dirname、扩展名
+  - [x] `url`：URL 拆解、构建、查询/片段和百分号编码
+  - [ ] `fs`：
+    - [x] 目录判断、创建、重命名和文件大小
+    - [ ] stat、目录遍历、删除和流式文件
+  - [ ] `time`：
+    - [x] 单调时钟与 elapsed
+    - [ ] 墙上时钟、sleep 和超时
+  - [ ] `encoding`：base64、常见字符集和 URL 编码补充
+  - [x] `json`：基础解析、序列化、递归数组/对象和 HTTP 数据模型
+    - [ ] `\u` 转义、严格数字规则和细分错误类型
+  - [x] `net`：TCP 连接、读取、写入和关闭
+    - [x] 基础阻塞式 TCP 客户端和 Dream `Connection` API
+  - [ ] `http`：GET/POST/request、headers、状态码、body、超时、重定向、代理、TLS
+    - [x] 基于 libcurl 的 HTTP/HTTPS GET/POST、状态码、headers、body 解析、超时、重定向和压缩
+  - [ ] `cookie`：Cookie/Set-Cookie 和会话管理
+  - [ ] `re`：正则表达式
+  - [ ] `html`：HTML 解析和选择器
+  - [ ] `sync`：并发、限速、重试、取消
 
 - [ ] 字符串模块
   - [ ] 正则表达式

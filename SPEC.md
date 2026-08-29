@@ -345,6 +345,24 @@ def add(a: int, b: int) -> int:
 # 类型: (int, int) -> int
 ```
 
+### 网络 I/O 标准库
+
+网络功能通过 `net` 模块提供阻塞式 TCP 客户端。连接建立失败时返回 `fd < 0` 的 `Connection`，调用方可用 `is_open()` 检查；读写失败以 `-1` 或空字符串表示，HTTP 等更高层协议应在此基础上补充结构化错误。
+
+```python
+from net import connect
+
+let connection = connect("example.com", 80)
+if connection.is_open():
+    connection.write("GET / HTTP/1.1\\r\\nHost: example.com\\r\\nConnection: close\\r\\n\\r\\n")
+    let response = connection.read()
+    connection.close()
+```
+
+`Connection.read()` 使用默认块大小；需要指定块大小时使用 `read_n(size)`。当前实现为同步阻塞式 TCP，不包含 TLS、超时、重定向和 HTTP 解析。
+
+HTTP 功能通过 `http` 模块提供。`http.get`、`http.post` 和 `http.request` 使用运行时 libcurl，支持 HTTP/HTTPS、重定向、压缩、请求头和超时，返回包含 `status`、交替名称和值的 `headers`、`body` 与 `error` 的 `Response`。底层 HTTP 请求不再由 Dream 代码手工拼接 TCP 报文。
+
 ### 类型推导
 
 Dream 使用 Hindley-Milner 类型推导算法：

@@ -117,6 +117,23 @@ Dream 使用自动内存管理，结合引用计数和分代垃圾回收：
 
 标准库 Runtime 函数直接链接到可执行文件中（`str_length`、`dynarray_push`、`dict_set`、`file_read`、`print_*` 等），另有 Dream 源码标准库 `runtime/stdlib/`（`ops.dm` 运算符重载接口、`io.dm` 文件 I/O 包装等）。
 
+## 网络 I/O 与爬虫标准库路线
+
+标准库的近期目标是支持网络 I/O、本地文件读写和爬虫脚本。当前 `io` 已能完成整文件文本/bytes 读写、追加、存在性检查和删除；`fs`、`path`、`url`、`time`、`net` 和 `http` 已提供对应的基础能力，但还不具备流式文件句柄和统一错误信息。
+
+路线按依赖关系分阶段推进：
+
+1. **基础数据与本地 I/O**：`path`、`fs`、`time`，补齐路径规范化、目录/文件元数据、标准时间和超时基础；保留 `io` 作为简洁的文件读写入口。当前 `fs` 已提供目录判断、创建、重命名和文件大小。
+2. **请求前置能力**：`url`、`encoding`、`json`，支持 URL 解析/构建、ASCII 百分号编码、常用编码和可用于 HTTP 的 JSON 值模型；UTF-8 完整编码放在 `encoding` 阶段。
+3. **网络客户端**：`net`、`http`，提供 TCP 基础、HTTP 方法/状态/headers/body、超时、重定向、代理、TLS 和压缩；底层优先接入成熟的系统/第三方 HTTP 实现。
+4. **爬虫支撑**：`cookie`、`re`、`html`、`sync`，提供会话状态、文本匹配、HTML 解析、并发/限速/重试和取消。
+
+API 设计遵循 Python 风格的短名称：常用路径操作使用 `path.join`、`path.basename`，URL 使用 `url.parse`/`url.build`，HTTP 使用 `http.get`/`http.post`/`http.request`。错误、超时和资源释放必须成为公共 API 的一部分；测试放在 `test/`，不放入 compiler 或 bootstrap 临时目录。
+
+版本策略：OCaml 宿主编译器作为 stage0 冻结；标准库和 Dream 编译器的后续开发使用 `scripts/bootstrap_manager.fish` 保存、切换和验证历史 stage2，新增代码只使用前一版本已经支持的语法。只有确认属于基础语法缺失时，才允许修改 OCaml 版本。
+
+当前执行阶段已完成 `path`、`url`、基于既有 ABI 的 `time.monotonic_ms`/`time.elapsed_ms`、通过自举 extern 扩展的 `fs` 基础操作、递归 JSON 基础解析/序列化、基础阻塞式 TCP 客户端 `net.Connection`，以及基于 libcurl 的 HTTP/HTTPS GET/POST 客户端，并有对应回归测试。下一阶段将补充 cookie、正则和 HTML 解析等爬虫支撑能力。
+
 ## 相关文档
 
 - [BOOTSTRAP.md](BOOTSTRAP.md) - 自举路线图（阶段定义、当前进度、架构原则、验证协议）
