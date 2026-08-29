@@ -92,7 +92,13 @@ def rewrite_module_namespace(source: str, module_names: str) -> str:
     let kinds = []
     let starts = []
     let ends = []
-    lex(source, kinds, starts, ends)
+    let tokens = TokenStream{
+        src: source,
+        kinds: kinds,
+        starts: starts,
+        ends: ends
+    }
+    lex(tokens)
     let module_start = 0
     let module_length = len(module_names)
     while module_start < module_length:
@@ -132,7 +138,13 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         let import_kinds = []
         let import_starts = []
         let import_ends = []
-        lex(scan_source, import_kinds, import_starts, import_ends)
+        let tokens = TokenStream{
+            src: scan_source,
+            kinds: import_kinds,
+            starts: import_starts,
+            ends: import_ends
+        }
+        lex(tokens)
         found_new_module = false
         let token_index = 0
         while token_kind(import_kinds, token_index) != TOKEN_EOF:
@@ -265,7 +277,13 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let kinds = []
     let starts = []
     let ends = []
-    lex(source, kinds, starts, ends)
+    let tokens = TokenStream{
+        src: source,
+        kinds: kinds,
+        starts: starts,
+        ends: ends
+    }
+    lex(tokens)
     phase_time = compiler_debug_checkpoint("lex", phase_time)
     let function_starts = []
     let function_ends = []
@@ -288,32 +306,95 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let parameter_default_indexes = []
     let parameter_annotation_starts: list[int] = []
     let parameter_annotation_ends: list[int] = []
+    let functions = FunctionTable{
+        starts: function_starts,
+        ends: function_ends,
+        bodies: function_bodies,
+        body_ends: function_body_ends,
+        param_offsets: function_param_offsets,
+        param_counts: function_param_counts,
+        param_starts: parameter_starts,
+        param_ends: parameter_ends,
+        param_types: parameter_types,
+        param_struct_decls: parameter_struct_decls,
+        return_types: function_return_types,
+        return_struct_decls: function_return_struct_decls,
+        default_indexes: parameter_default_indexes,
+        annotation_starts: parameter_annotation_starts,
+        annotation_ends: parameter_annotation_ends
+    }
+    let constants = ConstantTable{
+        starts: constant_starts,
+        ends: constant_ends,
+        values: constant_values,
+        types: constant_types,
+        literal_starts: constant_literal_starts,
+        literal_ends: constant_literal_ends
+    }
     let ast_nodes: list[int] = []
     let ast_function_nodes_start: list[int] = []
     let ast_function_nodes_end: list[int] = []
     let ast_global_nodes: list[int] = []
-    collect_declared_types(source, kinds, starts, ends)
-    collect_struct_fields(source, kinds, starts, ends)
-    collect_functions(source, kinds, starts, ends, function_starts, function_ends, function_bodies, function_body_ends, function_param_offsets, function_param_counts, parameter_starts, parameter_ends, parameter_types, parameter_struct_decls, function_return_types, function_return_struct_decls, parameter_default_indexes, parameter_annotation_starts, parameter_annotation_ends)
-    collect_constants(source, kinds, starts, ends, constant_starts, constant_ends, constant_values, constant_types, constant_literal_starts, constant_literal_ends)
+    collect_declared_types(tokens)
+    collect_struct_fields(tokens)
+    collect_functions(tokens, functions)
+    collect_constants(tokens, constants)
     let impl_func_indexes: list[int] = []
     let impl_func_decls: list[int] = []
     let impl_func_interface_types: list[int] = []
-    collect_impl_functions(source, kinds, starts, ends, function_starts, function_ends, impl_func_indexes, impl_func_decls, impl_func_interface_types)
+    let impls = ImplTable{
+        function_indexes: impl_func_indexes,
+        declaration_indexes: impl_func_decls,
+        interface_types: impl_func_interface_types
+    }
+    collect_impl_functions(tokens, functions, impls)
     let interface_name_starts: list[int] = []
     let interface_name_ends: list[int] = []
     let impl_function_indexes: list[int] = []
     let impl_decl_indexes: list[int] = []
     let impl_interface_name_starts: list[int] = []
     let impl_interface_name_ends: list[int] = []
-    collect_interfaces(source, kinds, starts, ends, function_starts, interface_name_starts, interface_name_ends, impl_function_indexes, impl_decl_indexes, impl_interface_name_starts, impl_interface_name_ends)
+    let interfaces = InterfaceTable{
+        name_starts: interface_name_starts,
+        name_ends: interface_name_ends,
+        function_indexes: impl_function_indexes,
+        declaration_indexes: impl_decl_indexes,
+        impl_name_starts: impl_interface_name_starts,
+        impl_name_ends: impl_interface_name_ends
+    }
+    collect_interfaces(tokens, functions, interfaces)
     phase_time = compiler_debug_checkpoint("collect", phase_time)
-    let parse_context = ParseContext{src: source, kinds: kinds, starts: starts, ends: ends, fn_starts: function_starts, fn_ends: function_ends, param_offsets: function_param_offsets, param_counts: function_param_counts, param_starts: parameter_starts, param_ends: parameter_ends, ret_types: function_return_types, pd: parameter_default_indexes, cst_starts: constant_starts, cst_ends: constant_ends, cst_values: constant_values, file_packages: file_packages, file_starts: file_starts, file_ends: file_ends}
+    let parse_context = ParseContext{
+        src: source,
+        kinds: kinds,
+        starts: starts,
+        ends: ends,
+        fn_starts: function_starts,
+        fn_ends: function_ends,
+        param_offsets: function_param_offsets,
+        param_counts: function_param_counts,
+        param_starts: parameter_starts,
+        param_ends: parameter_ends,
+        ret_types: function_return_types,
+        pd: parameter_default_indexes,
+        cst_starts: constant_starts,
+        cst_ends: constant_ends,
+        cst_values: constant_values,
+        file_packages: file_packages,
+        file_starts: file_starts,
+        file_ends: file_ends
+    }
     let global_let_name_starts = []
     let global_let_name_ends = []
     let global_let_collected_types = []
     let global_let_expression_indexes = []
-    collect_global_lets(source, kinds, starts, ends, global_let_name_starts, global_let_name_ends, global_let_collected_types, global_let_expression_indexes)
+    let globals = GlobalTable{
+        name_starts: global_let_name_starts,
+        name_ends: global_let_name_ends,
+        types: global_let_collected_types,
+        expression_indexes: global_let_expression_indexes
+    }
+    collect_global_lets(tokens, globals)
     let is_ast_valid = build_ast_compilation(parse_context, function_bodies, function_body_ends, global_let_expression_indexes, ast_nodes, ast_function_nodes_start, ast_function_nodes_end, ast_global_nodes)
     phase_time = compiler_debug_checkpoint("ast", phase_time)
     if not is_ast_valid:
@@ -469,7 +550,7 @@ def main() -> int:
     let usage = " build [--dev] <file.dm> [-o output] | ast/hir/mir/lir/llvm <input.dm> -o <output>"
     if argument_count == 2:
         let command_name = arg(1)
-        if command_name == "help" or command_name == "--help":
+        if command_name in ["help", "--help"]:
             print("用法: " + arg(0) + usage)
             return 0
     if argument_count >= 4 and arg(1) == "build" and arg(3) == "-o":

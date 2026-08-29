@@ -233,7 +233,7 @@ def lir_type_from_mir(type_tag: int) -> int:
         return LIR_TYPE_STRUCT
     if type_tag == MIR_TYPE_ENUM:
         return LIR_TYPE_PTR
-    if type_tag == MIR_TYPE_INTERFACE or type_tag == MIR_TYPE_UNION or type_tag == MIR_TYPE_CLOSURE:
+    if type_tag in [MIR_TYPE_INTERFACE, MIR_TYPE_UNION, MIR_TYPE_CLOSURE]:
         return LIR_TYPE_PTR
     if type_tag == MIR_TYPE_FUNCTION:
         return LIR_TYPE_PTR
@@ -252,9 +252,9 @@ def lir_opcode_from_mir(opcode: int) -> int:
         return LIR_OP_CALL
     if opcode == MIR_OP_SELECT:
         return LIR_OP_SELECT
-    if opcode == MIR_OP_LIST or opcode == MIR_OP_DICT or opcode == MIR_OP_TUPLE:
+    if opcode in [MIR_OP_LIST, MIR_OP_DICT, MIR_OP_TUPLE]:
         return LIR_OP_RUNTIME_CALL
-    if opcode == MIR_OP_INDEX or opcode == MIR_OP_SLICE:
+    if opcode in [MIR_OP_INDEX, MIR_OP_SLICE]:
         return LIR_OP_RUNTIME_CALL
     if opcode == MIR_OP_FIELD:
         return LIR_OP_EXTRACT
@@ -268,7 +268,7 @@ def lir_opcode_from_mir(opcode: int) -> int:
         return LIR_OP_CAST
     if opcode == MIR_OP_CLOSURE:
         return LIR_OP_CLOSURE
-    if opcode == MIR_OP_SEQUENCE or opcode == MIR_OP_ASSIGN:
+    if opcode in [MIR_OP_SEQUENCE, MIR_OP_ASSIGN]:
         return LIR_OP_COPY
     if opcode == MIR_OP_RUNTIME:
         return LIR_OP_RUNTIME_CALL
@@ -463,7 +463,7 @@ def lir_prepare_value_cache(program: LirProgram):
         if function_index >= 0 and result_value >= 0:
             let value_index = lir_value_cache_index(function_index, result_value)
             if value_index < len(lir_value_type_cache):
-                if program.records[offset] == LIR_RECORD_PARAMETER or program.records[offset] == LIR_RECORD_INSTRUCTION:
+                if program.records[offset] in [LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION]:
                     lir_value_type_cache[value_index] = program.records[offset + 4]
                 if program.records[offset] == LIR_RECORD_PARAMETER and program.records[offset + 2] >= 0:
                     lir_block_parameter_cache[value_index] = program.records[offset + 2]
@@ -483,7 +483,7 @@ def lir_value_type_in_function(records: list[int], function_index: int, value: i
     while record_id < lir_record_count(records):
         let offset = lir_record_offset(record_id)
         if records[offset + 1] == function_index and records[offset + 5] == value:
-            if records[offset] == LIR_RECORD_PARAMETER or records[offset] == LIR_RECORD_INSTRUCTION:
+            if records[offset] in [LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION]:
                 return records[offset + 4]
         record_id = record_id + 1
     return LIR_TYPE_DYNAMIC
@@ -497,7 +497,7 @@ def lir_value_exists(records: list[int], function_index: int, value: int) -> boo
     while record_id < lir_record_count(records):
         let offset = lir_record_offset(record_id)
         if records[offset + 1] == function_index and records[offset + 5] == value:
-            if records[offset] == LIR_RECORD_PARAMETER or records[offset] == LIR_RECORD_INSTRUCTION:
+            if records[offset] in [LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION]:
                 return true
         record_id = record_id + 1
     return false
@@ -684,7 +684,7 @@ def lir_validate_model_program(program: LirProgram) -> bool:
                 return lir_validation_error(record_id, "module owner")
         elif function_index < 0:
             return lir_validation_error(record_id, "missing function")
-        if kind == LIR_RECORD_BLOCK or kind == LIR_RECORD_INSTRUCTION or kind == LIR_RECORD_TERMINATOR:
+        if kind in [LIR_RECORD_BLOCK, LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR]:
             if block_index < 0:
                 return lir_validation_error(record_id, "block index")
         if kind == LIR_RECORD_FUNCTION:

@@ -184,7 +184,7 @@ def mir_opt_constant_fold(program: MirProgram) -> MirProgram:
             constant_keys = []
             constant_types = []
             constant_results = []
-        if record_kind == MIR_RECORD_INSTRUCTION and opcode == MIR_OP_CONST and (type_tag == MIR_TYPE_BOOL or type_tag == MIR_TYPE_I32):
+        if record_kind == MIR_RECORD_INSTRUCTION and opcode == MIR_OP_CONST and type_tag in [MIR_TYPE_BOOL, MIR_TYPE_I32]:
             let immediate: list[int] = [0]
             if mir_opt_read_constant(program, source_offset, 0, constant_flags, constant_values, immediate):
                 folded = true
@@ -356,7 +356,7 @@ def mir_opt_remove_unreachable(program: MirProgram) -> MirProgram:
             active_function = function_index
             reachable = mir_opt_reachable_blocks(program, function_index)
         let remove = false
-        if kind == MIR_RECORD_BLOCK or kind == MIR_RECORD_INSTRUCTION or kind == MIR_RECORD_TERMINATOR or kind == MIR_RECORD_PARAMETER and block >= 0:
+        if kind in [MIR_RECORD_BLOCK, MIR_RECORD_INSTRUCTION, MIR_RECORD_TERMINATOR] or kind == MIR_RECORD_PARAMETER and block >= 0:
             if block < 0:
                 remove = true
             elif block >= len(reachable):

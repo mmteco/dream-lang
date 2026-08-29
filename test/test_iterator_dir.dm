@@ -25,9 +25,13 @@ impl Iterable[int] for Source:
 
 def main():
     let source = Source{start: 2, end: 5}
+    print(3 in source)
+    print(8 in source)
     for value in source:
         print(value)
 
     let counter = Counter{current: [7], end: 9}
+    print(8 in counter)
+    print(6 in counter)
     for value in counter:
         print(value)

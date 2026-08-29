@@ -148,6 +148,24 @@ int get_dynarray_i32(dynarray_i32* arr, int index) {
     return arr->data[index];
 }
 
+int contains_dynarray_i32(dynarray_i32* arr, int value) {
+    if (arr == NULL) return 0;
+
+    for (int index = 0; index < arr->length; index++) {
+        if (arr->data[index] == value) return 1;
+    }
+    return 0;
+}
+
+int contains_dynarray_f64(dynarray_i32* arr, double value) {
+    if (arr == NULL || arr->length % 2 != 0) return 0;
+
+    for (int index = 0; index < arr->length / 2; index++) {
+        if (get_f64(arr, index) == value) return 1;
+    }
+    return 0;
+}
+
 double get_f64(dynarray_i32* arr, int index) {
     uint64_t low = (uint32_t)get_dynarray_i32(arr, index);
     uint64_t high = (uint32_t)get_dynarray_i32(arr, index + 1);
@@ -350,6 +368,17 @@ intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index) {
         return 0;
     }
     return arr->data[index];
+}
+
+int contains_dynarray_str(dynarray_ptr* arr, const char* value) {
+    if (arr == NULL) return 0;
+
+    const char* needle = value == NULL ? "" : value;
+    for (int index = 0; index < arr->length; index++) {
+        const char* item = (const char*)arr->data[index];
+        if (strcmp(item == NULL ? "" : item, needle) == 0) return 1;
+    }
+    return 0;
 }
 
 void set_dynarray_ptr(dynarray_ptr* arr, int index, const void* value) {

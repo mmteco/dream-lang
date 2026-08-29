@@ -688,7 +688,7 @@ expr:
       { EEnumVariant (enum_name, variant_name, args, { line = 0; column = 0 }) }
   | enum_name = IDENT DOT variant_name = IDENT
       { EEnumVariant (enum_name, variant_name, [], { line = 0; column = 0 }) }
-  | struct_name = IDENT LBRACE fields = separated_list(COMMA, struct_field_init) RBRACE
+  | struct_name = IDENT LBRACE fields = struct_field_list RBRACE
       { EStructLiteral (struct_name, fields, { line = 0; column = 0 }) }
   | MATCH e = expr COLON newline_sep INDENT cases = expr_case_list DEDENT
       { EMatch (e, cases, get_expr_pos e) }
@@ -715,6 +715,14 @@ dict_pair_list:
 
 struct_field_init:
   | name = IDENT COLON value = expr { (name, value) }
+
+struct_field_list:
+  | NEWLINE* { [] }
+  | NEWLINE* first = struct_field_init rest = struct_field_rest { first :: rest }
+
+struct_field_rest:
+  | NEWLINE* { [] }
+  | NEWLINE* COMMA fields = struct_field_list { fields }
 
 struct_pattern_field:
   | name = IDENT COLON p = pattern { (name, p) }

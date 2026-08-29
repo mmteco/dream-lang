@@ -417,6 +417,67 @@ and lower_bytes_contains function_builder collection needle position =
   set_block_params function_builder exit_label [(result, Bool)];
   { operand = Value result; ty = Bool }
 
+and lower_iterator_contains context function_builder environment iterable needle element_type position =
+  let iterator = match iterable.ty with
+    | Interface ("Iterator", _) -> iterable
+    | Interface ("Iterable", _) ->
+        lower_interface_call context function_builder environment iterable "iter" [] position
+    | Struct (struct_name, _) when Hashtbl.mem context.method_signatures
+        (struct_name ^ ".iter") ->
+        lower_method_call context function_builder environment iterable "iter" [] position
+    | Struct (struct_name, _) when Hashtbl.mem context.method_signatures
+        (struct_name ^ ".has_next") && Hashtbl.mem context.method_signatures
+        (struct_name ^ ".next") -> iterable
+    | actual_type -> fail_at position (Printf.sprintf
+        "in requires Iterator or Iterable, got %s" (Dir.ty_to_string actual_type))
+  in
+  let compare_item item =
+    match element_type with
+    | I32 | Bool | F64 ->
+        let result = fresh_value function_builder in
+        emit function_builder (Compare (result, Eq, item, needle.operand));
+        result
+    | Str ->
+        let comparison = fresh_value function_builder in
+        emit function_builder (StringCompare (comparison, item, needle.operand));
+        let result = fresh_value function_builder in
+        emit function_builder (Compare (result, Eq, Value comparison, Int 0));
+        result
+    | _ -> fail_at position (Printf.sprintf
+        "in does not support Iterator elements of type %s" (Dir.ty_to_string element_type))
+  in
+  let call_iterator_method method_name =
+    match iterator.ty with
+    | Interface _ ->
+        lower_interface_call context function_builder environment iterator method_name [] position
+    | Struct _ ->
+        lower_method_call context function_builder environment iterator method_name [] position
+    | _ -> fail_at position "invalid iterator value"
+  in
+  let condition_label = fresh_label function_builder "contains_condition" in
+  let body_label = fresh_label function_builder "contains_body" in
+  let step_label = fresh_label function_builder "contains_step" in
+  let exit_label = fresh_label function_builder "contains_exit" in
+  List.iter (create_block function_builder)
+    [condition_label; body_label; step_label; exit_label];
+  terminate function_builder (Jump (condition_label, []));
+  switch_to function_builder condition_label;
+  let has_next = call_iterator_method "has_next" in
+  expect_type position Bool has_next.ty "Iterator.has_next";
+  terminate function_builder (Branch (has_next.operand,
+    (body_label, []), (exit_label, [Bool false])));
+  switch_to function_builder body_label;
+  let item = call_iterator_method "next" in
+  let matches = compare_item item.operand in
+  terminate function_builder (Branch (Value matches,
+    (exit_label, [Bool true]), (step_label, [])));
+  switch_to function_builder step_label;
+  terminate function_builder (Jump (condition_label, []));
+  switch_to function_builder exit_label;
+  let result = fresh_value function_builder in
+  set_block_params function_builder exit_label [(result, Bool)];
+  { operand = Value result; ty = Bool }
+
 and lower_expr context function_builder environment expression =
   match expression with
   | EInt (value, _) -> { operand = Int value; ty = I32 }
@@ -516,6 +577,53 @@ and lower_expr context function_builder environment expression =
                 lower_list_contains function_builder right left element_type position
             | (I32 | Bool), Bytes ->
                 lower_bytes_contains function_builder right left position
+            | _, Interface ("Iterator", methods) ->
+                let element_type = match List.find_opt
+                    (fun (name, _, _) -> name = "next") methods with
+                  | Some (_, _, return_type) -> return_type
+                  | None -> fail_at position "Iterator.next method is missing"
+                in
+                lower_iterator_contains context function_builder environment right left
+                  element_type position
+            | _, Interface ("Iterable", methods) ->
+                let iterator_type = match List.find_opt
+                    (fun (name, _, _) -> name = "iter") methods with
+                  | Some (_, _, return_type) -> return_type
+                  | None -> fail_at position "Iterable.iter method is missing"
+                in
+                let element_type = match iterator_type with
+                  | Interface (_, iterator_methods) ->
+                      (match List.find_opt
+                         (fun (name, _, _) -> name = "next") iterator_methods with
+                       | Some (_, _, return_type) -> return_type
+                       | None -> fail_at position "Iterator.next method is missing")
+                  | _ -> fail_at position "Iterable.iter must return Iterator"
+                in
+                lower_iterator_contains context function_builder environment right left
+                  element_type position
+            | _, Struct (struct_name, _) when Hashtbl.mem context.method_signatures
+                (struct_name ^ ".iter") || Hashtbl.mem context.method_signatures
+                (struct_name ^ ".has_next") && Hashtbl.mem context.method_signatures
+                (struct_name ^ ".next") ->
+                let element_type = match right.ty with
+                  | Struct (name, _) ->
+                      (match Hashtbl.find_all context.method_signatures (name ^ ".next") with
+                       | binding :: _ -> binding.signature.return_type
+                       | [] ->
+                           (match Hashtbl.find_all context.method_signatures (name ^ ".iter") with
+                            | binding :: _ ->
+                                (match binding.signature.return_type with
+                                 | Interface (_, methods) ->
+                                     (match List.find_opt
+                                        (fun (method_name, _, _) -> method_name = "next") methods with
+                                      | Some (_, _, return_type) -> return_type
+                                      | None -> fail_at position "Iterator.next method is missing")
+                                 | _ -> fail_at position "Iterable.iter must return Iterator")
+                            | [] -> fail_at position "Iterator.next method is missing"))
+                  | _ -> fail_at position "invalid iterator type"
+                in
+                lower_iterator_contains context function_builder environment right left
+                  element_type position
             | _, Struct _ ->
                 lower_method_call context function_builder environment right "contains"
                   [left_expression] position

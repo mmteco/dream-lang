@@ -146,12 +146,12 @@ def hir_append_block_value(values: list[int], block_id: int):
 def hir_record_kind_from_ast(kind: int) -> int:
     if kind >= AST_PAT_WILDCARD and kind <= AST_PAT_STRUCT or kind == AST_M_CASE:
         return HIR_RECORD_PATTERN
-    if kind >= AST_STMT_LET and kind <= AST_STMT_BREAK or kind == AST_ELIF or kind == AST_CASE:
+    if kind >= AST_STMT_LET and kind <= AST_STMT_BREAK or kind in [AST_ELIF, AST_CASE]:
         return HIR_RECORD_STATEMENT
     return HIR_RECORD_EXPRESSION
 
 def hir_opcode_from_ast(kind: int) -> int:
-    if kind == AST_STMT_LET or kind == AST_STMT_LET_TUPLE:
+    if kind in [AST_STMT_LET, AST_STMT_LET_TUPLE]:
         return HIR_OP_LET
     if kind == AST_STMT_ASSIGN:
         return HIR_OP_ASSIGN
@@ -161,29 +161,29 @@ def hir_opcode_from_ast(kind: int) -> int:
         return HIR_OP_BREAK
     if kind == AST_STMT_EXPR:
         return HIR_OP_SEQUENCE
-    if kind == AST_STMT_IF or kind == AST_ELIF or kind == AST_EXPR_COND:
+    if kind in [AST_STMT_IF, AST_ELIF, AST_EXPR_COND]:
         return HIR_OP_IF
     if kind == AST_STMT_WHILE:
         return HIR_OP_WHILE
     if kind == AST_STMT_FOR:
         return HIR_OP_FOR
-    if kind == AST_STMT_SWITCH or kind == AST_CASE or kind == AST_EXPR_MATCH or kind == AST_M_CASE:
+    if kind in [AST_STMT_SWITCH, AST_CASE, AST_EXPR_MATCH, AST_M_CASE]:
         return HIR_OP_MATCH
     if kind >= AST_EXPR_INT and kind <= AST_EXPR_BOOL or kind >= AST_PAT_INT and kind <= AST_PAT_STRING:
         return HIR_OP_LITERAL
-    if kind == AST_EXPR_VAR or kind == AST_PAT_VAR:
+    if kind in [AST_EXPR_VAR, AST_PAT_VAR]:
         return HIR_OP_LOCAL
-    if kind == AST_EXPR_CALL or kind == AST_EXPR_METHOD_CALL:
+    if kind in [AST_EXPR_CALL, AST_EXPR_METHOD_CALL]:
         return HIR_OP_CALL
     if kind == AST_EXPR_PRINT:
         return HIR_OP_PRINT
-    if kind == AST_EXPR_BINARY or kind == AST_EXPR_LOGICAL:
+    if kind in [AST_EXPR_BINARY, AST_EXPR_LOGICAL]:
         return HIR_OP_BINARY
     if kind == AST_EXPR_UNARY:
         return HIR_OP_UNARY
     if kind == AST_EXPR_LAMBDA:
         return HIR_OP_LAMBDA
-    if kind == AST_EXPR_LIST or kind == AST_EXPR_LIST_COMP or kind == AST_PAT_LIST or kind == AST_PAT_CONS:
+    if kind in [AST_EXPR_LIST, AST_EXPR_LIST_COMP, AST_PAT_LIST, AST_PAT_CONS]:
         return HIR_OP_LIST
     if kind == AST_EXPR_DICT:
         return HIR_OP_DICT
@@ -195,22 +195,22 @@ def hir_opcode_from_ast(kind: int) -> int:
         return HIR_OP_SLICE
     if kind == AST_EXPR_ATTR:
         return HIR_OP_FIELD
-    if kind == AST_EXPR_STRUCT or kind == AST_PAT_STRUCT:
+    if kind in [AST_EXPR_STRUCT, AST_PAT_STRUCT]:
         return HIR_OP_STRUCT
-    if kind == AST_EXPR_ENUM or kind == AST_EXPR_BUILTIN_ENUM or kind == AST_PAT_ENUM or kind == AST_PAT_BUILTIN:
+    if kind in [AST_EXPR_ENUM, AST_EXPR_BUILTIN_ENUM, AST_PAT_ENUM, AST_PAT_BUILTIN]:
         return HIR_OP_ENUM
     return HIR_OP_NONE
 
 def hir_type_from_ast(kind: int) -> int:
-    if kind == AST_EXPR_INT or kind == AST_EXPR_RUNE or kind == AST_PAT_INT or kind == AST_PAT_RUNE:
+    if kind in [AST_EXPR_INT, AST_EXPR_RUNE, AST_PAT_INT, AST_PAT_RUNE]:
         return HIR_TYPE_I32
-    if kind == AST_EXPR_FLOAT or kind == AST_PAT_FLOAT:
+    if kind in [AST_EXPR_FLOAT, AST_PAT_FLOAT]:
         return HIR_TYPE_F64
-    if kind == AST_EXPR_STRING or kind == AST_PAT_STRING:
+    if kind in [AST_EXPR_STRING, AST_PAT_STRING]:
         return HIR_TYPE_STR
-    if kind == AST_EXPR_BOOL or kind == AST_PAT_BOOL:
+    if kind in [AST_EXPR_BOOL, AST_PAT_BOOL]:
         return HIR_TYPE_BOOL
-    if kind == AST_EXPR_LIST or kind == AST_EXPR_LIST_COMP or kind == AST_PAT_LIST or kind == AST_PAT_CONS:
+    if kind in [AST_EXPR_LIST, AST_EXPR_LIST_COMP, AST_PAT_LIST, AST_PAT_CONS]:
         return HIR_TYPE_LIST
     if kind == AST_EXPR_DICT:
         return HIR_TYPE_DICT
@@ -218,9 +218,9 @@ def hir_type_from_ast(kind: int) -> int:
         return HIR_TYPE_TUPLE
     if kind == AST_EXPR_LAMBDA:
         return HIR_TYPE_CLOSURE
-    if kind == AST_EXPR_STRUCT or kind == AST_PAT_STRUCT:
+    if kind in [AST_EXPR_STRUCT, AST_PAT_STRUCT]:
         return HIR_TYPE_STRUCT
-    if kind == AST_EXPR_ENUM or kind == AST_EXPR_BUILTIN_ENUM or kind == AST_PAT_ENUM or kind == AST_PAT_BUILTIN:
+    if kind in [AST_EXPR_ENUM, AST_EXPR_BUILTIN_ENUM, AST_PAT_ENUM, AST_PAT_BUILTIN]:
         return HIR_TYPE_ENUM
     return HIR_TYPE_DYNAMIC
 
@@ -234,7 +234,7 @@ def hir_type_from_annotation(source: str, name_start: int, name_end: int) -> int
     if type_start >= name_end:
         return HIR_TYPE_UNKNOWN
     let type_name = source[type_start:name_end]
-    if type_name == "int" or type_name == "rune" or type_name == "byte":
+    if type_name in ["int", "rune", "byte"]:
         return HIR_TYPE_I32
     if type_name == "bool":
         return HIR_TYPE_BOOL
@@ -244,13 +244,13 @@ def hir_type_from_annotation(source: str, name_start: int, name_end: int) -> int
         return HIR_TYPE_STR
     if type_name == "bytes":
         return HIR_TYPE_BYTES
-    if type_name == "list[int]" or type_name == "list[byte]" or type_name == "list[rune]":
+    if type_name in ["list[int]", "list[byte]", "list[rune]"]:
         return HIR_TYPE_LIST_INT
     if type_name == "list[str]" or (len(type_name) >= 6 and type_name[0:5] == "list[" and source_type_is_enum(source, type_start + 5, name_end - 1)):
         return HIR_TYPE_LIST
     if len(type_name) >= 5 and type_name[0:5] == "dict[":
         return HIR_TYPE_DICT
-    if type_name == "Result[int, str]" or type_name == "Result[int,str]":
+    if type_name in ["Result[int, str]", "Result[int,str]"]:
         return HIR_TYPE_ENUM
     if type_name == "Option[int]":
         return HIR_TYPE_ENUM
@@ -316,7 +316,7 @@ def hir_lower_ast_node(ast: list[int], node: int, records: list[int], values: li
         hir_append_ast_child(ast, ast_node_arg(ast, node, 0), records, values, payload, cache)
         hir_append_int(payload, ast_node_arg(ast, node, 1))
         hir_append_int(payload, ast_node_arg(ast, node, 2))
-    elif kind == AST_EXPR_BINARY or kind == AST_EXPR_LOGICAL:
+    elif kind in [AST_EXPR_BINARY, AST_EXPR_LOGICAL]:
         hir_append_int(payload, ir_binary_operator_from_token(ast_node_arg(ast, node, 0)))
         hir_append_ast_child(ast, ast_node_arg(ast, node, 1), records, values, payload, cache)
         hir_append_ast_child(ast, ast_node_arg(ast, node, 2), records, values, payload, cache)
@@ -328,7 +328,7 @@ def hir_lower_ast_node(ast: list[int], node: int, records: list[int], values: li
         hir_append_ast_child(ast, ast_node_arg(ast, node, 1), records, values, payload, cache)
         hir_append_ast_child(ast, ast_node_arg(ast, node, 2), records, values, payload, cache)
         hir_append_int(payload, ast_node_arg(ast, node, 3))
-    elif kind == AST_EXPR_LIST or kind == AST_EXPR_TUPLE:
+    elif kind in [AST_EXPR_LIST, AST_EXPR_TUPLE]:
         let count = ast_node_arg(ast, node, 0)
         hir_append_int(payload, count)
         let index = 0
@@ -403,7 +403,7 @@ def hir_lower_ast_node(ast: list[int], node: int, records: list[int], values: li
         hir_append_ast_block(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2), records, values, payload, cache)
         hir_append_ast_block(ast, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4), records, values, payload, cache)
         hir_append_ast_block(ast, ast_node_arg(ast, node, 5), ast_node_arg(ast, node, 6), records, values, payload, cache)
-    elif kind == AST_ELIF or kind == AST_STMT_WHILE:
+    elif kind in [AST_ELIF, AST_STMT_WHILE]:
         hir_append_ast_child(ast, ast_node_arg(ast, node, 0), records, values, payload, cache)
         hir_append_ast_block(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2), records, values, payload, cache)
     elif kind == AST_STMT_FOR:
@@ -451,9 +451,9 @@ def hir_validate_value(values: list[int], value_id: int, record_count: int) -> b
     let offset = hir_value_offset(value_id)
     let value_kind = values[offset]
     let value = values[offset + 1]
-    if value_kind == HIR_VALUE_NONE or value_kind == HIR_VALUE_INT:
+    if value_kind in [HIR_VALUE_NONE, HIR_VALUE_INT]:
         return true
-    if value_kind == HIR_VALUE_NODE or value_kind == HIR_VALUE_BLOCK:
+    if value_kind in [HIR_VALUE_NODE, HIR_VALUE_BLOCK]:
         return value >= 0 and value < record_count
     return false
 
@@ -760,7 +760,7 @@ def hir_diag_scan_statement(program: HirProgram, node: int, context: HirDiagnost
     let record_kind = program.records[offset]
     let opcode = program.records[offset + 1]
     result[0] = 0
-    if opcode == HIR_OP_RETURN or opcode == HIR_OP_BREAK or opcode == HIR_OP_CONTINUE:
+    if opcode in [HIR_OP_RETURN, HIR_OP_BREAK, HIR_OP_CONTINUE]:
         result[0] = 1
         return
     if record_kind == HIR_RECORD_STATEMENT and opcode == HIR_OP_IF and program.records[offset + 6] >= 4:
@@ -827,7 +827,7 @@ def hir_struct_field_line_type(source: str, line_start: int, line_end: int, name
     while type_start < line_end and source[type_start] == ' ':
         type_start = type_start + 1
     let type_name = source[type_start:line_end]
-    if type_name == "int" or type_name == "rune" or type_name == "byte":
+    if type_name in ["int", "rune", "byte"]:
         return HIR_TYPE_I32
     if type_name == "bool":
         return HIR_TYPE_BOOL
@@ -835,7 +835,7 @@ def hir_struct_field_line_type(source: str, line_start: int, line_end: int, name
         return HIR_TYPE_F64
     if type_name == "str":
         return HIR_TYPE_STR
-    if type_name == "list[int]" or type_name == "list[byte]" or type_name == "list[rune]":
+    if type_name in ["list[int]", "list[byte]", "list[rune]"]:
         return HIR_TYPE_LIST_INT
     if type_name == "list[str]":
         return HIR_TYPE_LIST
@@ -917,9 +917,9 @@ def hir_external_type_for_name(name: str) -> int:
         return HIR_TYPE_I32
     if name == "string_split":
         return HIR_TYPE_LIST
-    if name == "__c_file_read_bytes" or name == "__c_bytes_from_array" or name == "__c_bytes_slice" or name == "__c_str_to_bytes" or name == "__c_utf8_encode_rune":
+    if name in ["__c_file_read_bytes", "__c_bytes_from_array", "__c_bytes_slice", "__c_str_to_bytes", "__c_utf8_encode_rune"]:
         return HIR_TYPE_BYTES
-    if name == "__c_process_arg" or name == "__c_bytes_to_str":
+    if name in ["__c_process_arg", "__c_bytes_to_str"]:
         return HIR_TYPE_STR
     let external_id = external_id_from_name(name)
     if external_id < 0:
@@ -1175,7 +1175,7 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, functi
             return HIR_TYPE_BOOL
         let value_offset = hir_value_offset(payload_start + 1)
         return hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
-    if opcode == HIR_OP_LET or opcode == HIR_OP_ASSIGN:
+    if opcode in [HIR_OP_LET, HIR_OP_ASSIGN]:
         if opcode == HIR_OP_LET and payload_count > 4:
             let annotation_start_offset = hir_value_offset(payload_start + 2)
             let annotation_end_offset = hir_value_offset(payload_start + 3)
@@ -1205,7 +1205,7 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, functi
         let base_type = hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
         if base_type == HIR_TYPE_STR:
             return HIR_TYPE_STR
-        if base_type == HIR_TYPE_LIST or base_type == HIR_TYPE_LIST_INT:
+    if base_type in [HIR_TYPE_LIST, HIR_TYPE_LIST_INT]:
             return base_type
         if base_type == HIR_TYPE_BYTES:
             return HIR_TYPE_BYTES
@@ -1556,7 +1556,7 @@ def hir_type_from_collected_type(value_type: int) -> int:
         return HIR_TYPE_STR
     if value_type == 40:
         return HIR_TYPE_LIST
-    if value_type == 3 or value_type == 41:
+    if value_type in [3, 41]:
         return HIR_TYPE_LIST_INT
     if value_type == 42:
         return HIR_TYPE_STRUCT

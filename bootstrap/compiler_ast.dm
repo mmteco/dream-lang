@@ -656,11 +656,11 @@ def ast_infix_binding_power(operator: int) -> (int, int):
         return (EXPR_BINDING_OR, EXPR_BINDING_OR + 1)
     if operator == TOKEN_AND:
         return (EXPR_BINDING_AND, EXPR_BINDING_AND + 1)
-    if operator == TOKEN_LESS or operator == TOKEN_EQUAL or operator == TOKEN_NOT_EQUAL or operator == TOKEN_LESS_EQUAL or operator == TOKEN_GREATER_EQUAL or operator == TOKEN_GREATER or operator == TOKEN_IN:
+    if operator in [TOKEN_LESS, TOKEN_EQUAL, TOKEN_NOT_EQUAL, TOKEN_LESS_EQUAL, TOKEN_GREATER_EQUAL, TOKEN_GREATER, TOKEN_IN]:
         return (EXPR_BINDING_COMPARE, EXPR_BINDING_COMPARE + 1)
-    if operator == TOKEN_PLUS or operator == TOKEN_MINUS:
+    if operator in [TOKEN_PLUS, TOKEN_MINUS]:
         return (EXPR_BINDING_ADD, EXPR_BINDING_ADD + 1)
-    if operator == TOKEN_MULTIPLY or operator == TOKEN_DIVIDE or operator == TOKEN_MODULO:
+    if operator in [TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_MODULO]:
         return (EXPR_BINDING_MULTIPLY, EXPR_BINDING_MULTIPLY + 1)
     return (EXPR_BINDING_NONE, EXPR_BINDING_NONE)
 
@@ -686,7 +686,7 @@ def ast_append_unary_node(ast: list[int], operator: int, operand_node: int) -> i
 
 def ast_parse_unary(context: ParseContext, index: int, ast: list[int]) -> (int, int):
     let operator = token_kind(context.kinds, index)
-    if operator == TOKEN_NOT or operator == TOKEN_PLUS or operator == TOKEN_MINUS:
+    if operator in [TOKEN_NOT, TOKEN_PLUS, TOKEN_MINUS]:
         let operand_index = ast_next_index(index)
         let (next_index, operand_node) = ast_parse_unary(context, operand_index, ast)
         if operand_node == 0 or next_index <= index:
@@ -769,7 +769,7 @@ def ast_parse_expression_bp(context: ParseContext, index: int, min_binding_power
                 let (next_index, next_node) = ast_parse_expression_bp(context, right_index, right_binding_power, ast)
                 if next_node == 0 or next_index <= current_index:
                     return (index, 0)
-                if operator == TOKEN_AND or operator == TOKEN_OR:
+                if operator in [TOKEN_AND, TOKEN_OR]:
                     current_node = ast_append_logical_node(ast, operator, current_node, next_node)
                 else:
                     current_node = ast_append_binary_node(ast, operator, current_node, next_node)
@@ -1344,7 +1344,7 @@ def ast_parse_postfix(context: ParseContext, base_node: int, index: int, ast: li
         ast_set_arg(ast, attr_node, 2, method_name_end)
         let next_index = ast_advance_index(index, 2)
         let next_kind = token_kind(kinds, next_index)
-        if next_kind == TOKEN_OPEN_PAREN or next_kind == TOKEN_DOT or next_kind == TOKEN_OPEN_BRACKET:
+        if next_kind in [TOKEN_OPEN_PAREN, TOKEN_DOT, TOKEN_OPEN_BRACKET]:
             return ast_parse_postfix(context, attr_node, next_index, ast)
         return (next_index, attr_node)
     if kind == TOKEN_OPEN_BRACKET:
@@ -1697,7 +1697,7 @@ def ast_parse_pattern(context: ParseContext, index: int, ast: list[int]) -> (int
                 ast_set_arg(ast, enum_node, 4, payload_start)
                 ast_set_arg(ast, enum_node, 5, payload_end)
                 return (enum_node, pattern_end_index)
-            if token_kind(kinds, next_index) == TOKEN_OPEN_PAREN and (pattern_name == "Some" or pattern_name == "Ok" or pattern_name == "Err"):
+            if token_kind(kinds, next_index) == TOKEN_OPEN_PAREN and pattern_name in ["Some", "Ok", "Err"]:
                 let builtin_tag = 0
                 if pattern_name == "Err":
                     builtin_tag = 1

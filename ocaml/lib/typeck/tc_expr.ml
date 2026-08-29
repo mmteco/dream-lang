@@ -167,13 +167,33 @@ let rec infer_expr env = function
             | TyByte, TyBytes
             | TyInt, TyBytes -> Some (TyBool, s3)
             | needle_type, container_type ->
-                (match Env.find_impl_for_method container_type "Contains" "contains"
-                    [needle_type] env with
-                 | Some impl ->
-                     (match Env.StringMap.find_opt "contains" impl.impl_methods with
-                      | Some (TyFunc (_, TyBool)) -> Some (TyBool, s3)
-                      | _ -> None)
-                 | None -> None))  (* 尝试 Contains 接口 *)
+                let iterator_element_type =
+                  match container_type with
+                  | TyInterface ("Iterator", [element_type])
+                  | TyInterface ("Iterable", [element_type]) -> Some element_type
+                  | _ ->
+                      (match Env.find_impl_method_for_type container_type "next" env with
+                       | Some (TyFunc (_, element_type)) -> Some element_type
+                       | _ ->
+                           (match Env.find_impl_method_for_type container_type "iter" env with
+                            | Some (TyFunc (_, TyInterface ("Iterator", [element_type]))) ->
+                                Some element_type
+                            | _ -> None))
+                in
+                match iterator_element_type with
+                | Some element_type ->
+                    (try
+                       let s4 = unify needle_type element_type in
+                       Some (TyBool, compose_subst s4 s3)
+                     with Failure _ -> None)
+                | None ->
+                    (match Env.find_impl_for_method container_type "Contains" "contains"
+                        [needle_type] env with
+                     | Some impl ->
+                         (match Env.StringMap.find_opt "contains" impl.impl_methods with
+                          | Some (TyFunc (_, TyBool)) -> Some (TyBool, s3)
+                          | _ -> None)
+                     | None -> None))  (* 尝试 Iterator/Iterable 或 Contains 接口 *)
        | Eq | Neq | Lt | Gt | Lte | Gte ->
            (* 比较运算符：先尝试内置 *)
            (try

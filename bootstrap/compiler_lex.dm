@@ -144,6 +144,60 @@ const PACKAGE_STDLIB: int = 0
 const PACKAGE_BOOTSTRAP: int = 1
 const PACKAGE_USER: int = 2
 
+struct TokenStream:
+    src: str
+    kinds: list[int]
+    starts: list[int]
+    ends: list[int]
+
+struct NameRanges:
+    starts: list[int]
+    ends: list[int]
+
+struct FunctionTable:
+    starts: list[int]
+    ends: list[int]
+    bodies: list[int]
+    body_ends: list[int]
+    param_offsets: list[int]
+    param_counts: list[int]
+    param_starts: list[int]
+    param_ends: list[int]
+    param_types: list[int]
+    param_struct_decls: list[int]
+    return_types: list[int]
+    return_struct_decls: list[int]
+    default_indexes: list[int]
+    annotation_starts: list[int]
+    annotation_ends: list[int]
+
+struct ConstantTable:
+    starts: list[int]
+    ends: list[int]
+    values: list[int]
+    types: list[int]
+    literal_starts: list[int]
+    literal_ends: list[int]
+
+struct ImplTable:
+    function_indexes: list[int]
+    declaration_indexes: list[int]
+    interface_types: list[int]
+
+struct InterfaceTable:
+    name_starts: list[int]
+    name_ends: list[int]
+    function_indexes: list[int]
+    declaration_indexes: list[int]
+    impl_name_starts: list[int]
+    impl_name_ends: list[int]
+
+struct GlobalTable:
+    name_starts: list[int]
+    name_ends: list[int]
+    types: list[int]
+    expression_indexes: list[int]
+
 def classify_package(file_path: str) -> int:
     if string_starts_with(file_path, "runtime/stdlib/"):
         return PACKAGE_STDLIB
@@ -299,12 +353,15 @@ def closure_value_index(value_type: int) -> int:
 def lambda_value_index(value_type: int) -> int:
     return 0 - value_type - 1
 
-def collect_lambda_parameter_ranges(kinds: list[int], starts: list[int], ends: list[int], lambda_token_index: int, parameter_starts: list[int], parameter_ends: list[int]):
+def collect_lambda_parameter_ranges(tokens: TokenStream, lambda_token_index: int, parameters: NameRanges):
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let parameter_index = lambda_token_index + 2
     while token_kind(kinds, parameter_index) != TOKEN_CLOSE_PAREN and token_kind(kinds, parameter_index) != TOKEN_EOF:
         if token_kind(kinds, parameter_index) == TOKEN_IDENTIFIER and token_kind(kinds, parameter_index + 1) == TOKEN_COLON:
-            append(parameter_starts, token_start(starts, parameter_index))
-            append(parameter_ends, token_end(ends, parameter_index))
+            append(parameters.starts, token_start(starts, parameter_index))
+            append(parameters.ends, token_end(ends, parameter_index))
         parameter_index = parameter_index + 1
 
 def lambda_body_start(kinds: list[int], lambda_token_index: int) -> int:
@@ -318,9 +375,9 @@ def lambda_body_end(kinds: list[int], body_start: int) -> int:
     let nested_depth = 0
     while token_kind(kinds, body_index) != TOKEN_EOF:
         let body_kind = token_kind(kinds, body_index)
-        if body_kind == TOKEN_OPEN_PAREN or body_kind == TOKEN_OPEN_BRACKET or body_kind == TOKEN_OPEN_BRACE:
+        if body_kind in [TOKEN_OPEN_PAREN, TOKEN_OPEN_BRACKET, TOKEN_OPEN_BRACE]:
             nested_depth = nested_depth + 1
-        if body_kind == TOKEN_CLOSE_PAREN or body_kind == TOKEN_CLOSE_BRACKET or body_kind == TOKEN_CLOSE_BRACE:
+        if body_kind in [TOKEN_CLOSE_PAREN, TOKEN_CLOSE_BRACKET, TOKEN_CLOSE_BRACE]:
             if nested_depth == 0:
                 return body_index
             nested_depth = nested_depth - 1
@@ -331,7 +388,15 @@ def lambda_body_end(kinds: list[int], body_start: int) -> int:
         body_index = body_index + 1
     return body_index
 
-def collect_lambda_captures(source: str, kinds: list[int], starts: list[int], ends: list[int], body_start: int, body_end: int, parameter_starts: list[int], parameter_ends: list[int], capture_starts: list[int], capture_ends: list[int]):
+def collect_lambda_captures(tokens: TokenStream, body_start: int, body_end: int, parameters: NameRanges, captures: NameRanges):
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let parameter_starts = parameters.starts
+    let parameter_ends = parameters.ends
+    let capture_starts = captures.starts
+    let capture_ends = captures.ends
     let current_index = body_start
     while current_index < body_end and token_kind(kinds, current_index) != TOKEN_EOF:
         if token_kind(kinds, current_index) == TOKEN_IDENTIFIER:
@@ -339,18 +404,22 @@ def collect_lambda_captures(source: str, kinds: list[int], starts: list[int], en
             let current_name_end = token_end(ends, current_index)
             let current_name = source[current_name_start:current_name_end]
             if current_name == "lambda":
-                let nested_parameter_starts = []
-                let nested_parameter_ends = []
-                collect_lambda_parameter_ranges(kinds, starts, ends, current_index, nested_parameter_starts, nested_parameter_ends)
+                let nested_parameters = NameRanges{
+                    starts: [],
+                    ends: []
+                }
+                collect_lambda_parameter_ranges(tokens, current_index, nested_parameters)
                 let nested_body_start = lambda_body_start(kinds, current_index)
                 let nested_body_end = lambda_body_end(kinds, nested_body_start)
-                let nested_capture_starts = []
-                let nested_capture_ends = []
-                collect_lambda_captures(source, kinds, starts, ends, nested_body_start, nested_body_end, nested_parameter_starts, nested_parameter_ends, nested_capture_starts, nested_capture_ends)
+                let nested_captures = NameRanges{
+                    starts: [],
+                    ends: []
+                }
+                collect_lambda_captures(tokens, nested_body_start, nested_body_end, nested_parameters, nested_captures)
                 let nested_capture_index = 0
-                while nested_capture_index < len(nested_capture_starts):
-                    let nested_capture_start = nested_capture_starts[nested_capture_index]
-                    let nested_capture_end = nested_capture_ends[nested_capture_index]
+                while nested_capture_index < len(nested_captures.starts):
+                    let nested_capture_start = nested_captures.starts[nested_capture_index]
+                    let nested_capture_end = nested_captures.ends[nested_capture_index]
                     let nested_is_parameter = find_variable(source, nested_capture_start, nested_capture_end, parameter_starts, parameter_ends) >= 0
                     let is_existing_capture = find_variable(source, nested_capture_start, nested_capture_end, capture_starts, capture_ends) >= 0
                     if not nested_is_parameter and not is_existing_capture:
@@ -362,14 +431,18 @@ def collect_lambda_captures(source: str, kinds: list[int], starts: list[int], en
                 let direct_is_parameter = find_variable(source, current_name_start, current_name_end, parameter_starts, parameter_ends) >= 0
                 let is_call_name = token_kind(kinds, current_index + 1) == TOKEN_OPEN_PAREN
                 let is_keyword_name = false
-                if current_name == "if" or current_name == "else" or current_name == "match" or current_name == "true" or current_name == "false":
+                if current_name in ["if", "else", "match", "true", "false"]:
                     is_keyword_name = true
                 if current_name != "_" and not direct_is_parameter and not is_call_name and not is_keyword_name and find_variable(source, current_name_start, current_name_end, capture_starts, capture_ends) < 0:
                     append(capture_starts, current_name_start)
                     append(capture_ends, current_name_end)
         current_index = current_index + 1
 
-def enclosing_lambda_token_index(source: str, kinds: list[int], starts: list[int], ends: list[int], token_index: int) -> int:
+def enclosing_lambda_token_index(tokens: TokenStream, token_index: int) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let current_index = 0
     let enclosing_index = -1
     while current_index < token_index and token_kind(kinds, current_index) != TOKEN_EOF:
@@ -387,7 +460,7 @@ def lambda_capture_expression_type(kinds: list[int], value_index: int) -> int:
         return VALUE_TYPE_STRING
     if value_kind == TOKEN_FLOAT:
         return VALUE_TYPE_FLOAT
-    if value_kind == TOKEN_TRUE or value_kind == TOKEN_FALSE:
+    if value_kind in [TOKEN_TRUE, TOKEN_FALSE]:
         return VALUE_TYPE_BOOL
     if value_kind == TOKEN_OPEN_BRACKET:
         return VALUE_TYPE_LIST
@@ -397,7 +470,11 @@ def lambda_capture_expression_type(kinds: list[int], value_index: int) -> int:
         return VALUE_TYPE_BOOL
     return VALUE_TYPE_INT
 
-def lambda_capture_type(source: str, kinds: list[int], starts: list[int], ends: list[int], lambda_token_index: int, capture_start: int, capture_end: int) -> int:
+def lambda_capture_type(tokens: TokenStream, lambda_token_index: int, capture_start: int, capture_end: int) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let function_definition_index = lambda_token_index - 1
     while function_definition_index >= 0 and token_kind(kinds, function_definition_index) != TOKEN_DEF:
         function_definition_index = function_definition_index - 1
@@ -413,7 +490,7 @@ def lambda_capture_type(source: str, kinds: list[int], starts: list[int], ends: 
                     let assignment_index = annotation_index
                     while token_kind(kinds, assignment_index) != TOKEN_ASSIGN and token_kind(kinds, assignment_index) != TOKEN_EOF:
                         assignment_index = assignment_index + 1
-                    let annotation_type = get_parameter_type(source, kinds, starts, ends, annotation_index)
+                    let annotation_type = get_parameter_type(tokens, annotation_index)
                     if annotation_type != VALUE_TYPE_IMMEDIATE:
                         return annotation_type
                     value_index = assignment_index + 1
@@ -427,20 +504,21 @@ def lambda_capture_type(source: str, kinds: list[int], starts: list[int], ends: 
             let parameter_name_start = token_start(starts, parameter_index)
             let parameter_name_end = token_end(ends, parameter_index)
             if source_ranges_equal(source, parameter_name_start, parameter_name_end, capture_start, capture_end) and token_kind(kinds, parameter_index + 1) == TOKEN_COLON:
-                let parameter_type = get_parameter_type(source, kinds, starts, ends, parameter_index + 2)
+                let parameter_type = get_parameter_type(tokens, parameter_index + 2)
                 if parameter_type != VALUE_TYPE_IMMEDIATE:
                     return parameter_type
                 return VALUE_TYPE_INT
         parameter_index = parameter_index + 1
     return VALUE_TYPE_INT
 
-def lambda_parameter_type(source: str, kinds: list[int], starts: list[int], ends: list[int], lambda_token_index: int, parameter_number: int) -> int:
+def lambda_parameter_type(tokens: TokenStream, lambda_token_index: int, parameter_number: int) -> int:
+    let kinds = tokens.kinds
     let parameter_index = lambda_token_index + 2
     let current_parameter_number = 0
     while token_kind(kinds, parameter_index) != TOKEN_CLOSE_PAREN and token_kind(kinds, parameter_index) != TOKEN_EOF:
         if token_kind(kinds, parameter_index) == TOKEN_IDENTIFIER and token_kind(kinds, parameter_index + 1) == TOKEN_COLON:
             if current_parameter_number == parameter_number:
-                return get_parameter_type(source, kinds, starts, ends, parameter_index + 2)
+                return get_parameter_type(tokens, parameter_index + 2)
             current_parameter_number = current_parameter_number + 1
         parameter_index = parameter_index + 1
     return VALUE_TYPE_INT
@@ -507,13 +585,17 @@ def keyword_kind(source: str, start: int, end: int) -> int:
         return TOKEN_FALSE
     return TOKEN_IDENTIFIER
 
-def lex(source: str, kinds: list[int], starts: list[int], ends: list[int]) -> int:
+def lex(tokens: TokenStream) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let index = 0
     let source_length = len(source)
     while index < source_length:
         let code = ord(source[index])
         let handled = false
-        if code == ASCII_SPACE or code == ASCII_TAB or code == ASCII_CARRIAGE_RETURN:
+        if code in [ASCII_SPACE, ASCII_TAB, ASCII_CARRIAGE_RETURN]:
             index = index + 1
             handled = true
         if not handled and code == ASCII_LINE_FEED:
@@ -531,7 +613,7 @@ def lex(source: str, kinds: list[int], starts: list[int], ends: list[int]) -> in
             let number_start = index
             let is_hex = false
             if code == ASCII_DIGIT_ZERO and index + 1 < source_length:
-                if source[index + 1] == 'x' or source[index + 1] == 'X':
+                if source[index + 1] in ['x', 'X']:
                     is_hex = true
                     index = index + 2
                     while index < source_length and is_hex_digit(ord(source[index])):
@@ -745,7 +827,11 @@ def line_indent(source: str, position: int) -> int:
         current_position = current_position + 1
     return result
 
-def enclosing_method_prefix(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> str:
+def enclosing_method_prefix(tokens: TokenStream, function_name_start: int) -> str:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     if line_indent(source, function_name_start) == 0:
         return ""
     let function_token_index = 0
@@ -773,7 +859,7 @@ def enclosing_method_prefix(source: str, kinds: list[int], starts: list[int], en
                 let interface_index = scan_index + 1
                 let target_keyword_index = interface_index + 1
                 while token_kind(kinds, target_keyword_index) != TOKEN_COLON and token_kind(kinds, target_keyword_index) != TOKEN_EOF:
-                    if (token_kind(kinds, target_keyword_index) == TOKEN_IDENTIFIER or token_kind(kinds, target_keyword_index) == TOKEN_FOR) and source[token_start(starts, target_keyword_index):token_end(ends, target_keyword_index)] == "for":
+                    if token_kind(kinds, target_keyword_index) in [TOKEN_IDENTIFIER, TOKEN_FOR] and source[token_start(starts, target_keyword_index):token_end(ends, target_keyword_index)] == "for":
                         let target_index = target_keyword_index + 1
                         if token_kind(kinds, interface_index) == TOKEN_IDENTIFIER and token_kind(kinds, target_index) == TOKEN_IDENTIFIER:
                             let interface_name = source[token_start(starts, interface_index):token_end(ends, interface_index)]
@@ -789,7 +875,11 @@ def enclosing_method_prefix(source: str, kinds: list[int], starts: list[int], en
         scan_index = scan_index - 1
     return ""
 
-def enclosing_self_struct_declaration(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> int:
+def enclosing_self_struct_declaration(tokens: TokenStream, function_name_start: int) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let function_token_index = 0
     let function_token_found = false
     while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
@@ -811,20 +901,25 @@ def enclosing_self_struct_declaration(source: str, kinds: list[int], starts: lis
                         return find_struct_declaration_index(source, token_start(starts, target_keyword_index + 1), token_end(ends, target_keyword_index + 1))
                     target_keyword_index = target_keyword_index + 1
                 return -1
-            if declaration_name == "interface" or declaration_name == "def":
+            if declaration_name in ["interface", "def"]:
                 return -1
         scan_index = scan_index - 1
     return -1
 
-def function_symbol_name(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int, function_name_end: int) -> str:
-    let method_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_name_start)
+def function_symbol_name(tokens: TokenStream, function_name_start: int, function_name_end: int) -> str:
+    let source = tokens.src
+    let method_prefix = enclosing_method_prefix(tokens, function_name_start)
     if len(method_prefix) == 0:
         return source[function_name_start:function_name_end]
     let function_name = source[function_name_start:function_name_end]
     return method_prefix + function_name
 
 # 反查函数名所在 impl 行的接口泛型类型码；不在 impl 区段内返回 -1
-def enclosing_impl_interface_type(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> int:
+def enclosing_impl_interface_type(tokens: TokenStream, function_name_start: int) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let function_token_index = 0
     let function_token_found = false
     while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
@@ -873,29 +968,42 @@ def enclosing_impl_interface_type(source: str, kinds: list[int], starts: list[in
                 if inner_text == "bytes":
                     return 5
                 return -1
-            if declaration_name == "struct" or declaration_name == "interface" or declaration_name == "def":
+            if declaration_name in ["struct", "interface", "def"]:
                 return -1
         scan_index = scan_index - 1
     return -1
 
 # 收集所有 impl 区段内 append 方法的分发表：结构体声明下标、接口泛型类型码、函数索引
-def collect_impl_functions(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], function_ends: list[int], impl_func_indexes: list[int], impl_func_decls: list[int], impl_func_interface_types: list[int]):
+def collect_impl_functions(tokens: TokenStream, functions: FunctionTable, impls: ImplTable):
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let function_starts = functions.starts
+    let function_ends = functions.ends
+    let impl_func_indexes = impls.function_indexes
+    let impl_func_decls = impls.declaration_indexes
+    let impl_func_interface_types = impls.interface_types
     let function_index = 0
     while function_index < len(function_starts):
         let function_name_start = function_starts[function_index]
         let function_name_end = function_ends[function_index]
         if source[function_name_start:function_name_end] == "append":
-            let declaration_index = enclosing_self_struct_declaration(source, kinds, starts, ends, function_name_start)
+            let declaration_index = enclosing_self_struct_declaration(tokens, function_name_start)
             if declaration_index >= 0:
-                let interface_type = enclosing_impl_interface_type(source, kinds, starts, ends, function_name_start)
+                let interface_type = enclosing_impl_interface_type(tokens, function_name_start)
                 if interface_type >= 0:
                     append(impl_func_indexes, function_index)
                     append(impl_func_decls, declaration_index)
                     append(impl_func_interface_types, interface_type)
         function_index = function_index + 1
 
-def enclosing_impl_interface_range(source: str, kinds: list[int], starts: list[int], ends: list[int], function_name_start: int) -> (int, int):
+def enclosing_impl_interface_range(tokens: TokenStream, function_name_start: int) -> (int, int):
     # 函数所在 impl 块的接口名区间；非 impl 方法返回 (-1, -1)
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let function_token_index = 0
     let function_token_found = false
     while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
@@ -910,12 +1018,23 @@ def enclosing_impl_interface_range(source: str, kinds: list[int], starts: list[i
                 if token_kind(kinds, scan_index + 1) == TOKEN_IDENTIFIER:
                     return (token_start(starts, scan_index + 1), token_end(ends, scan_index + 1))
                 return (-1, -1)
-            if declaration_name == "struct" or declaration_name == "interface" or declaration_name == "def":
+            if declaration_name in ["struct", "interface", "def"]:
                 return (-1, -1)
         scan_index = scan_index - 1
     return (-1, -1)
 
-def collect_interfaces(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], interface_name_starts: list[int], interface_name_ends: list[int], impl_function_indexes: list[int], impl_decl_indexes: list[int], impl_interface_name_starts: list[int], impl_interface_name_ends: list[int]):
+def collect_interfaces(tokens: TokenStream, functions: FunctionTable, interfaces: InterfaceTable):
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let function_starts = functions.starts
+    let interface_name_starts = interfaces.name_starts
+    let interface_name_ends = interfaces.name_ends
+    let impl_function_indexes = interfaces.function_indexes
+    let impl_decl_indexes = interfaces.declaration_indexes
+    let impl_interface_name_starts = interfaces.impl_name_starts
+    let impl_interface_name_ends = interfaces.impl_name_ends
     # 收集接口声明名与 impl 方法分发表（函数索引、struct 声明、接口名区间）
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
@@ -925,9 +1044,9 @@ def collect_interfaces(source: str, kinds: list[int], starts: list[int], ends: l
         token_index = token_index + 1
     let function_index = 0
     while function_index < len(function_starts):
-        let declaration_index = enclosing_self_struct_declaration(source, kinds, starts, ends, function_starts[function_index])
+        let declaration_index = enclosing_self_struct_declaration(tokens, function_starts[function_index])
         if declaration_index >= 0:
-            let (interface_start, interface_end) = enclosing_impl_interface_range(source, kinds, starts, ends, function_starts[function_index])
+            let (interface_start, interface_end) = enclosing_impl_interface_range(tokens, function_starts[function_index])
             if interface_start >= 0:
                 append(impl_function_indexes, function_index)
                 append(impl_decl_indexes, declaration_index)
@@ -935,7 +1054,10 @@ def collect_interfaces(source: str, kinds: list[int], starts: list[int], ends: l
                 append(impl_interface_name_ends, interface_end)
         function_index = function_index + 1
 
-def function_has_body(source: str, kinds: list[int], starts: list[int], body_start: int, body_end: int, function_name_start: int) -> bool:
+def function_has_body(tokens: TokenStream, body_start: int, body_end: int, function_name_start: int) -> bool:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
     let definition_indent = line_indent(source, function_name_start)
     let current_index = body_start
     while current_index < body_end:
@@ -944,7 +1066,11 @@ def function_has_body(source: str, kinds: list[int], starts: list[int], body_sta
         current_index = current_index + 1
     return false
 
-def find_struct_name_for_variable(source: str, kinds: list[int], starts: list[int], ends: list[int], name_start: int, name_end: int) -> str:
+def find_struct_name_for_variable(tokens: TokenStream, name_start: int, name_end: int) -> str:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
         if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_ranges_equal(source, token_start(starts, token_index), token_end(ends, token_index), name_start, name_end):
@@ -955,12 +1081,15 @@ def find_struct_name_for_variable(source: str, kinds: list[int], starts: list[in
         token_index = token_index + 1
     return ""
 
-def find_method_function_index(source: str, kinds: list[int], starts: list[int], ends: list[int], struct_name: str, method_name: str, function_starts: list[int], function_ends: list[int]) -> int:
+def find_method_function_index(tokens: TokenStream, struct_name: str, method_name: str, functions: FunctionTable) -> int:
+    let source = tokens.src
+    let function_starts = functions.starts
+    let function_ends = functions.ends
     let function_index = 0
     while function_index < len(function_starts):
         let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
         if candidate_name == method_name:
-            let candidate_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_starts[function_index])
+            let candidate_prefix = enclosing_method_prefix(tokens, function_starts[function_index])
             let struct_suffix = struct_name + "_"
             let struct_prefix = "__dir_method_" + struct_suffix
             if candidate_prefix == struct_prefix:
@@ -970,24 +1099,36 @@ def find_method_function_index(source: str, kinds: list[int], starts: list[int],
         function_index = function_index + 1
     return -1
 
-def find_interface_name_for_variable(source: str, kinds: list[int], starts: list[int], ends: list[int], name_start: int, name_end: int) -> str:
+def find_interface_name_for_variable(tokens: TokenStream, name_start: int, name_end: int) -> str:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
         if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_ranges_equal(source, token_start(starts, token_index), token_end(ends, token_index), name_start, name_end):
             if token_kind(kinds, token_index + 1) == TOKEN_COLON and token_kind(kinds, token_index + 2) == TOKEN_IDENTIFIER:
                 let type_start = token_start(starts, token_index + 2)
                 let type_end = token_end(ends, token_index + 2)
-                if source_type_is_interface(source, kinds, starts, ends, type_start, type_end):
+                if source_type_is_interface(tokens, type_start, type_end):
                     return source[type_start:type_end]
         token_index = token_index + 1
     return ""
 
-def struct_name_for_literal(source: str, kinds: list[int], starts: list[int], ends: list[int], expression_index: int) -> str:
+def struct_name_for_literal(tokens: TokenStream, expression_index: int) -> str:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     if token_kind(kinds, expression_index) == TOKEN_IDENTIFIER and token_kind(kinds, expression_index + 1) == TOKEN_OPEN_BRACE:
         return source[token_start(starts, expression_index):token_end(ends, expression_index)]
     return ""
 
-def interface_method_index(source: str, kinds: list[int], starts: list[int], ends: list[int], interface_name: str, method_name: str) -> int:
+def interface_method_index(tokens: TokenStream, interface_name: str, method_name: str) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
         if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source[token_start(starts, token_index):token_end(ends, token_index)] == "interface":
@@ -1010,7 +1151,11 @@ def interface_method_index(source: str, kinds: list[int], starts: list[int], end
         token_index = token_index + 1
     return -1
 
-def interface_method_count(source: str, kinds: list[int], starts: list[int], ends: list[int], interface_name: str) -> int:
+def interface_method_count(tokens: TokenStream, interface_name: str) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
         if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source[token_start(starts, token_index):token_end(ends, token_index)] == "interface":
@@ -1032,7 +1177,10 @@ def interface_method_count(source: str, kinds: list[int], starts: list[int], end
         token_index = token_index + 1
     return 0
 
-def find_interface_method_function_index(source: str, kinds: list[int], starts: list[int], ends: list[int], interface_name: str, struct_name: str, method_name: str, function_starts: list[int], function_ends: list[int]) -> int:
+def find_interface_method_function_index(tokens: TokenStream, interface_name: str, struct_name: str, method_name: str, functions: FunctionTable) -> int:
+    let source = tokens.src
+    let function_starts = functions.starts
+    let function_ends = functions.ends
     let interface_target_prefix = interface_name + "_"
     let target_prefix = interface_target_prefix + struct_name
     let target_prefix_with_separator = target_prefix + "_"
@@ -1041,19 +1189,22 @@ def find_interface_method_function_index(source: str, kinds: list[int], starts: 
     while function_index < len(function_starts):
         let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
         if candidate_name == method_name:
-            let candidate_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_starts[function_index])
+            let candidate_prefix = enclosing_method_prefix(tokens, function_starts[function_index])
             if candidate_prefix == method_prefix_body:
                 return function_index
         function_index = function_index + 1
     return -1
 
-def find_interface_declaration_function_index(source: str, kinds: list[int], starts: list[int], ends: list[int], method_name: str, function_starts: list[int], function_ends: list[int]) -> int:
+def find_interface_declaration_function_index(tokens: TokenStream, method_name: str, functions: FunctionTable) -> int:
+    let source = tokens.src
+    let function_starts = functions.starts
+    let function_ends = functions.ends
     let function_index = 0
     while function_index < len(function_starts):
         let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
         if candidate_name == method_name:
-            let candidate_prefix = enclosing_method_prefix(source, kinds, starts, ends, function_starts[function_index])
-            if len(candidate_prefix) == 0 and not function_has_body(source, kinds, starts, 0, 0, function_starts[function_index]):
+            let candidate_prefix = enclosing_method_prefix(tokens, function_starts[function_index])
+            if len(candidate_prefix) == 0 and not function_has_body(tokens, 0, 0, function_starts[function_index]):
                 return function_index
         function_index = function_index + 1
     return -1
@@ -1084,7 +1235,7 @@ def parse_integer(source: str, start: int, end: int) -> int:
     let index = start
     let is_hex = false
     if end - start > 2 and source[start] == '0':
-        if source[start + 1] == 'x' or source[start + 1] == 'X':
+        if source[start + 1] in ['x', 'X']:
             is_hex = true
             index = start + 2
     if is_hex:
@@ -1132,7 +1283,11 @@ def source_equals(source: str, start: int, end: int, expected: str) -> bool:
 def source_ranges_equal(source: str, first_start: int, first_end: int, second_start: int, second_end: int) -> bool:
     return __c_range_equal(source, first_start, first_end, second_start, second_end)
 
-def constant_is_used(source: str, kinds: list[int], starts: list[int], ends: list[int], body_start: int, body_end: int, constant_start: int, constant_end: int) -> bool:
+def constant_is_used(tokens: TokenStream, body_start: int, body_end: int, constant_start: int, constant_end: int) -> bool:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     let token_index = body_start
     while token_index < body_end:
         if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_ranges_equal(source, token_start(starts, token_index), token_end(ends, token_index), constant_start, constant_end):
@@ -1167,7 +1322,11 @@ let ENUM_DECLARATION_ENDS = []
 let INTERFACE_DECLARATION_STARTS = []
 let INTERFACE_DECLARATION_ENDS = []
 
-def collect_declared_types(source: str, kinds: list[int], starts: list[int], ends: list[int]):
+def collect_declared_types(tokens: TokenStream):
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     STRUCT_DECLARATION_STARTS = []
     STRUCT_DECLARATION_ENDS = []
     STRUCT_DECLARATION_HASHES = []
@@ -1214,7 +1373,11 @@ let STRUCT_FIELD_SLOTS = []
 let STRUCT_FIELD_KINDS = []
 let STRUCT_FIELD_TYPE_DECLS = []
 
-def struct_field_kind_from_type(source: str, kinds: list[int], starts: list[int], ends: list[int], type_index: int) -> int:
+def struct_field_kind_from_type(tokens: TokenStream, type_index: int) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     if token_kind(kinds, type_index) != TOKEN_IDENTIFIER:
         return STRUCT_FIELD_PTR
     let type_start = token_start(starts, type_index)
@@ -1235,11 +1398,14 @@ def struct_field_kind_from_type(source: str, kinds: list[int], starts: list[int]
     return STRUCT_FIELD_PTR
 
 def struct_field_slot_width(field_kind: int) -> int:
-    if field_kind == STRUCT_FIELD_PTR or field_kind == STRUCT_FIELD_FLOAT or field_kind == STRUCT_FIELD_STR or field_kind == STRUCT_FIELD_LIST_INT or field_kind == STRUCT_FIELD_LIST_STR:
+    if field_kind in [STRUCT_FIELD_PTR, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR]:
         return 2
     return 1
 
-def struct_field_type_declaration(source: str, starts: list[int], ends: list[int], type_index: int) -> int:
+def struct_field_type_declaration(tokens: TokenStream, type_index: int) -> int:
+    let source = tokens.src
+    let starts = tokens.starts
+    let ends = tokens.ends
     let type_start = token_start(starts, type_index)
     let type_end = token_end(ends, type_index)
     while type_end > type_start and source[type_end - 1] == '?':
@@ -1248,7 +1414,11 @@ def struct_field_type_declaration(source: str, starts: list[int], ends: list[int
         return -1
     return find_struct_declaration_index(source, type_start, type_end)
 
-def collect_struct_fields(source: str, kinds: list[int], starts: list[int], ends: list[int]):
+def collect_struct_fields(tokens: TokenStream):
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     STRUCT_FIELD_DECLARATIONS = []
     STRUCT_FIELD_NAME_STARTS = []
     STRUCT_FIELD_NAME_ENDS = []
@@ -1271,13 +1441,13 @@ def collect_struct_fields(source: str, kinds: list[int], starts: list[int], ends
             elif line_indent(source, token_start(starts, cursor)) == 0:
                 scanning = false
             elif token_kind(kinds, cursor) == TOKEN_IDENTIFIER and token_kind(kinds, cursor + 1) == TOKEN_COLON:
-                let field_kind = struct_field_kind_from_type(source, kinds, starts, ends, cursor + 2)
+                let field_kind = struct_field_kind_from_type(tokens, cursor + 2)
                 append(STRUCT_FIELD_DECLARATIONS, declaration_index)
                 append(STRUCT_FIELD_NAME_STARTS, token_start(starts, cursor))
                 append(STRUCT_FIELD_NAME_ENDS, token_end(ends, cursor))
                 append(STRUCT_FIELD_SLOTS, slot_index)
                 append(STRUCT_FIELD_KINDS, field_kind)
-                append(STRUCT_FIELD_TYPE_DECLS, struct_field_type_declaration(source, starts, ends, cursor + 2))
+                append(STRUCT_FIELD_TYPE_DECLS, struct_field_type_declaration(tokens, cursor + 2))
                 slot_index = slot_index + struct_field_slot_width(field_kind)
                 while token_kind(kinds, cursor) != TOKEN_NEWLINE and token_kind(kinds, cursor) != TOKEN_EOF:
                     cursor = cursor + 1
@@ -1294,7 +1464,8 @@ def find_struct_declaration_index(source: str, name_start: int, name_end: int) -
         declaration_index = declaration_index + 1
     return -1
 
-def source_type_is_struct(source: str, kinds: list[int], starts: list[int], ends: list[int], type_start: int, type_end: int) -> bool:
+def source_type_is_struct(tokens: TokenStream, type_start: int, type_end: int) -> bool:
+    let source = tokens.src
     let declaration_index = 0
     while declaration_index < len(STRUCT_DECLARATION_STARTS):
         if source_ranges_equal(source, STRUCT_DECLARATION_STARTS[declaration_index], STRUCT_DECLARATION_ENDS[declaration_index], type_start, type_end):
@@ -1310,7 +1481,8 @@ def source_type_is_enum(source: str, type_start: int, type_end: int) -> bool:
         declaration_index = declaration_index + 1
     return false
 
-def source_type_is_interface(source: str, kinds: list[int], starts: list[int], ends: list[int], type_start: int, type_end: int) -> bool:
+def source_type_is_interface(tokens: TokenStream, type_start: int, type_end: int) -> bool:
+    let source = tokens.src
     let declaration_index = 0
     while declaration_index < len(INTERFACE_DECLARATION_STARTS):
         if source_ranges_equal(source, INTERFACE_DECLARATION_STARTS[declaration_index], INTERFACE_DECLARATION_ENDS[declaration_index], type_start, type_end):
@@ -1318,7 +1490,8 @@ def source_type_is_interface(source: str, kinds: list[int], starts: list[int], e
         declaration_index = declaration_index + 1
     return false
 
-def parameter_type_from_range(source: str, kinds: list[int], starts: list[int], ends: list[int], type_start: int, type_end: int) -> int:
+def parameter_type_from_range(tokens: TokenStream, type_start: int, type_end: int) -> int:
+    let source = tokens.src
     let type_name = source[type_start:type_end]
     let found_type = 0
     if type_name == "str":
@@ -1333,21 +1506,25 @@ def parameter_type_from_range(source: str, kinds: list[int], starts: list[int], 
         found_type = VALUE_TYPE_BOOL
     elif type_name == "float":
         found_type = VALUE_TYPE_FLOAT
-    elif type_name == "int" or type_name == "rune" or type_name == "byte":
+    elif type_name in ["int", "rune", "byte"]:
         found_type = VALUE_TYPE_INT
     if found_type == 0:
         if source_type_is_enum(source, type_start, type_end):
             return VALUE_TYPE_ENUM
-        if source_type_is_interface(source, kinds, starts, ends, type_start, type_end):
+        if source_type_is_interface(tokens, type_start, type_end):
             return VALUE_TYPE_INTERFACE
     return found_type
 
-def get_parameter_type(source: str, kinds: list[int], starts: list[int], ends: list[int], index: int) -> int:
+def get_parameter_type(tokens: TokenStream, index: int) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     if token_kind(kinds, index) == TOKEN_OPEN_PAREN:
         return VALUE_TYPE_FUNCTION_PARAMETER
     if token_kind(kinds, index) != TOKEN_IDENTIFIER:
         return 0
-    let parameter_type = parameter_type_from_range(source, kinds, starts, ends, token_start(starts, index), token_end(ends, index))
+    let parameter_type = parameter_type_from_range(tokens, token_start(starts, index), token_end(ends, index))
     if parameter_type == VALUE_TYPE_LIST and token_kind(kinds, index + 1) == TOKEN_OPEN_BRACKET:
         let element_index = index + 2
         if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source[token_start(starts, element_index):token_end(ends, element_index)] == "str":
@@ -1357,13 +1534,14 @@ def get_parameter_type(source: str, kinds: list[int], starts: list[int], ends: l
         return VALUE_TYPE_LIST_INT
     if parameter_type != 0:
         return parameter_type
-    if source_type_is_struct(source, kinds, starts, ends, token_start(starts, index), token_end(ends, index)):
+    if source_type_is_struct(tokens, token_start(starts, index), token_end(ends, index)):
         return VALUE_TYPE_STRUCT
-    if source_type_is_interface(source, kinds, starts, ends, token_start(starts, index), token_end(ends, index)):
+    if source_type_is_interface(tokens, token_start(starts, index), token_end(ends, index)):
         return VALUE_TYPE_INTERFACE
     return 0
 
-def parameter_type_from_declaration(source: str, kinds: list[int], starts: list[int], ends: list[int], name_start: int, name_end: int) -> int:
+def parameter_type_from_declaration(tokens: TokenStream, name_start: int, name_end: int) -> int:
+    let source = tokens.src
     if source_equals(source, name_start, name_end, "self"):
         return VALUE_TYPE_STRUCT
     let source_length = len(source)
@@ -1380,9 +1558,13 @@ def parameter_type_from_declaration(source: str, kinds: list[int], starts: list[
         type_end = type_end + 1
     while type_end > type_start and source[type_end - 1] == ' ':
         type_end = type_end - 1
-    return parameter_type_from_range(source, kinds, starts, ends, type_start, type_end)
+    return parameter_type_from_range(tokens, type_start, type_end)
 
-def get_return_type(source: str, kinds: list[int], starts: list[int], ends: list[int], index: int) -> int:
+def get_return_type(tokens: TokenStream, index: int) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
     if token_kind(kinds, index) == TOKEN_OPEN_PAREN:
         return 3
     if token_kind(kinds, index) != TOKEN_IDENTIFIER:
@@ -1414,11 +1596,11 @@ def get_return_type(source: str, kinds: list[int], starts: list[int], ends: list
         return 3
     if source_equals(source, type_start, type_end, "int") or source_equals(source, type_start, type_end, "rune") or source_equals(source, type_start, type_end, "byte"):
         return 1
-    if source_type_is_struct(source, kinds, starts, ends, type_start, type_end):
+    if source_type_is_struct(tokens, type_start, type_end):
         return VALUE_TYPE_STRUCT
     if source_type_is_enum(source, type_start, type_end):
         return VALUE_TYPE_ENUM
-    if source_type_is_interface(source, kinds, starts, ends, type_start, type_end):
+    if source_type_is_interface(tokens, type_start, type_end):
         return VALUE_TYPE_INTERFACE
     return 1
 
@@ -1450,7 +1632,14 @@ def find_parameter_boundary(kinds: list[int], start_index: int) -> int:
         current_index = current_index + 1
     return current_index
 
-def function_parameter_type(source: str, kinds: list[int], starts: list[int], ends: list[int], name_start: int, name_end: int, parameter_number: int, function_starts: list[int], function_ends: list[int], function_param_offsets: list[int], function_param_counts: list[int], parameter_starts: list[int], parameter_ends: list[int]) -> int:
+def function_parameter_type(tokens: TokenStream, name_start: int, name_end: int, parameter_number: int, functions: FunctionTable) -> int:
+    let source = tokens.src
+    let function_starts = functions.starts
+    let function_ends = functions.ends
+    let function_param_offsets = functions.param_offsets
+    let function_param_counts = functions.param_counts
+    let parameter_starts = functions.param_starts
+    let parameter_ends = functions.param_ends
     let function_index = find_function(source, name_start, name_end, function_starts, function_ends)
     if function_index < 0:
         return 0
@@ -1461,9 +1650,28 @@ def function_parameter_type(source: str, kinds: list[int], starts: list[int], en
     let parameter_index = function_param_offsets[function_index] + parameter_number
     if parameter_index < 0 or parameter_index >= len(parameter_starts) or parameter_index >= len(parameter_ends):
         return 0
-    return parameter_type_from_declaration(source, kinds, starts, ends, parameter_starts[parameter_index], parameter_ends[parameter_index])
+    return parameter_type_from_declaration(tokens, parameter_starts[parameter_index], parameter_ends[parameter_index])
 
-def collect_functions(source: str, kinds: list[int], starts: list[int], ends: list[int], function_starts: list[int], function_ends: list[int], function_bodies: list[int], function_body_ends: list[int], function_param_offsets: list[int], function_param_counts: list[int], parameter_starts: list[int], parameter_ends: list[int], parameter_types: list[int], parameter_struct_decls: list[int], function_return_types: list[int], function_return_struct_decls: list[int], parameter_default_indexes: list[int], parameter_annotation_starts: list[int], parameter_annotation_ends: list[int]) -> int:
+def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let function_starts = functions.starts
+    let function_ends = functions.ends
+    let function_bodies = functions.bodies
+    let function_body_ends = functions.body_ends
+    let function_param_offsets = functions.param_offsets
+    let function_param_counts = functions.param_counts
+    let parameter_starts = functions.param_starts
+    let parameter_ends = functions.param_ends
+    let parameter_types = functions.param_types
+    let parameter_struct_decls = functions.param_struct_decls
+    let function_return_types = functions.return_types
+    let function_return_struct_decls = functions.return_struct_decls
+    let parameter_default_indexes = functions.default_indexes
+    let parameter_annotation_starts = functions.annotation_starts
+    let parameter_annotation_ends = functions.annotation_ends
     let current_index = 0
     # interface 声明块内的 def 只是方法签名，不收集为可调用函数
     let interface_indent = -1
@@ -1506,24 +1714,24 @@ def collect_functions(source: str, kinds: list[int], starts: list[int], ends: li
                     let parameter_type_index = parameter_index + 2
                     append(parameter_annotation_starts, token_start(starts, parameter_type_index))
                     append(parameter_annotation_ends, token_end(ends, parameter_type_index))
-                    let collected_parameter_type = get_parameter_type(source, kinds, starts, ends, parameter_type_index)
+                    let collected_parameter_type = get_parameter_type(tokens, parameter_type_index)
                     let collected_struct_declaration = -1
                     if parameter_name == "self":
                         collected_parameter_type = VALUE_TYPE_STRUCT
-                        collected_struct_declaration = enclosing_self_struct_declaration(source, kinds, starts, ends, token_start(starts, name_index))
+                        collected_struct_declaration = enclosing_self_struct_declaration(tokens, token_start(starts, name_index))
                     append(parameter_types, collected_parameter_type)
                     if collected_struct_declaration >= 0:
                         append(parameter_struct_decls, collected_struct_declaration)
                     else:
-                        append(parameter_struct_decls, struct_field_type_declaration(source, starts, ends, parameter_type_index))
+                        append(parameter_struct_decls, struct_field_type_declaration(tokens, parameter_type_index))
                     let default_index = -1
                     let default_scan_index = parameter_index + 1
                     let default_depth = 0
                     let default_scan_done = false
                     while token_kind(kinds, default_scan_index) != TOKEN_COMMA and token_kind(kinds, default_scan_index) != TOKEN_CLOSE_PAREN and token_kind(kinds, default_scan_index) != TOKEN_EOF and not default_scan_done:
-                        if token_kind(kinds, default_scan_index) == TOKEN_OPEN_BRACKET or token_kind(kinds, default_scan_index) == TOKEN_OPEN_PAREN or token_kind(kinds, default_scan_index) == TOKEN_OPEN_BRACE:
+                        if token_kind(kinds, default_scan_index) in [TOKEN_OPEN_BRACKET, TOKEN_OPEN_PAREN, TOKEN_OPEN_BRACE]:
                             default_depth = default_depth + 1
-                        if token_kind(kinds, default_scan_index) == TOKEN_CLOSE_BRACKET or token_kind(kinds, default_scan_index) == TOKEN_CLOSE_PAREN or token_kind(kinds, default_scan_index) == TOKEN_CLOSE_BRACE:
+                        if token_kind(kinds, default_scan_index) in [TOKEN_CLOSE_BRACKET, TOKEN_CLOSE_PAREN, TOKEN_CLOSE_BRACE]:
                             if default_depth > 0:
                                 default_depth = default_depth - 1
                         if default_depth == 0 and token_kind(kinds, default_scan_index) == TOKEN_ASSIGN:
@@ -1545,8 +1753,8 @@ def collect_functions(source: str, kinds: list[int], starts: list[int], ends: li
             let return_type_scan_index = header_index + 1
             while token_kind(kinds, return_type_scan_index) != TOKEN_NEWLINE and token_kind(kinds, return_type_scan_index) != TOKEN_EOF:
                 if token_kind(kinds, return_type_scan_index) == TOKEN_ARROW:
-                    function_return_type = get_return_type(source, kinds, starts, ends, return_type_scan_index + 1)
-                    function_return_struct_decl = struct_field_type_declaration(source, starts, ends, return_type_scan_index + 1)
+                    function_return_type = get_return_type(tokens, return_type_scan_index + 1)
+                    function_return_struct_decl = struct_field_type_declaration(tokens, return_type_scan_index + 1)
                 return_type_scan_index = return_type_scan_index + 1
             append(function_return_types, function_return_type)
             append(function_return_struct_decls, function_return_struct_decl)
@@ -1580,7 +1788,17 @@ def find_constant_index(source: str, constant_starts: list[int], constant_ends: 
         constant_index = constant_index + 1
     return -1
 
-def collect_constants(source: str, kinds: list[int], starts: list[int], ends: list[int], constant_starts: list[int], constant_ends: list[int], constant_values: list[int], constant_types: list[int], constant_literal_starts: list[int], constant_literal_ends: list[int]) -> int:
+def collect_constants(tokens: TokenStream, constants: ConstantTable) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let constant_starts = constants.starts
+    let constant_ends = constants.ends
+    let constant_values = constants.values
+    let constant_types = constants.types
+    let constant_literal_starts = constants.literal_starts
+    let constant_literal_ends = constants.literal_ends
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
         if token_kind(kinds, token_index) == TOKEN_CONST and token_kind(kinds, token_index + 1) == TOKEN_IDENTIFIER:
@@ -1689,7 +1907,15 @@ def parse_global_let_annotation(source: str, kinds: list[int], starts: list[int]
             return VALUE_TYPE_LIST_INT
     return VALUE_TYPE_UNKNOWN
 
-def collect_global_lets(source: str, kinds: list[int], starts: list[int], ends: list[int], global_let_name_starts: list[int], global_let_name_ends: list[int], global_let_types: list[int], global_let_expression_indexes: list[int]) -> int:
+def collect_global_lets(tokens: TokenStream, globals: GlobalTable) -> int:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let global_let_name_starts = globals.name_starts
+    let global_let_name_ends = globals.name_ends
+    let global_let_types = globals.types
+    let global_let_expression_indexes = globals.expression_indexes
     let token_index = 0
     while token_kind(kinds, token_index) != TOKEN_EOF:
         if token_kind(kinds, token_index) == TOKEN_LET and line_indent(source, token_start(starts, token_index)) == 0 and token_kind(kinds, token_index + 1) == TOKEN_IDENTIFIER:
@@ -1736,7 +1962,7 @@ def collect_global_lets(source: str, kinds: list[int], starts: list[int], ends: 
                         value_type = VALUE_TYPE_STRING
                     if token_kind(kinds, expression_index) == TOKEN_FLOAT:
                         value_type = VALUE_TYPE_FLOAT
-                    if token_kind(kinds, expression_index) == TOKEN_TRUE or token_kind(kinds, expression_index) == TOKEN_FALSE:
+                    if token_kind(kinds, expression_index) in [TOKEN_TRUE, TOKEN_FALSE]:
                         value_type = VALUE_TYPE_BOOL
                 append(global_let_name_starts, name_start)
                 append(global_let_name_ends, name_end)
