@@ -155,7 +155,7 @@ int __c_build_llvm(const char* llvm_path, const char* output_path, bool optimize
         return 0;
     }
 
-    size_t argument_count = 13 + runtime_count;
+    size_t argument_count = 14 + runtime_count;
     char** arguments = calloc(argument_count, sizeof(char*));
     if (arguments == NULL) {
         free_names(runtime_names, runtime_count);
@@ -201,6 +201,7 @@ int __c_build_llvm(const char* llvm_path, const char* output_path, bool optimize
     arguments[argument_index++] = core_include != NULL ? core_include : (char*)runtime_directory;
     arguments[argument_index++] = "-I";
     arguments[argument_index++] = wrappers_include != NULL ? wrappers_include : (char*)runtime_directory;
+    arguments[argument_index++] = "-lcurl";
     arguments[argument_index] = NULL;
 
     bool compile_succeeded = run_compiler(arguments);

@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include "file.h"
 #include "dynarray.h"
 
@@ -108,6 +110,48 @@ bool __c_file_delete(const char* path) {
     }
 
     return !remove(path);
+}
+
+bool __c_file_is_dir(const char* path) {
+    if (path == NULL) {
+        return false;
+    }
+
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+bool __c_file_mkdir(const char* path) {
+    if (path == NULL || path[0] == '\0') {
+        return false;
+    }
+
+    if (mkdir(path, 0777) == 0) {
+        return true;
+    }
+
+    return errno == EEXIST && __c_file_is_dir(path);
+}
+
+bool __c_file_rename(const char* old_path, const char* new_path) {
+    if (old_path == NULL || new_path == NULL) {
+        return false;
+    }
+
+    return rename(old_path, new_path) == 0;
+}
+
+int __c_file_size(const char* path) {
+    if (path == NULL) {
+        return -1;
+    }
+
+    struct stat info;
+    if (stat(path, &info) != 0 || info.st_size > INT_MAX) {
+        return -1;
+    }
+
+    return (int)info.st_size;
 }
 
 dynarray_i32* __c_file_read_bytes(const char* path) {

@@ -536,11 +536,16 @@ void gc_release(void* object) {
                 typedef struct {
                     int32_t tag;
                     void* data;
+                    bool data_is_managed_ptr;
                 } enum_t;
 
                 enum_t* e = (enum_t*)obj_data;
                 if (e->data != NULL) {
-                    free(e->data);
+                    if (e->data_is_managed_ptr) {
+                        gc_release_if_managed(e->data);
+                    } else {
+                        free(e->data);
+                    }
                 }
                 break;
             }
@@ -598,6 +603,17 @@ void gc_promote_to_shared(void* object) {
         for (int index = 0; arr->data != NULL && index < arr->length; index++) {
             void* child = (void*)arr->data[index];
             if (gc_is_managed(child)) gc_promote_to_shared(child);
+        }
+    } else if (h->type == OBJ_ENUM) {
+        typedef struct {
+            int32_t tag;
+            void* data;
+            bool data_is_managed_ptr;
+        } enum_t;
+
+        enum_t* value = (enum_t*)object;
+        if (value->data_is_managed_ptr && gc_is_managed(value->data)) {
+            gc_promote_to_shared(value->data);
         }
     } else if (h->type == OBJ_DICT) {
         dict_t* dict = (dict_t*)object;
@@ -868,11 +884,14 @@ void gc_cleanup() {
                 typedef struct {
                     int32_t tag;
                     void* data;
+                    bool data_is_managed_ptr;
                 } enum_t;
 
                 enum_t* e = (enum_t*)object;
                 if (e->data != NULL) {
-                    free(e->data);
+                    if (!e->data_is_managed_ptr) {
+                        free(e->data);
+                    }
                 }
                 break;
             }

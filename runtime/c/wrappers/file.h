@@ -10,6 +10,10 @@ int __c_file_write(const char* path, const char* content);
 bool __c_file_exists(const char* path);
 int __c_file_append(const char* path, const char* content);
 bool __c_file_delete(const char* path);
+bool __c_file_is_dir(const char* path);
+bool __c_file_mkdir(const char* path);
+bool __c_file_rename(const char* old_path, const char* new_path);
+int __c_file_size(const char* path);
 
 dynarray_i32* __c_file_read_bytes(const char* path);
 int __c_file_write_bytes(const char* path, dynarray_i32* data);

@@ -9,9 +9,15 @@
 #include "dict.h"
 #include "file.h"
 #include "memory.h"
+#include "net.h"
 #include "str.h"
 #include "tuple.h"
 #include "union.h"
+
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static void test_dynarray_and_bytes(void) {
     dynarray_i32* values = create_dynarray_i32(1);
@@ -85,6 +91,51 @@ static void test_file_io(void) {
     assert(__c_file_delete(path));
 }
 
+static void test_net_io(void) {
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    assert(listener >= 0);
+
+    struct sockaddr_in address;
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    assert(bind(listener, (struct sockaddr*)&address, sizeof(address)) == 0);
+    assert(listen(listener, 1) == 0);
+
+    socklen_t address_length = sizeof(address);
+    assert(getsockname(listener, (struct sockaddr*)&address, &address_length) == 0);
+    int port = ntohs(address.sin_port);
+
+    pid_t child = fork();
+    assert(child >= 0);
+    if (child == 0) {
+        int client = accept(listener, NULL, NULL);
+        if (client < 0) _exit(1);
+
+        char request[4];
+        ssize_t received = recv(client, request, sizeof(request), MSG_WAITALL);
+        if (received != 4 || memcmp(request, "ping", 4) != 0) _exit(1);
+        if (send(client, "pong", 4, 0) != 4) _exit(1);
+        close(client);
+        close(listener);
+        _exit(0);
+    }
+
+    int32_t connection = __c_net_connect("127.0.0.1", port);
+    assert(connection >= 0);
+    assert(__c_net_write(connection, "ping") == 4);
+
+    char* response = __c_net_read(connection, 4);
+    assert(response != NULL && strcmp(response, "pong") == 0);
+    assert(__c_net_close(connection));
+
+    int child_status = 0;
+    assert(waitpid(child, &child_status, 0) == child);
+    assert(WIFEXITED(child_status) && WEXITSTATUS(child_status) == 0);
+    close(listener);
+}
+
 static void test_dict_and_tuple(void) {
     dict_t* dict = dict_create(DICT_KEY_INT, DICT_VAL_INT, 2);
     assert(dict != NULL);
@@ -151,6 +202,7 @@ int main(void) {
     test_dynarray_and_bytes();
     test_utf8_and_strings();
     test_file_io();
+    test_net_io();
     test_dict_and_tuple();
     test_union_null_safety();
     gc_cleanup();

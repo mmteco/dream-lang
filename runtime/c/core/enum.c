@@ -13,6 +13,7 @@ enum_t* enum_create_simple(int32_t tag) {
     if (!e) return NULL;
     e->tag = tag;
     e->data = NULL;
+    e->data_is_managed_ptr = false;
     return e;
 }
 
@@ -20,6 +21,7 @@ enum_t* enum_create_int(int32_t tag, int32_t value) {
     enum_t* e = (enum_t*)gc_alloc(sizeof(enum_t), OBJ_ENUM);
     if (!e) return NULL;
     e->tag = tag;
+    e->data_is_managed_ptr = false;
 
     // 为 int 分配内存
     int32_t* data = (int32_t*)malloc(sizeof(int32_t));
@@ -36,6 +38,7 @@ enum_t* enum_create_float(int32_t tag, double value) {
     enum_t* e = (enum_t*)gc_alloc(sizeof(enum_t), OBJ_ENUM);
     if (!e) return NULL;
     e->tag = tag;
+    e->data_is_managed_ptr = false;
 
     double* data = (double*)malloc(sizeof(double));
     if (!data) {
@@ -51,6 +54,7 @@ enum_t* enum_create_string(int32_t tag, const char* value) {
     enum_t* e = (enum_t*)gc_alloc(sizeof(enum_t), OBJ_ENUM);
     if (!e) return NULL;
     e->tag = tag;
+    e->data_is_managed_ptr = false;
 
     // 复制字符串
     e->data = strdup(value);
@@ -65,6 +69,7 @@ enum_t* enum_create_bool(int32_t tag, bool value) {
     enum_t* e = (enum_t*)gc_alloc(sizeof(enum_t), OBJ_ENUM);
     if (!e) return NULL;
     e->tag = tag;
+    e->data_is_managed_ptr = false;
 
     // 为 bool 分配内存
     bool* data = (bool*)malloc(sizeof(bool));
@@ -81,6 +86,7 @@ enum_t* enum_create_tuple(int32_t tag, void* data, size_t data_size) {
     enum_t* e = (enum_t*)gc_alloc(sizeof(enum_t), OBJ_ENUM);
     if (!e) return NULL;
     e->tag = tag;
+    e->data_is_managed_ptr = false;
 
     if (data_size > 0 && data != NULL) {
         // 复制元组数据
@@ -102,6 +108,8 @@ enum_t* enum_create_tuple_ptr(int32_t tag, void* tuple_ptr) {
     e->tag = tag;
     // 直接存储元组指针，不复制
     e->data = tuple_ptr;
+    e->data_is_managed_ptr = true;
+    gc_retain_if_managed(tuple_ptr);
     return e;
 }
 
