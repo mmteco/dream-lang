@@ -96,13 +96,15 @@ let compile_to_exe_at ?(optimized=true) output_ll output_exe =
     "runtime/c/wrappers/str.c";
     "runtime/c/wrappers/bytes.c";
     "runtime/c/wrappers/file.c";
+    "runtime/c/wrappers/net.c";
+    "runtime/c/wrappers/http.c";
     "runtime/c/wrappers/process.c";
     "runtime/c/wrappers/compiler.c"
   ] in
   let runtime_args = String.concat " " runtime_files in
   let optimization_flags = if optimized then "-O2 -flto=thin " else "" in
   let compile_cmd = Printf.sprintf
-    "clang -Wno-unused-command-line-argument -Wno-override-module %s-o %s %s %s -I runtime/c/core -I runtime/c/wrappers"
+    "clang -Wno-unused-command-line-argument -Wno-override-module %s-o %s %s %s -I runtime/c/core -I runtime/c/wrappers -lcurl"
     optimization_flags (Filename.quote output_exe) (Filename.quote output_ll) runtime_args in
   let exit_code = Sys.command compile_cmd in
   if exit_code = 0 then begin

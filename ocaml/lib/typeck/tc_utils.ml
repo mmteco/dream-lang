@@ -91,7 +91,10 @@ let rec resolve_type_expr env = function
         resolve_type_expr env return_type)
   | TUnion types -> TyUnion (List.map (resolve_type_expr env) types)
   | TGeneric (name, element_type) ->
-      TyGeneric (name, resolve_type_expr env element_type)
+      let resolved_element = resolve_type_expr env element_type in
+      (match Env.find_interface name env with
+       | Some _ -> TyInterface (name, [resolved_element])
+       | None -> TyGeneric (name, resolved_element))
   | TOption element_type -> TyOption (resolve_type_expr env element_type)
   | TResult (ok_type, error_type) ->
       TyResult (resolve_type_expr env ok_type, resolve_type_expr env error_type)

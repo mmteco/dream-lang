@@ -76,3 +76,6 @@ interface Display:
 
 interface Len:
     def length(self) -> int
+
+interface Contains[T]:
+    def contains(self, value: T) -> bool

@@ -163,10 +163,7 @@ let import_all_from_module module_path alias =
       (* 如果有别名，所有符号都使用 "alias.name" 的形式 *)
       let imports = match alias with
         | None -> List.map (fun sym -> import_symbol sym None) exports
-        | Some _ ->
-            (* 有别名时，只导入模块本身，不导入具体符号 *)
-            (* 这里暂时简化处理，返回空列表 *)
-            []
+        | Some _ -> List.map (fun sym -> import_symbol sym None) exports
       in
       Ok imports
 

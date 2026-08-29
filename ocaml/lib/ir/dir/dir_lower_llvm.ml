@@ -9,10 +9,11 @@ let rec llvm_ty = function
   | Bytes -> "%dynarray_i32*"
   | Dict _ -> "%dict_t*"
   | List I32 -> "%dynarray_i32*"
-  | List (Str | Tuple _) -> "%dynarray_ptr*"
+  | List _ -> "%dynarray_ptr*"
   | Tuple _ -> "%dynarray_ptr*"
   | Struct (_, fields) ->
       "{" ^ String.concat ", " (List.map (fun (_, field_type) -> llvm_ty field_type) fields) ^ "}"
+  | Enum (_, []) -> "%enum_t*"
   | Enum (_, variants) when List.exists (fun (_, payload_types) -> payload_types <> []) variants ->
       "%enum_t*"
   | Enum _ -> "i32"
@@ -20,7 +21,6 @@ let rec llvm_ty = function
   | Union _ -> "%union_t*"
   | ClosureEnv _ -> "i8*"
   | Func _ -> "%dir_closure*"
-  | List _ -> failwith "DIR LLVM lowering only supports list<i32>, list<str> and list<tuple>"
 
 and llvm_function_ty parameter_types return_type =
   Printf.sprintf "%s (%s)" (llvm_ty return_type)
@@ -234,6 +234,10 @@ let tuple_element_load buffer result_name element_type raw_name =
       Printf.bprintf buffer "  %s = inttoptr i64 %s to %s\n"
         result_name raw_name (llvm_ty element_type)
 
+let is_pointer_payload = function
+  | Bytes | Dict _ | List _ | Enum _ | Interface _ | Union _ | ClosureEnv _ | Func _ -> true
+  | _ -> false
+
 let render_instruction string_literals value_types buffer _instruction_label instruction =
   let operand = render_operand string_literals in
   (match instruction with
@@ -431,7 +435,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
               Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
                 (value_name value) (operand item)
             ) values
-        | Str | Tuple _ ->
+        | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
             Printf.bprintf buffer "  %s = call %%dynarray_ptr* @create_dynarray_ptr(i32 %d)\n"
               (value_name value) (List.length values);
             List.iteri (fun index item ->
@@ -512,6 +516,13 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        Printf.bprintf buffer "  %s = call %s @%s(i32 %d, %s %s)\n"
          (value_name value) (llvm_ty enum_type) create_name tag
          (llvm_ty payload_type) (operand payload)
+   | EnumCreateMulti (value, _enum_type, tag, [payload_type], [payload])
+     when is_pointer_payload payload_type ->
+       let payload_name = Printf.sprintf "%%dir_enum_ptr_payload_%d" value in
+       Printf.bprintf buffer "  %s = bitcast %s %s to i8*\n"
+         payload_name (llvm_ty payload_type) (operand payload);
+       Printf.bprintf buffer "  %s = call %%enum_t* @enum_create_tuple_ptr(i32 %d, i8* %s)\n"
+         (value_name value) tag payload_name
    | EnumCreateMulti (value, _enum_type, tag, payload_types, payloads) ->
        let payload_type = llvm_env_value_ty payload_types in
        let payload_pointer = Printf.sprintf "%%dir_enum_payload_%d" value in
@@ -545,6 +556,13 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        in
        Printf.bprintf buffer "  %s = call %s @%s(%%enum_t* %s)\n"
          (value_name value) (llvm_ty field_type) getter_name (operand enum_value)
+   | EnumGetMulti (value, field_type, [_], enum_value, _, _)
+     when is_pointer_payload field_type ->
+       let data_pointer = Printf.sprintf "%%dir_enum_data_%d" value in
+       Printf.bprintf buffer "  %s = call i8* @enum_get_data(%%enum_t* %s)\n"
+         data_pointer (operand enum_value);
+       Printf.bprintf buffer "  %s = bitcast i8* %s to %s\n"
+         (value_name value) data_pointer (llvm_ty field_type)
    | EnumGetMulti (value, field_type, payload_types, enum_value, _, index) ->
        let payload_type = llvm_env_value_ty payload_types in
        let data_pointer = Printf.sprintf "%%dir_enum_data_%d" value in
@@ -566,7 +584,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
         | F64 ->
             Printf.bprintf buffer "  call void @append_f64(%%dynarray_i32* %s, double %s)\n"
               (operand collection) (operand value)
-        | Str | Tuple _ ->
+        | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
             let elem_int_name = match value with
               | Value n -> Printf.sprintf "%%dir_append_elem_v%d" n
               | _ -> failwith "list append element must be a value" in
@@ -899,6 +917,7 @@ let render module_ =
   Buffer.add_string buffer "declare i8* @enum_get_string(%enum_t*)\n";
   Buffer.add_string buffer "declare i1 @enum_get_bool(%enum_t*)\n";
   Buffer.add_string buffer "declare %enum_t* @enum_create_tuple(i32, i8*, i64)\n";
+  Buffer.add_string buffer "declare %enum_t* @enum_create_tuple_ptr(i32, i8*)\n";
   Buffer.add_string buffer "declare i8* @enum_get_data(%enum_t*)\n";
   List.iter (fun artifact ->
     Buffer.add_string buffer (render_interface_artifact artifact)

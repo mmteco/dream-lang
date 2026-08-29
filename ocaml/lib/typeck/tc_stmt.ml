@@ -58,6 +58,33 @@ let add_imported_impl env impl_info =
       } in
       Env.add_impl impl_def env
 
+let add_module_namespace env module_name imports =
+  let function_type acc_env def_info =
+    let parameter_types = List.map (fun (_, ty_opt, _) ->
+      match ty_opt with
+      | Some type_expression -> resolve_type_expr acc_env type_expression
+      | None -> fresh_type_var ()) def_info.def_params in
+    let return_type = match def_info.def_return_type with
+      | Some type_expression -> resolve_type_expr acc_env type_expression
+      | None -> fresh_type_var ()
+    in
+    TyFunc (parameter_types, return_type)
+  in
+  let methods = List.fold_left (fun methods (_, symbol) ->
+    match symbol with
+    | Module_loader.ExportedFunc (name, def_info) ->
+        Env.StringMap.add name (function_type env def_info) methods
+    | _ -> methods
+  ) Env.StringMap.empty imports in
+  let module_def = {
+    Env.struct_name = module_name;
+    Env.struct_type_params = [];
+    Env.struct_fields = Env.StringMap.empty;
+    Env.struct_methods = methods;
+  } in
+  let env_with_struct = Env.add_struct module_name module_def env in
+  add_binding module_name (TyStruct (module_name, [])) env_with_struct
+
 (* 语句类型检查 *)
 let rec check_statement env = function
   | SExpr (e, _) ->
@@ -361,39 +388,55 @@ let rec check_statement env = function
 
   | SFor (pat, iter, body, pos) ->
       let (iter_type, iter_subst) = !infer_expr env iter in
-      let elem_type = fresh_type_var () in
-      (try
-         let list_subst = unify (apply_subst iter_subst iter_type) (TyList elem_type) in
-         let env' = apply_subst_to_env list_subst env in
-         let final_elem_type = apply_subst list_subst elem_type in
+      let iter_type = apply_subst iter_subst iter_type in
+      let element_type = match iter_type with
+        | TyList element_type
+        | TyInterface ("Iterator", [element_type])
+        | TyInterface ("Iterable", [element_type]) -> Some element_type
+        | TyStr -> Some TyRune
+        | TyBytes -> Some TyByte
+        | concrete_type ->
+            (match Env.find_impl_for_type concrete_type "Iterator" env with
+             | Some impl ->
+                 (match Env.StringMap.find_opt "next" impl.impl_methods with
+                  | Some (TyFunc (_, element_type)) -> Some element_type
+                  | _ -> None)
+             | None ->
+                 (match Env.find_impl_method_for_type concrete_type "iter" env with
+                  | Some (TyFunc (_, TyInterface ("Iterator", [element_type]))) -> Some element_type
+                  | _ -> None))
+      in
+      (match element_type with
+       | Some final_elem_type ->
+           let env' = apply_subst_to_env iter_subst env in
 
-         let rec check_pattern_for env pat expected_type =
-           match pat with
-           | PVar name ->
-               add_binding name expected_type env
-           | PTuple pats ->
-               (match expected_type with
-                | TyTuple elem_types when List.length pats = List.length elem_types ->
-                    List.fold_left2 check_pattern_for env pats elem_types
-                | _ ->
-                    let err = make_error (TypeError "Pattern mismatch") pos
-                      (Printf.sprintf "Cannot unpack iterator elements into tuple pattern") in
-                    report_error err;
-                    env)
-           | _ ->
-               let err = make_error (TypeError "Unsupported pattern") pos
-                 "Only variable and tuple patterns are supported in for loops" in
-               report_error err;
-               env
-         in
-         let loop_env = check_pattern_for env' pat final_elem_type in
-         let (_, _) = check_statements loop_env body in
-         (env, compose_subst list_subst iter_subst)
-       with Failure msg ->
-         let err = make_error (TypeError msg) pos
-           (Printf.sprintf "For loop iterator must be a list: %s" msg) in
-         report_error err;
-         (env, empty_subst))
+           let rec check_pattern_for env pat expected_type =
+             match pat with
+             | PVar name ->
+                 add_binding name expected_type env
+             | PTuple pats ->
+                 (match expected_type with
+                  | TyTuple elem_types when List.length pats = List.length elem_types ->
+                      List.fold_left2 check_pattern_for env pats elem_types
+                  | _ ->
+                      let err = make_error (TypeError "Pattern mismatch") pos
+                        "Cannot unpack iterator elements into tuple pattern" in
+                      report_error err;
+                      env)
+             | _ ->
+                 let err = make_error (TypeError "Unsupported pattern") pos
+                   "Only variable and tuple patterns are supported in for loops" in
+                 report_error err;
+                 env
+           in
+           let loop_env = check_pattern_for env' pat final_elem_type in
+           let (_, _) = check_statements loop_env body in
+           (env, iter_subst)
+       | None ->
+           let err = make_error (TypeError "Not iterable") pos
+             "for requires a list, string, bytes, Iterator or Iterable" in
+           report_error err;
+           (env, empty_subst))
 
 
   | SInterface interface_info ->
@@ -478,8 +521,8 @@ let rec check_statement env = function
              | None ->
                  (match Env.find_enum name env with
                   | Some _ -> TyEnum (name, [])
-                  | None -> type_expr_to_ty ty_expr))
-        | _ -> type_expr_to_ty ty_expr
+                  | None -> resolve_type_expr env ty_expr))
+        | _ -> resolve_type_expr env ty_expr
       in
 
       (* 将 target 转换为类型，如果是结构体名称则转换为 TyStruct *)
@@ -601,7 +644,7 @@ let rec check_statement env = function
                        inferred_ty
                      else
                        match pty_opt with
-                       | Some t -> type_expr_to_ty_with_struct t
+                       | Some t -> resolve_self_type t
                        | None -> inferred_ty
                      in
                      Env.add_binding pname pty e)
@@ -763,6 +806,11 @@ let rec check_statement env = function
                  let enum_type = TyEnum (enum_info.enum_name, []) in
                  add_binding name enum_type (Env.add_enum name enum_info acc_env)
            ) env imports in
+           let module_name = match alias with
+             | Some name -> name
+             | None -> List.hd (List.rev module_path)
+           in
+           let new_env = add_module_namespace new_env module_name imports in
            (new_env, empty_subst))
 
   | SFromImport (module_name, selections, _pos) ->

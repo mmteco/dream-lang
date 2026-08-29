@@ -113,6 +113,7 @@ type binop =
   | Gte
   | And
   | Or
+  | In
 
 type unop =
   | Neg

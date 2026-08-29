@@ -39,6 +39,7 @@ type function_builder = {
 type context = {
   signatures: (string, function_signature) Hashtbl.t;
   method_signatures: (string, method_binding) Hashtbl.t;
+  module_aliases: StringSet.t;
   resolve_struct: string -> Dir.ty;
   resolve_enum: string -> Dir.ty;
   resolve_interface: string -> Dir.ty;
@@ -83,6 +84,7 @@ let rec type_of_ast resolve_named = function
         type_of_ast resolve_named return_type)
   | TUnion element_types ->
       Union (List.map (type_of_ast resolve_named) element_types)
+  | TGeneric (name, _) -> resolve_named name
   | TVar name ->
       (try resolve_named name with Lower_error _ -> I32)
   | TNone -> Unit
@@ -137,7 +139,7 @@ let rec expression_type_hint = function
         None
   | EBinOp (left, operation, _, _) ->
       (match operation, expression_type_hint left with
-       | (Eq | Neq | Lt | Gt | Lte | Gte | And | Or), _ -> Some Bool
+       | (Eq | Neq | Lt | Gt | Lte | Gte | And | Or | In), _ -> Some Bool
        | (Add | Sub | Mul | Div | Mod), Some I32 -> Some I32
        | (Add | Sub | Mul | Div | Mod), Some F64 -> Some F64
        | Add, Some (List I32) -> Some (List I32)

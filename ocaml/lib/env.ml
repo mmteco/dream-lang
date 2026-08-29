@@ -291,6 +291,13 @@ let c_runtime_functions_table =
     ("__c_file_write_bytes", TyFunc ([TyStr; TyBytes], TyInt));
     ("__c_file_append_bytes", TyFunc ([TyStr; TyBytes], TyInt));
 
+    (* 网络 I/O *)
+    ("__c_net_connect", TyFunc ([TyStr; TyInt], TyInt));
+    ("__c_net_write", TyFunc ([TyInt; TyStr], TyInt));
+    ("__c_net_read", TyFunc ([TyInt; TyInt], TyStr));
+    ("__c_net_close", TyFunc ([TyInt], TyBool));
+    ("__c_http_request", TyFunc ([TyStr; TyStr; TyStr; TyStr], TyStr));
+
     (* UTF-8 编解码 *)
     ("__c_utf8_decode_rune", TyFunc ([TyBytes; TyInt], TyTuple [TyRune; TyInt]));
     ("__c_utf8_encode_rune", TyFunc ([TyRune], TyBytes));
@@ -343,7 +350,7 @@ let binop_to_interface_name = function
   | Gt -> Some "Ord"
   | Lte -> Some "Ord"
   | Gte -> Some "Ord"
-  | And | Or -> None  (* 逻辑运算符不可重载 *)
+  | And | Or | In -> None  (* 逻辑和成员运算符不可重载 *)
 
 (* 二元运算符到方法名的映射 *)
 let binop_to_method_name = function
@@ -365,7 +372,7 @@ let binop_to_method_name = function
   | Gt -> "gt"
   | Lte -> "lte"
   | Gte -> "gte"
-  | And | Or -> failwith "And/Or operators cannot be overloaded"
+  | And | Or | In -> failwith "logical and membership operators cannot be overloaded"
 
 (* 一元运算符到接口名的映射 *)
 let unop_to_interface_name = function

@@ -55,7 +55,7 @@ let binop_of_ast position = function
   | Ast.Shr -> Dir.Shr
   | Ast.And -> Dir.And
   | Ast.Or -> Dir.Or
-  | Ast.FloorDiv | Ast.Pow | Ast.Eq | Ast.Neq | Ast.Lt | Ast.Gt | Ast.Lte | Ast.Gte ->
+  | Ast.FloorDiv | Ast.Pow | Ast.Eq | Ast.Neq | Ast.Lt | Ast.Gt | Ast.Lte | Ast.Gte | Ast.In ->
       fail_at position "operation is not an LLVM binary instruction"
 
 let compare_of_ast = function
@@ -67,7 +67,16 @@ let compare_of_ast = function
   | Ast.Gte -> Dir.Ge
   | Ast.Add | Ast.Sub | Ast.Mul | Ast.Div | Ast.FloorDiv | Ast.Mod | Ast.Pow
   | Ast.BitAnd | Ast.BitOr | Ast.BitXor | Ast.Shl | Ast.Shr
-  | Ast.And | Ast.Or -> assert false
+  | Ast.And | Ast.Or | Ast.In -> assert false
+
+let lower_empty_list function_builder expected_type =
+  let element_type = match expected_type with
+    | Some (List element_type) -> element_type
+    | _ -> I32
+  in
+  let value = fresh_value function_builder in
+  emit function_builder (ListCreate (value, element_type, []));
+  { operand = Value value; ty = List element_type }
 
 let rec lower_method_call context function_builder environment object_value method_name
     arguments position =
@@ -317,6 +326,97 @@ and coerce_value context function_builder position expected_type value =
         expect_type position expected_type value.ty "value conversion";
         value
 
+and lower_list_contains function_builder collection needle element_type position =
+  let compare_item item =
+    match element_type with
+    | I32 | Bool ->
+        let result = fresh_value function_builder in
+        emit function_builder (Compare (result, Eq, Value item, needle.operand));
+        result
+    | Str ->
+        let comparison = fresh_value function_builder in
+        emit function_builder (StringCompare (comparison, Value item, needle.operand));
+        let result = fresh_value function_builder in
+        emit function_builder (Compare (result, Eq, Value comparison, Int 0));
+        result
+    | _ -> fail_at position (Printf.sprintf
+        "in does not support list elements of type %s" (Dir.ty_to_string element_type))
+  in
+  let condition_label = fresh_label function_builder "contains_condition" in
+  let body_label = fresh_label function_builder "contains_body" in
+  let step_label = fresh_label function_builder "contains_step" in
+  let exit_label = fresh_label function_builder "contains_exit" in
+  List.iter (create_block function_builder)
+    [condition_label; body_label; step_label; exit_label];
+  terminate function_builder (Jump (condition_label, [Int 0]));
+  switch_to function_builder condition_label;
+  let condition_index = fresh_value function_builder in
+  set_block_params function_builder condition_label [(condition_index, I32)];
+  let length = fresh_value function_builder in
+  emit function_builder (ListLength (length, collection.operand));
+  let has_more = fresh_value function_builder in
+  emit function_builder (Compare (has_more, Lt, Value condition_index, Value length));
+  terminate function_builder (Branch (Value has_more,
+    (body_label, [Value condition_index]), (exit_label, [Bool false])));
+  switch_to function_builder body_label;
+  let body_index = fresh_value function_builder in
+  set_block_params function_builder body_label [(body_index, I32)];
+  let item = fresh_value function_builder in
+  emit function_builder (ListGet (item, collection.operand, Value body_index));
+  let matches = compare_item item in
+  terminate function_builder (Branch (Value matches,
+    (exit_label, [Bool true]), (step_label, [Value body_index])));
+  switch_to function_builder step_label;
+  let step_index = fresh_value function_builder in
+  set_block_params function_builder step_label [(step_index, I32)];
+  let next_index = fresh_value function_builder in
+  emit function_builder (Binop (next_index, I32, Add, Value step_index, Int 1));
+  terminate function_builder (Jump (condition_label, [Value next_index]));
+  switch_to function_builder exit_label;
+  let result = fresh_value function_builder in
+  set_block_params function_builder exit_label [(result, Bool)];
+  { operand = Value result; ty = Bool }
+
+and lower_bytes_contains function_builder collection needle position =
+  expect_type position I32 needle.ty "bytes membership value";
+  let condition_label = fresh_label function_builder "contains_condition" in
+  let body_label = fresh_label function_builder "contains_body" in
+  let step_label = fresh_label function_builder "contains_step" in
+  let exit_label = fresh_label function_builder "contains_exit" in
+  List.iter (create_block function_builder)
+    [condition_label; body_label; step_label; exit_label];
+  terminate function_builder (Jump (condition_label, [Int 0]));
+  switch_to function_builder condition_label;
+  let condition_index = fresh_value function_builder in
+  set_block_params function_builder condition_label [(condition_index, I32)];
+  let length = fresh_value function_builder in
+  emit function_builder (Call (Some length, I32, "__c_bytes_length",
+    [Bytes], [collection.operand]));
+  let has_more = fresh_value function_builder in
+  emit function_builder (Compare (has_more, Lt, Value condition_index, Value length));
+  terminate function_builder (Branch (Value has_more,
+    (body_label, [Value condition_index]), (exit_label, [Bool false])));
+  switch_to function_builder body_label;
+  let body_index = fresh_value function_builder in
+  set_block_params function_builder body_label [(body_index, I32)];
+  let item = fresh_value function_builder in
+  emit function_builder (Call (Some item, I32, "__c_bytes_get",
+    [Bytes; I32], [collection.operand; Value body_index]));
+  let matches = fresh_value function_builder in
+  emit function_builder (Compare (matches, Eq, Value item, needle.operand));
+  terminate function_builder (Branch (Value matches,
+    (exit_label, [Bool true]), (step_label, [Value body_index])));
+  switch_to function_builder step_label;
+  let step_index = fresh_value function_builder in
+  set_block_params function_builder step_label [(step_index, I32)];
+  let next_index = fresh_value function_builder in
+  emit function_builder (Binop (next_index, I32, Add, Value step_index, Int 1));
+  terminate function_builder (Jump (condition_label, [Value next_index]));
+  switch_to function_builder exit_label;
+  let result = fresh_value function_builder in
+  set_block_params function_builder exit_label [(result, Bool)];
+  { operand = Value result; ty = Bool }
+
 and lower_expr context function_builder environment expression =
   match expression with
   | EInt (value, _) -> { operand = Int value; ty = I32 }
@@ -403,6 +503,23 @@ and lower_expr context function_builder environment expression =
            emit function_builder (Binop (value, Bool, binop_of_ast position operation,
              left.operand, right.operand));
            { operand = Value value; ty = Bool }
+       | In ->
+           (match left.ty, right.ty with
+            | Str, Str ->
+                let value = fresh_value function_builder in
+                emit function_builder (Call (Some value, I32, "string_find",
+                  [Str; Str], [right.operand; left.operand]));
+                let result = fresh_value function_builder in
+                emit function_builder (Compare (result, Ge, Value value, Int 0));
+                { operand = Value result; ty = Bool }
+            | _, List element_type ->
+                lower_list_contains function_builder right left element_type position
+            | (I32 | Bool), Bytes ->
+                lower_bytes_contains function_builder right left position
+            | _, Struct _ ->
+                lower_method_call context function_builder environment right "contains"
+                  [left_expression] position
+            | _ -> fail_at position "in supports str, list, bytes or a Contains implementation")
        | Eq | Neq | Lt | Gt | Lte | Gte ->
            (match left.ty with
             | I32 | F64 | Bool ->
@@ -564,6 +681,54 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, Str, "__c_file_read",
         [Str], [lowered_path.operand]));
       { operand = Value value; ty = Str }
+  | ECall (EVar ("__c_net_connect", _), [host; port], position) ->
+      let lowered_host = lower_expr context function_builder environment host in
+      let lowered_port = lower_expr context function_builder environment port in
+      expect_type position Str lowered_host.ty "__c_net_connect host";
+      expect_type position I32 lowered_port.ty "__c_net_connect port";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_net_connect",
+        [Str; I32], [lowered_host.operand; lowered_port.operand]));
+      { operand = Value value; ty = I32 }
+  | ECall (EVar ("__c_net_write", _), [fd; content], position) ->
+      let lowered_fd = lower_expr context function_builder environment fd in
+      let lowered_content = lower_expr context function_builder environment content in
+      expect_type position I32 lowered_fd.ty "__c_net_write fd";
+      expect_type position Str lowered_content.ty "__c_net_write content";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_net_write",
+        [I32; Str], [lowered_fd.operand; lowered_content.operand]));
+      { operand = Value value; ty = I32 }
+  | ECall (EVar ("__c_net_read", _), [fd; size], position) ->
+      let lowered_fd = lower_expr context function_builder environment fd in
+      let lowered_size = lower_expr context function_builder environment size in
+      expect_type position I32 lowered_fd.ty "__c_net_read fd";
+      expect_type position I32 lowered_size.ty "__c_net_read size";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Str, "__c_net_read",
+        [I32; I32], [lowered_fd.operand; lowered_size.operand]));
+      { operand = Value value; ty = Str }
+  | ECall (EVar ("__c_net_close", _), [fd], position) ->
+      let lowered_fd = lower_expr context function_builder environment fd in
+      expect_type position I32 lowered_fd.ty "__c_net_close fd";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Bool, "__c_net_close",
+        [I32], [lowered_fd.operand]));
+      { operand = Value value; ty = Bool }
+  | ECall (EVar ("__c_http_request", _), [method_; url; headers; body], position) ->
+      let lowered_method = lower_expr context function_builder environment method_ in
+      let lowered_url = lower_expr context function_builder environment url in
+      let lowered_headers = lower_expr context function_builder environment headers in
+      let lowered_body = lower_expr context function_builder environment body in
+      expect_type position Str lowered_method.ty "__c_http_request method";
+      expect_type position Str lowered_url.ty "__c_http_request URL";
+      expect_type position Str lowered_headers.ty "__c_http_request headers";
+      expect_type position Str lowered_body.ty "__c_http_request body";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Str, "__c_http_request",
+        [Str; Str; Str; Str], [lowered_method.operand; lowered_url.operand;
+          lowered_headers.operand; lowered_body.operand]));
+      { operand = Value value; ty = Str }
   | ECall (EVar ("__c_file_read_bytes", _), [path], position) ->
       let lowered_path = lower_expr context function_builder environment path in
       expect_type position Str lowered_path.ty "__c_file_read_bytes path";
@@ -662,6 +827,39 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, Str, "__c_bytes_to_str",
         [Bytes], [lowered_bytes.operand]));
       { operand = Value value; ty = Str }
+  | ECall (EAttr (EVar (module_name, _), function_name, _), arguments, position)
+      when StringSet.mem module_name context.module_aliases ->
+      let signature = match Hashtbl.find_opt context.signatures function_name with
+        | Some signature -> signature
+        | None -> fail_at position ("unknown function " ^ module_name ^ "." ^ function_name)
+      in
+      let lowered_arguments = List.map
+        (lower_expr context function_builder environment) arguments in
+      if List.length lowered_arguments <> List.length signature.parameter_types then
+        fail_at position (Printf.sprintf "function %s.%s expects %d arguments, got %d"
+          module_name function_name (List.length signature.parameter_types)
+          (List.length lowered_arguments));
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        coerce_value context function_builder position expected_type argument
+      ) lowered_arguments signature.parameter_types in
+      let result_value = match signature.return_type with
+        | Unit -> None
+        | _ -> Some (fresh_value function_builder)
+      in
+      emit function_builder (Call (result_value, signature.return_type, function_name,
+        signature.parameter_types, List.map (fun argument -> argument.operand) lowered_arguments));
+      let operand = match result_value with
+        | Some value -> Value value
+        | None -> Int 0
+      in
+      { operand; ty = signature.return_type }
+  | ECall (EVar ("__c_utf8_encode_rune", _), [rune], position) ->
+      let lowered_rune = lower_expr context function_builder environment rune in
+      expect_type position I32 lowered_rune.ty "__c_utf8_encode_rune rune";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Bytes, "__c_utf8_encode_rune",
+        [I32], [lowered_rune.operand]));
+      { operand = Value value; ty = Bytes }
   | ECall (EVar ("bytes_get", _), [buf; idx], position) ->
       let lowered_bytes = lower_expr context function_builder environment buf in
       let lowered_index = lower_expr context function_builder environment idx in
@@ -775,10 +973,7 @@ and lower_expr context function_builder environment expression =
   | EList (elements, position) ->
       (match elements with
        | [] ->
-           (* 空列表字面量:类型未定,运行时不携带元素类型信息 *)
-           let value = fresh_value function_builder in
-           emit function_builder (ListCreate (value, I32, []));
-           { operand = Value value; ty = List I32 }
+           lower_empty_list function_builder None
        | _ ->
            let lowered_elements = List.map
              (lower_expr context function_builder environment) elements in
@@ -806,6 +1001,10 @@ and lower_expr context function_builder environment expression =
            expect_type position I32 lowered_index.ty "index expression";
            let value = fresh_value function_builder in
            emit function_builder (ListGet (value, lowered_collection.operand, lowered_index.operand));
+           let element_type = match element_type with
+             | Enum (name, []) -> context.resolve_enum name
+             | element_type -> element_type
+           in
            { operand = Value value; ty = element_type }
        | Str ->
            let lowered_index = lower_expr context function_builder environment index in
@@ -1024,6 +1223,32 @@ and lower_expr context function_builder environment expression =
                 { operand = Value value; ty = enum_type }
             | [] -> { operand = Int tag; ty = enum_type }
             | _ -> fail_at position "enum variant requires a payload") )
+  | EEnumVariant (module_name, function_name, arguments, position)
+      when StringSet.mem module_name context.module_aliases ->
+      let signature = match Hashtbl.find_opt context.signatures function_name with
+        | Some signature -> signature
+        | None -> fail_at position ("unknown function " ^ module_name ^ "." ^ function_name)
+      in
+      let lowered_arguments = List.map
+        (lower_expr context function_builder environment) arguments in
+      if List.length lowered_arguments <> List.length signature.parameter_types then
+        fail_at position (Printf.sprintf "function %s.%s expects %d arguments, got %d"
+          module_name function_name (List.length signature.parameter_types)
+          (List.length lowered_arguments));
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        coerce_value context function_builder position expected_type argument
+      ) lowered_arguments signature.parameter_types in
+      let result_value = match signature.return_type with
+        | Unit -> None
+        | _ -> Some (fresh_value function_builder)
+      in
+      emit function_builder (Call (result_value, signature.return_type, function_name,
+        signature.parameter_types, List.map (fun argument -> argument.operand) lowered_arguments));
+      let operand = match result_value with
+        | Some value -> Value value
+        | None -> Int 0
+      in
+      { operand; ty = signature.return_type }
   | EEnumVariant (variable_name, method_name, arguments, position)
     when (match Hashtbl.find_opt environment variable_name with
           | Some { ty = Struct (struct_name, _); _ } ->
@@ -1089,30 +1314,28 @@ and lower_expr context function_builder environment expression =
            let payload_type = if enum_name = "Option" || enum_name = "Result" then
              payload.ty else payload_type in
            expect_type position payload_type payload.ty "enum payload";
-           (match payload_type with
-            | I32 | F64 | Str | Bool -> ()
-            | _ -> fail_at position "DIR enum payload supports only int, float, bool and str");
-           let enum_type = match resolved_enum_type with
-             | Enum (name, variants) ->
-                 Enum (name, List.mapi (fun index (name, types) ->
-                   if index = tag then name, [payload_type] else name, types) variants)
-             | _ -> assert false
-           in
            let value = fresh_value function_builder in
-           emit function_builder (EnumCreate (value, enum_type, tag,
-             payload_type, payload.operand));
-           { operand = Value value; ty = enum_type }
+           (match payload_type with
+            | I32 | F64 | Str | Bool ->
+                let enum_type = match resolved_enum_type with
+                  | Enum (name, variants) ->
+                      Enum (name, List.mapi (fun index (name, types) ->
+                        if index = tag then name, [payload_type] else name, types) variants)
+                  | _ -> assert false
+                in
+                emit function_builder (EnumCreate (value, enum_type, tag,
+                  payload_type, payload.operand));
+                { operand = Value value; ty = enum_type }
+            | _ ->
+                emit function_builder (EnumCreateMulti (value, resolved_enum_type, tag,
+                  [payload_type], [payload.operand]));
+                { operand = Value value; ty = resolved_enum_type })
        | payload_types, payloads
          when payload_types <> [] && List.length payload_types = List.length payloads ->
            let lowered_payload_types = List.map (fun payload -> payload.ty) lowered_arguments in
            List.iter2 (fun expected actual ->
              expect_type position expected actual "enum payload"
            ) payload_types lowered_payload_types;
-           List.iter (fun payload_type ->
-             match payload_type with
-             | I32 | F64 | Str | Bool -> ()
-             | _ -> fail_at position "DIR enum payload supports only primitive values"
-           ) payload_types;
            let value = fresh_value function_builder in
            emit function_builder (EnumCreateMulti (value, resolved_enum_type, tag,
              payload_types, List.map (fun payload -> payload.operand) lowered_arguments));
@@ -1167,6 +1390,11 @@ and lower_expr context function_builder environment expression =
        | I32 | F64 | Str | Bool | Bytes ->
            coerce_value context function_builder position (Union [value.ty]) value
        | _ -> fail_at position "type-of requires a scalar, union or interface value")
+
+and lower_expr_expected context function_builder environment expected_type expression =
+  match expression with
+  | EList ([], _) -> lower_empty_list function_builder expected_type
+  | _ -> lower_expr context function_builder environment expression
 
 and lower_lambda context enclosing_builder outer_environment parameters body position =
   let parameter_types = List.map (fun (name, type_expression) ->
@@ -1282,7 +1510,11 @@ and lower_match_expression context function_builder environment scrutinee cases 
   let enum_variant_info pattern = match pattern with
     | PEnumVariant (_, variant_name, patterns) ->
         let variants = match lowered_scrutinee.ty with
-          | Enum (_, variants) -> variants
+          | Enum (_, variants) when variants <> [] -> variants
+          | Enum (name, []) ->
+              (match context.resolve_enum name with
+               | Enum (_, variants) -> variants
+               | _ -> fail_at position "enum pattern requires an enum match scrutinee")
           | _ -> fail_at position "enum pattern requires an enum match scrutinee"
         in
         let tag, payload_types = match List.find_index
@@ -1464,7 +1696,10 @@ and lower_match_expression context function_builder environment scrutinee cases 
             | PVar name ->
                 let payload_type = List.nth payload_types index in
                 let value = fresh_value function_builder in
-                if List.length payload_types = 1 then
+                if List.length payload_types = 1 &&
+                   (match payload_type with
+                    | I32 | F64 | Str | Bool -> true
+                    | _ -> false) then
                   emit function_builder (EnumGet (value, payload_type,
                     lowered_scrutinee.operand, tag))
                 else
@@ -1476,6 +1711,10 @@ and lower_match_expression context function_builder environment scrutinee cases 
     | _ -> ()
   in
   let enum_has_payload = match lowered_scrutinee.ty with
+    | Enum (name, []) ->
+        (match context.resolve_enum name with
+         | Enum (_, variants) -> List.exists (fun (_, payload_types) -> payload_types <> []) variants
+         | _ -> false)
     | Enum (_, variants) -> List.exists (fun (_, payload_types) -> payload_types <> []) variants
     | _ -> false
   in
@@ -1992,6 +2231,11 @@ let runtime_externs = [
   { name = "__c_file_write"; parameters = [Str; Str]; return_type = I32 };
   { name = "__c_file_exists"; parameters = [Str]; return_type = Bool };
   { name = "__c_file_delete"; parameters = [Str]; return_type = Bool };
+  { name = "__c_net_connect"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_net_write"; parameters = [I32; Str]; return_type = I32 };
+  { name = "__c_net_read"; parameters = [I32; I32]; return_type = Str };
+  { name = "__c_net_close"; parameters = [I32]; return_type = Bool };
+  { name = "__c_http_request"; parameters = [Str; Str; Str; Str]; return_type = Str };
   { name = "__c_build_llvm"; parameters = [Str; Str; Bool]; return_type = I32 };
   { name = "__c_file_read_bytes"; parameters = [Str]; return_type = Bytes };
   { name = "__c_file_write_bytes"; parameters = [Str; Bytes]; return_type = I32 };
@@ -2021,6 +2265,7 @@ let runtime_externs = [
   { name = "dream_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
   { name = "__c_utf8_rune_count"; parameters = [Str]; return_type = I32 };
   { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_utf8_encode_rune"; parameters = [I32]; return_type = Bytes };
 ]
 
 let lower_program program =
@@ -2052,6 +2297,12 @@ let lower_program program =
       | TNone -> Unit
       | TStruct (name, _) -> resolve_struct_type resolving name
       | TEnum (name, _) -> resolve_enum_type resolving name
+      | TGeneric (name, argument) ->
+          let parameters = match argument with
+            | TTuple arguments -> List.map (resolve_type resolving) arguments
+            | _ -> [resolve_type resolving argument]
+          in
+          resolve_interface_type name parameters
       | TOption element_type ->
           Enum ("Option", [("Some", [resolve_type resolving element_type]); ("None", [])])
       | TResult (ok_type, error_type) ->
@@ -2060,7 +2311,7 @@ let lower_program program =
       | TVar name ->
           (try resolve_struct_type resolving name with Lower_error _ ->
              try resolve_enum_type resolving name with Lower_error _ ->
-               try resolve_interface_type name with Lower_error _ -> I32)
+               try resolve_interface_type name [] with Lower_error _ -> I32)
       | TSelf -> Struct ("", [])  (* 接口声明中的 Self 占位，impl 时解析为具体类型 *)
       | type_expression ->
           raise (Lower_error (Printf.sprintf "DIR does not support type %s in a struct"
@@ -2092,30 +2343,59 @@ let lower_program program =
           Struct (name, fields)
     and resolve_enum_type resolving name =
       if List.mem name resolving then
-        raise (Lower_error ("recursive enum is not supported in DIR: " ^ name));
-      match Hashtbl.find_opt enum_definitions name with
-      | None -> raise (Lower_error ("unknown enum " ^ name))
-      | Some enum_info ->
-          let variants = List.map (function
-            | VSimple (variant_name, _) -> variant_name, []
-            | VTuple (variant_name, types, _) ->
-                variant_name, List.map (resolve_type (name :: resolving)) types
-          ) enum_info.enum_variants in
-          Enum (name, variants)
-    and resolve_interface_type name =
+        Enum (name, [])
+      else
+        match Hashtbl.find_opt enum_definitions name with
+        | None -> raise (Lower_error ("unknown enum " ^ name))
+        | Some enum_info ->
+            let variants = List.map (function
+              | VSimple (variant_name, _) -> variant_name, []
+              | VTuple (variant_name, types, _) ->
+                  variant_name, List.map (resolve_type (name :: resolving)) types
+            ) enum_info.enum_variants in
+            Enum (name, variants)
+    and resolve_interface_type name parameters =
       match Hashtbl.find_opt interface_definitions name with
       | None -> raise (Lower_error ("unknown interface " ^ name))
       | Some interface_info ->
+          let type_substitution =
+            try List.combine interface_info.interface_type_params parameters
+            with Invalid_argument _ -> []
+          in
+          let rec resolve_member_type = function
+            | TVar type_name ->
+                (match List.assoc_opt type_name type_substitution with
+                 | Some resolved_type -> resolved_type
+                 | None -> resolve_type [] (TVar type_name))
+            | TList element_type -> List (resolve_member_type element_type)
+            | TTuple element_types -> Tuple (List.map resolve_member_type element_types)
+            | TGeneric (generic_name, argument) ->
+                let arguments = match argument with
+                  | TTuple arguments -> List.map resolve_member_type arguments
+                  | _ -> [resolve_member_type argument]
+                in
+                resolve_interface_type generic_name arguments
+            | TOption element_type ->
+                Enum ("Option", [
+                  ("Some", [resolve_member_type element_type]); ("None", [])
+                ])
+            | TResult (ok_type, error_type) ->
+                Enum ("Result", [
+                  ("Ok", [resolve_member_type ok_type]);
+                  ("Err", [resolve_member_type error_type])
+                ])
+            | type_expression -> resolve_type [] type_expression
+          in
           let methods = List.filter_map (function
             | IMethod (method_name, _, parameters, return_type, _, _) ->
                 let parameter_types = List.filter_map (fun (parameter_name, type_expression, _) ->
                   if parameter_name = "self" then None
                   else Some (match type_expression with
-                    | Some type_expression -> resolve_type [] type_expression
+                    | Some type_expression -> resolve_member_type type_expression
                     | None -> I32)
                 ) parameters in
                 let resolved_return_type = match return_type with
-                  | Some type_expression -> resolve_type [] type_expression
+                  | Some type_expression -> resolve_member_type type_expression
                   | None -> Unit
                 in
                 Some (method_name, parameter_types, resolved_return_type)
@@ -2127,7 +2407,7 @@ let lower_program program =
     in
     let resolve_struct name = resolve_struct_type [] name in
     let resolve_enum name = resolve_enum_type [] name in
-    let resolve_interface name = resolve_interface_type name in
+    let resolve_interface name = resolve_interface_type name [] in
     let resolve_named name =
       try resolve_struct name with Lower_error struct_error ->
         try resolve_enum name with Lower_error enum_error ->
@@ -2249,6 +2529,16 @@ let lower_program program =
     let context = {
       signatures;
       method_signatures;
+      module_aliases = List.fold_left (fun aliases statement ->
+        match statement with
+        | SImport (module_path, alias, _) ->
+            let name = match alias with
+              | Some name -> name
+              | None -> List.hd (List.rev module_path)
+            in
+            StringSet.add name aliases
+        | _ -> aliases
+      ) StringSet.empty program;
       resolve_struct;
       resolve_enum;
       resolve_interface;
@@ -2342,4 +2632,5 @@ let lower_program program =
 (* 初始化函数引用以打破互递归 *)
 let () =
   Dir_lower_stmt.set_lower_expr lower_expr;
+  Dir_lower_stmt.set_lower_expr_expected lower_expr_expected;
   Dir_lower_stmt.set_coerce_value coerce_value

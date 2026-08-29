@@ -2,13 +2,18 @@ open Ast
 open Dir_lower_types
 
 let lower_expr_ref = ref (fun _ _ _ _ -> { operand = Dir.Int 0; ty = Dir.Unit })
+let lower_expr_expected_ref = ref (fun _ _ _ _ _ -> { operand = Dir.Int 0; ty = Dir.Unit })
 let coerce_value_ref = ref (fun _ _ _ _ _ -> { operand = Dir.Int 0; ty = Dir.Unit })
 
 let set_lower_expr f = lower_expr_ref := f
+let set_lower_expr_expected f = lower_expr_expected_ref := f
 let set_coerce_value f = coerce_value_ref := f
 
 let lower_expr context function_builder environment expression =
   !lower_expr_ref context function_builder environment expression
+
+let lower_expr_expected context function_builder environment expected_type expression =
+  !lower_expr_expected_ref context function_builder environment expected_type expression
 
 let coerce_value context function_builder position expected_type value =
   !coerce_value_ref context function_builder position expected_type value
@@ -142,8 +147,7 @@ and lower_while context function_builder environment condition body position =
     Hashtbl.replace environment name { operand = Dir.Value value; ty }
   ) exit_params
 
-and lower_for context function_builder environment pattern iterable body position =
-  let lowered_iterable = lower_expr context function_builder environment iterable in
+and lower_list_for context function_builder environment pattern lowered_iterable body position =
   let element_type = match lowered_iterable.ty with
     | List element_type -> element_type
     | actual_type -> fail_at position (Printf.sprintf
@@ -254,6 +258,149 @@ and lower_for context function_builder environment pattern iterable body positio
     Hashtbl.replace environment name { operand = Dir.Value value; ty }
   ) exit_bindings
 
+and lower_protocol_for context function_builder environment pattern iterator body position =
+  let iterator_name = "__dir_iterator" in
+  let iterator_environment = Hashtbl.copy environment in
+  Hashtbl.replace iterator_environment iterator_name iterator;
+  let loop_bindings = Hashtbl.fold (fun name value bindings ->
+    (name, value) :: bindings
+  ) environment [] |> List.sort (fun (left, _) (right, _) -> compare left right) in
+  let condition_label = fresh_label function_builder "for_condition" in
+  let body_label = fresh_label function_builder "for_body" in
+  let exit_label = fresh_label function_builder "for_exit" in
+  let step_label = fresh_label function_builder "for_step" in
+  let condition_bindings = List.map (fun (name, value) ->
+    (name, fresh_value function_builder, value.ty)
+  ) loop_bindings in
+  let body_bindings = List.map (fun (name, _, ty) ->
+    (name, fresh_value function_builder, ty)
+  ) condition_bindings in
+  let exit_bindings = List.map (fun (name, _, ty) ->
+    (name, fresh_value function_builder, ty)
+  ) condition_bindings in
+  List.iter (create_block function_builder)
+    [condition_label; body_label; step_label; exit_label];
+  let initial_arguments = List.map (fun (_, value) -> value.operand) loop_bindings in
+  terminate function_builder (Jump (condition_label, initial_arguments));
+  switch_to function_builder condition_label;
+  set_block_params function_builder condition_label
+    (List.map (fun (_, value, ty) -> (value, ty)) condition_bindings);
+  let has_next_expression = ECall (
+    EEnumVariant (iterator_name, "has_next", [], position), [], position) in
+  let has_next = lower_expr context function_builder iterator_environment has_next_expression in
+  expect_type position Dir.Bool has_next.ty "Iterator.has_next";
+  let condition_values = List.map (fun (_, value, _) -> Dir.Value value) condition_bindings in
+  terminate function_builder (Branch (has_next.operand,
+    (body_label, condition_values), (exit_label, condition_values)));
+  switch_to function_builder body_label;
+  set_block_params function_builder body_label
+    (List.map (fun (_, value, ty) -> (value, ty)) body_bindings);
+  let body_environment = Hashtbl.copy iterator_environment in
+  List.iter2 (fun (name, _) (_, value, ty) ->
+    Hashtbl.replace body_environment name { operand = Dir.Value value; ty }
+  ) loop_bindings body_bindings;
+  let next_expression = ECall (
+    EEnumVariant (iterator_name, "next", [], position), [], position) in
+  let item = lower_expr context function_builder body_environment next_expression in
+  let element_type = item.ty in
+  let bind_pattern = function
+    | PVar name ->
+        Hashtbl.replace body_environment name item
+    | PWildcard -> ()
+    | PTuple patterns ->
+        let element_types = match element_type with
+          | Dir.Tuple element_types -> element_types
+          | actual_type -> fail_at position (Printf.sprintf
+              "tuple pattern requires a tuple element, got %s"
+              (Dir.ty_to_string actual_type))
+        in
+        if List.length patterns <> List.length element_types then
+          fail_at position "tuple pattern length does not match element";
+        List.iteri (fun index sub_pattern ->
+          match sub_pattern with
+          | PVar name ->
+              let value = fresh_value function_builder in
+              emit function_builder (Dir.TupleGet (value, List.nth element_types index,
+                item.operand, index));
+              Hashtbl.replace body_environment name
+                { operand = Dir.Value value; ty = List.nth element_types index }
+          | PWildcard -> ()
+          | _ -> fail_at position "DIR for tuple patterns only support variables and wildcards"
+        ) patterns
+    | _ -> fail_at position "DIR for loops only support variable, wildcard and tuple patterns"
+  in
+  bind_pattern pattern;
+  let previous_break_stack = !(context.break_labels) in
+  context.break_labels :=
+    (exit_label, List.map (fun (name, _, ty) -> (name, ty)) body_bindings) :: previous_break_stack;
+  let previous_continue_stack = !(context.continue_labels) in
+  context.continue_labels :=
+    (step_label, List.map (fun (name, _, ty) -> (name, ty)) condition_bindings, None)
+    :: previous_continue_stack;
+  lower_statements context function_builder body_environment body;
+  context.break_labels := previous_break_stack;
+  context.continue_labels := previous_continue_stack;
+  if not (is_terminated function_builder) then begin
+    let back_values = List.map (fun (name, _, _) ->
+      (Hashtbl.find body_environment name).operand
+    ) body_bindings in
+    terminate function_builder (Jump (step_label, back_values))
+  end;
+  switch_to function_builder step_label;
+  let step_bindings = List.map (fun (name, _, ty) ->
+    (name, fresh_value function_builder, ty)
+  ) condition_bindings in
+  set_block_params function_builder step_label
+    (List.map (fun (_, value, ty) -> (value, ty)) step_bindings);
+  let step_values = List.map (fun (_, value, _) -> Dir.Value value) step_bindings in
+  terminate function_builder (Jump (condition_label, step_values));
+  switch_to function_builder exit_label;
+  set_block_params function_builder exit_label
+    (List.map (fun (_, value, ty) -> (value, ty)) exit_bindings);
+  Hashtbl.clear environment;
+  List.iter (fun (name, value, ty) ->
+    Hashtbl.replace environment name { operand = Dir.Value value; ty }
+  ) exit_bindings
+
+and lower_for context function_builder environment pattern iterable body position =
+  let lowered_iterable = lower_expr context function_builder environment iterable in
+  match lowered_iterable.ty with
+  | Dir.List _ -> lower_list_for context function_builder environment pattern lowered_iterable body position
+  | Dir.Interface ("Iterator", _) ->
+      lower_protocol_for context function_builder environment pattern lowered_iterable body position
+  | Dir.Interface ("Iterable", _) ->
+      let iterable_name = "__dir_iterable" in
+      let iterable_environment = Hashtbl.copy environment in
+      Hashtbl.replace iterable_environment iterable_name lowered_iterable;
+      let iterator_expression = ECall (
+        EEnumVariant (iterable_name, "iter", [], position), [], position) in
+      let iterator = lower_expr context function_builder iterable_environment iterator_expression in
+      (match iterator.ty with
+       | Dir.Interface ("Iterator", _) ->
+           lower_protocol_for context function_builder environment pattern iterator body position
+       | actual_type -> fail_at position (Printf.sprintf
+           "Iterable.iter must return Iterator, got %s" (Dir.ty_to_string actual_type)))
+  | Dir.Struct (struct_name, _) when Hashtbl.mem context.method_signatures
+      (struct_name ^ ".iter") ->
+      let iterable_name = "__dir_iterable" in
+      let iterable_environment = Hashtbl.copy environment in
+      Hashtbl.replace iterable_environment iterable_name lowered_iterable;
+      let iterator_expression = ECall (
+        EEnumVariant (iterable_name, "iter", [], position), [], position) in
+      let iterator = lower_expr context function_builder iterable_environment iterator_expression in
+      (match iterator.ty with
+       | Dir.Interface ("Iterator", _) ->
+           lower_protocol_for context function_builder environment pattern iterator body position
+       | actual_type -> fail_at position (Printf.sprintf
+           "iter must return Iterator, got %s" (Dir.ty_to_string actual_type)))
+  | Dir.Struct (struct_name, _) when Hashtbl.mem context.method_signatures
+      (struct_name ^ ".has_next") && Hashtbl.mem context.method_signatures
+      (struct_name ^ ".next") ->
+      lower_protocol_for context function_builder environment pattern lowered_iterable body position
+  | actual_type -> fail_at position (Printf.sprintf
+      "for loop iterable requires a list, Iterator or Iterable, got %s"
+      (Dir.ty_to_string actual_type))
+
 and lower_statement context function_builder environment statement =
   match statement with
   | SExpr (expression, _) -> ignore (lower_expr context function_builder environment expression)
@@ -261,15 +408,19 @@ and lower_statement context function_builder environment statement =
       let value = lower_expr context function_builder environment const_info.const_value in
       Hashtbl.replace environment const_info.const_name value
   | SLet let_info ->
-      let value = lower_expr context function_builder environment let_info.let_value in
-      let value = match let_info.let_type with
+      let value, annotated_type = match let_info.let_type with
         | Some type_expression ->
             let annotated_type = type_of_ast context.resolve_named type_expression in
-            (match annotated_type, let_info.let_value with
-             | List _, EList ([], _) ->
-                 { value with ty = annotated_type }
-             | _ ->
-                 coerce_value context function_builder let_info.let_pos annotated_type value)
+            lower_expr_expected context function_builder environment
+              (Some annotated_type) let_info.let_value,
+            Some annotated_type
+        | None ->
+            lower_expr context function_builder environment let_info.let_value,
+            None
+      in
+      let value = match annotated_type with
+        | Some annotated_type ->
+            coerce_value context function_builder let_info.let_pos annotated_type value
         | None -> value
       in
       Hashtbl.replace environment let_info.let_name value

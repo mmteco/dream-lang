@@ -374,11 +374,11 @@ let verify module_ =
           | None -> ())
      | ListCreate (value, element_type, values) ->
          (match element_type with
-          | I32 | Str | Tuple _ ->
+          | I32 | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
               List.iter (fun item ->
                 verify_operand value_types item element_type "list_create element"
               ) values
-          | _ -> add_error "list_create supports only i32, str and tuple elements");
+          | _ -> add_error "list_create supports only scalar and pointer elements");
          if Hashtbl.mem value_types value then
            add_error (Printf.sprintf "duplicate value %%v%d" value)
          else
@@ -523,6 +523,7 @@ let verify module_ =
                     | [_] -> add_error "enum_get result type does not match variant payload"
                     | [] -> add_error "enum_get cannot extract from a simple variant"
                     | _ -> add_error "enum_get supports only one payload")
+               | Some (Enum (_, [])) -> ()
                | Some (Enum _) -> add_error "enum_get tag is out of bounds"
                | _ -> ())
           | _ -> ());
@@ -542,6 +543,7 @@ let verify module_ =
                      add_error "enum_get_multi payload index or type list is invalid"
                    else if not (equal_ty field_type (List.nth expected_payload index)) then
                      add_error "enum_get_multi result type does not match variant payload"
+               | Some (Enum (_, [])) -> ()
                | Some (Enum _) -> add_error "enum_get_multi tag is out of bounds"
                | _ -> ())
           | _ -> ());
@@ -570,7 +572,7 @@ let verify module_ =
     ()
   in
 
-  let verify_function function_def =
+  let verify_function (function_def : Dir.function_def) =
     let block_labels = Hashtbl.create 16 in
     List.iter (fun block ->
       if Hashtbl.mem block_labels block.label then

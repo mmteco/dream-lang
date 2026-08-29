@@ -44,19 +44,30 @@ let find_method_type env struct_name method_name struct_def =
   | Some method_type -> Some method_type
   | None -> Env.find_impl_method_for_type (TyStruct (struct_name, [])) method_name env
 
-let find_interface_method_type env interface_name method_name =
+let find_interface_method_type env interface_name interface_params method_name =
   match Env.find_interface interface_name env with
   | None -> None
   | Some interface_def ->
+      let substitution =
+        if List.length interface_def.iface_type_params = List.length interface_params then
+          List.fold_left2 (fun substitution name value ->
+            Subst.add name value substitution
+          ) Subst.empty interface_def.iface_type_params interface_params
+        else
+          Subst.empty
+      in
+      let resolve_type type_expression =
+        apply_subst substitution (resolve_type_expr env type_expression)
+      in
       List.find_map (function
         | IMethod (name, _, params, return_type, _, _) when name = method_name ->
             let parameter_types = List.filter_map (fun (parameter_name, type_opt, _) ->
               if parameter_name = "self" then None
               else Some (match type_opt with
-                | Some type_expr -> type_expr_to_ty type_expr
+                | Some type_expr -> resolve_type type_expr
                 | None -> fresh_type_var ())) params in
             let result_type = match return_type with
-              | Some type_expr -> type_expr_to_ty type_expr
+              | Some type_expr -> resolve_type type_expr
               | None -> TyNone
             in
             Some (TyFunc (parameter_types, result_type))
@@ -145,6 +156,24 @@ let rec infer_expr env = function
            (match t1', t2' with
             | TyInt, TyInt -> Some (TyInt, s3)
             | _, _ -> None)  (* 尝试运算符重载 *)
+       | In ->
+           (match t1', t2' with
+            | TyStr, TyStr -> Some (TyBool, s3)
+            | actual_type, TyList element_type ->
+                (try
+                   let s4 = unify actual_type element_type in
+                   Some (TyBool, compose_subst s4 s3)
+                 with Failure _ -> None)
+            | TyByte, TyBytes
+            | TyInt, TyBytes -> Some (TyBool, s3)
+            | needle_type, container_type ->
+                (match Env.find_impl_for_method container_type "Contains" "contains"
+                    [needle_type] env with
+                 | Some impl ->
+                     (match Env.StringMap.find_opt "contains" impl.impl_methods with
+                      | Some (TyFunc (_, TyBool)) -> Some (TyBool, s3)
+                      | _ -> None)
+                 | None -> None))  (* 尝试 Contains 接口 *)
        | Eq | Neq | Lt | Gt | Lte | Gte ->
            (* 比较运算符：先尝试内置 *)
            (try
@@ -210,7 +239,8 @@ let rec infer_expr env = function
                      | Mod -> "%" | Pow -> "**"
                      | BitAnd -> "&" | BitOr -> "|" | BitXor -> "^" | Shl -> "<<" | Shr -> ">>"
                      | Eq -> "==" | Neq -> "!=" | Lt -> "<" | Gt -> ">"
-                     | Lte -> "<=" | Gte -> ">=" | And -> "and" | Or -> "or")
+                     | Lte -> "<=" | Gte -> ">=" | And -> "and" | Or -> "or"
+                     | In -> "in")
                     (ty_to_string t1') (ty_to_string t2')) in
                 report_error err;
                 (TyUnknown, s3)))
@@ -637,8 +667,8 @@ let rec infer_expr env = function
                                  (Printf.sprintf "Field or method '%s' is ambiguous (found in embedded structs: %s)" attr struct_names) in
                                report_error err;
                                (TyUnknown, obj_subst)))))
-       | TyInterface (interface_name, _) ->
-           (match find_interface_method_type env interface_name attr with
+       | TyInterface (interface_name, interface_params) ->
+           (match find_interface_method_type env interface_name interface_params attr with
             | Some method_type -> (method_type, obj_subst)
             | None ->
                 let err = make_error (TypeError "Unknown interface method") pos
@@ -921,8 +951,8 @@ let rec infer_expr env = function
             | Some (TyFunc ([], return_type)) -> return_type, empty_subst
             | Some method_type -> method_type, empty_subst
             | None -> TyEnum (enum_name, []), empty_subst)
-       | Some (TyInterface (interface_name, _)) ->
-           (match find_interface_method_type env interface_name variant_name with
+       | Some (TyInterface (interface_name, interface_params)) ->
+           (match find_interface_method_type env interface_name interface_params variant_name with
             | Some (TyFunc ([], return_type)) -> return_type, empty_subst
             | Some method_type -> method_type, empty_subst
             | None -> TyEnum (enum_name, []), empty_subst)
@@ -959,8 +989,8 @@ let rec infer_expr env = function
                           TyUnknown, combined_subst)
                  | _ -> TyUnknown, combined_subst)
             | None -> TyUnknown, combined_subst)
-       | Some (TyInterface (interface_name, _)) ->
-           (match find_interface_method_type env interface_name variant_name with
+       | Some (TyInterface (interface_name, interface_params)) ->
+           (match find_interface_method_type env interface_name interface_params variant_name with
             | Some (TyFunc (expected_argument_types, return_type))
               when List.length expected_argument_types = List.length resolved_arg_types ->
                 List.iter2 (fun expected actual ->

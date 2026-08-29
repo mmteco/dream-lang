@@ -110,7 +110,7 @@
 %right CONS  (* :: 右结合,用于列表模式匹配 *)
 %left OR
 %left AND
-%left EQ NEQ LT GT LTE GTE
+%left EQ NEQ LT GT LTE GTE IN
 %left PIPE  (* 位或 |，类型注解中的 union 也复用该 token *)
 %left CARET
 %left AMP
@@ -577,11 +577,11 @@ type_expr:
       | _ -> TGeneric (name, TTuple [key_type; value_type])
     }
   | name = IDENT LBRACKET ty = type_expr RBRACKET {
-      (* 支持 list[T] 和 Option[T] 语法 *)
+      (* 支持 list[T]、Option[T] 和接口/泛型类型语法 *)
       match name with
       | "list" -> TList ty
       | "Option" -> TOption ty
-      | _ -> TVar name  (* 暂时忽略泛型参数 *)
+      | _ -> TGeneric (name, ty)
     }
   | IDENT { match $1 with
       | "int" -> TInt
@@ -637,6 +637,7 @@ expr:
   | e1 = expr GT e2 = expr { EBinOp (e1, Gt, e2, { line = 0; column = 0 }) }
   | e1 = expr LTE e2 = expr { EBinOp (e1, Lte, e2, { line = 0; column = 0 }) }
   | e1 = expr GTE e2 = expr { EBinOp (e1, Gte, e2, { line = 0; column = 0 }) }
+  | e1 = expr IN e2 = expr { EBinOp (e1, In, e2, { line = 0; column = 0 }) }
   | e1 = expr AND e2 = expr { EBinOp (e1, And, e2, { line = 0; column = 0 }) }
   | e1 = expr OR e2 = expr { EBinOp (e1, Or, e2, { line = 0; column = 0 }) }
   | NOT e = expr { EUnOp (Not, e, { line = 0; column = 0 }) }
