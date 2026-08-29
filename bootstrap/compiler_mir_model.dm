@@ -1,6 +1,7 @@
 from compiler_operator import IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_IN, IR_OPERATOR_AND, IR_OPERATOR_OR
 from compiler_lex import source_ranges_equal, find_struct_declaration_index, is_identifier_start, is_identifier_continue, STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS, STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_SLOTS, STRUCT_FIELD_KINDS, STRUCT_FIELD_TYPE_DECLS, lex, token_kind, token_start, token_end, TOKEN_IDENTIFIER, TOKEN_INTEGER, TOKEN_RUNE, TOKEN_MINUS, TOKEN_COLON, TOKEN_COMMA, TOKEN_CONS, TOKEN_OPEN_BRACKET, TOKEN_CLOSE_BRACKET, TOKEN_OPEN_PAREN, TOKEN_CLOSE_PAREN, TOKEN_OPEN_BRACE, TOKEN_CLOSE_BRACE, TOKEN_DOT
 from compiler_external import external_id_from_name, external_return_type, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_POINTER, EXTERNAL_RETURN_STRING, EXTERNAL_ID_LEN, EXTERNAL_ID_ENUM_CREATE_TUPLE_PTR, EXTERNAL_ID_ENUM_GET_DATA
+from buffer import Buffer
 
 const MIR_MODEL_VERSION: int = 3
 const MIR_RECORD_SIZE: int = 12
@@ -3939,79 +3940,46 @@ def mir_validate_program(program: MirProgram) -> bool:
 def mir_empty_program() -> MirProgram:
     return MirProgram{records: [], values: []}
 
-def mir_output_append_text(output: list[byte], value: str):
-    let bytes = __c_str_to_bytes(value)
-    let index = 0
-    let length = __c_bytes_length(bytes)
-    while index < length:
-        let current = __c_bytes_get(bytes, index)
-        if current == 92 and index + 1 < length and __c_bytes_get(bytes, index + 1) == 110:
-            append(output, 10)
-            index = index + 2
-        else:
-            append(output, current)
-            index = index + 1
-
-def mir_output_append_int(output: list[byte], value: int):
-    if value == 0:
-        append(output, b'0')
-        return
-
-    let is_negative = value < 0
-    if is_negative:
-        append(output, b'-')
-        value = 0 - value
-
-    let digits: list[int] = []
-    while value > 0:
-        append(digits, 48 + value % 10)
-        value = value / 10
-
-    let index = len(digits) - 1
-    while index >= 0:
-        append(output, mir_int_list_get(digits, index))
-        index = index - 1
-
-def mir_dump_program(program: MirProgram, output: list[byte]) -> bool:
+def mir_dump_program(program: MirProgram, output: Buffer) -> bool:
     if not mir_validate_model_program(program):
         return false
-    mir_output_append_text(output, "MIR version=")
-    mir_output_append_int(output, MIR_MODEL_VERSION)
-    mir_output_append_text(output, " records=")
-    mir_output_append_int(output, mir_record_count(program.records))
-    mir_output_append_text(output, " values=")
-    mir_output_append_int(output, mir_value_count(program.values))
-    mir_output_append_text(output, "\n")
+    append(output, "MIR version=")
+    append(output, MIR_MODEL_VERSION)
+    append(output, " records=")
+    append(output, mir_record_count(program.records))
+    append(output, " values=")
+    append(output, mir_value_count(program.values))
+    append(output, "\n")
     let record_id = 0
     while record_id < mir_record_count(program.records):
         let offset = mir_record_offset(record_id)
-        mir_output_append_text(output, "record id=")
-        mir_output_append_int(output, record_id)
-        mir_output_append_text(output, " kind=")
-        mir_output_append_int(output, mir_int_list_get(program.records, offset))
-        mir_output_append_text(output, " function=")
-        mir_output_append_int(output, mir_int_list_get(program.records, offset + 1))
-        mir_output_append_text(output, " block=")
-        mir_output_append_int(output, mir_int_list_get(program.records, offset + 2))
-        mir_output_append_text(output, " opcode=")
-        mir_output_append_int(output, mir_int_list_get(program.records, offset + 3))
-        mir_output_append_text(output, " type=")
-        mir_output_append_int(output, mir_int_list_get(program.records, offset + 4))
-        mir_output_append_text(output, " result=")
-        mir_output_append_int(output, mir_int_list_get(program.records, offset + 5))
-        mir_output_append_text(output, " operands=")
-        mir_output_append_int(output, mir_int_list_get(program.records, offset + 7))
-        mir_output_append_text(output, " [")
+        append(output, "record id=")
+        append(output, record_id)
+        append(output, " kind=")
+        append(output, mir_int_list_get(program.records, offset))
+        append(output, " function=")
+        append(output, mir_int_list_get(program.records, offset + 1))
+        append(output, " block=")
+        append(output, mir_int_list_get(program.records, offset + 2))
+        append(output, " opcode=")
+        append(output, mir_int_list_get(program.records, offset + 3))
+        append(output, " type=")
+        append(output, mir_int_list_get(program.records, offset + 4))
+        append(output, " result=")
+        append(output, mir_int_list_get(program.records, offset + 5))
+        append(output, " operands=")
+        append(output, mir_int_list_get(program.records, offset + 7))
+        append(output, " [")
         let operand_index = 0
         while operand_index < mir_int_list_get(program.records, offset + 7):
             if operand_index > 0:
-                mir_output_append_text(output, ",")
+                append(output, ",")
             let value_offset = mir_value_offset(mir_int_list_get(program.records, offset + 6) + operand_index)
-            mir_output_append_int(output, mir_int_list_get(program.values, value_offset))
-            mir_output_append_text(output, ":")
-            mir_output_append_int(output, mir_int_list_get(program.values, value_offset + 1))
+            append(output, mir_int_list_get(program.values, value_offset))
+            append(output, ":")
+            append(output, mir_int_list_get(program.values, value_offset + 1))
             operand_index = operand_index + 1
-        mir_output_append_text(output, "]")
-        mir_output_append_text(output, "\n")
+        append(output, "]")
+        append(output, "\n")
         record_id = record_id + 1
     return true

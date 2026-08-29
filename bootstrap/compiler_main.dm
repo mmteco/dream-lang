@@ -181,46 +181,7 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     return rewrite_module_namespace(source, namespace_modules)
 
 def write_buffer(path: str, output: Buffer) -> int:
-    let bytes = __c_bytes_from_array(output.data)
-    return __c_file_write_bytes(path, bytes)
-
-def write_byte_output(path: str, output: list[byte]) -> int:
-    let bytes = __c_bytes_from_array(output)
-    return __c_file_write_bytes(path, bytes)
-
-def ast_output_append_text(output: list[byte], value: str):
-    let bytes = __c_str_to_bytes(value)
-    let index = 0
-    let length = __c_bytes_length(bytes)
-    while index < length:
-        let current = __c_bytes_get(bytes, index)
-        if current == 92 and index + 1 < length and __c_bytes_get(bytes, index + 1) == 110:
-            append(output, 10)
-            index = index + 2
-        else:
-            append(output, current)
-            index = index + 1
-
-def ast_output_append_int(output: list[byte], value: int):
-    if value == 0:
-        append(output, b'0')
-        return
-
-    let is_negative = value < 0
-    if is_negative:
-        append(output, b'-')
-        value = 0 - value
-
-    let digits: list[int] = []
-    while value > 0:
-        let digit = value % 10
-        append(digits, 48 + digit)
-        value = value / 10
-
-    let index = len(digits) - 1
-    while index >= 0:
-        append(output, ast_int_list_get(digits, index))
-        index = index - 1
+    return __c_file_write_bytes(path, __c_bytes_from_array(output.data))
 
 def compiler_debug_start() -> int:
     if __c_debug_on():
@@ -245,51 +206,51 @@ def build_ast_compilation(context: ParseContext, function_bodies: list[int], fun
 
 def write_ast_output(output_path: str, source: str, function_starts: list[int], function_ends: list[int], nodes: list[int], function_nodes_start: list[int], function_nodes_end: list[int]):
     let ast = nodes
-    let output: list[byte] = []
-    ast_output_append_text(output, "module dream\nfunctions=")
-    ast_output_append_int(output, len(function_nodes_start))
-    ast_output_append_text(output, " pool=")
-    ast_output_append_int(output, len(ast))
-    ast_output_append_text(output, "\n")
+    let output = Buffer{data: []}
+    append(output, "module dream\nfunctions=")
+    append(output, len(function_nodes_start))
+    append(output, " pool=")
+    append(output, len(ast))
+    append(output, "\n")
     let function_index = 0
     while function_index < len(function_nodes_start):
-        ast_output_append_text(output, "func ")
-        ast_output_append_int(output, function_index)
-        ast_output_append_text(output, " ")
-        ast_output_append_text(output, source[function_starts[function_index]:function_ends[function_index]])
-        ast_output_append_text(output, " body=")
-        ast_output_append_int(output, function_nodes_start[function_index])
-        ast_output_append_text(output, "..")
-        ast_output_append_int(output, function_nodes_end[function_index])
-        ast_output_append_text(output, "\n")
+        append(output, "func ")
+        append(output, function_index)
+        append(output, " ")
+        append(output, source[function_starts[function_index]:function_ends[function_index]])
+        append(output, " body=")
+        append(output, function_nodes_start[function_index])
+        append(output, "..")
+        append(output, function_nodes_end[function_index])
+        append(output, "\n")
         function_index = function_index + 1
     let node = 1
     while node < len(ast):
         let kind = ast[node]
         let size = ast_node_size(ast, node)
         if size < AST_HEADER_SIZE:
-            ast_output_append_text(output, "; unknown kind ")
-            ast_output_append_int(output, kind)
-            ast_output_append_text(output, " at ")
-            ast_output_append_int(output, node)
-            ast_output_append_text(output, "\n")
+            append(output, "; unknown kind ")
+            append(output, kind)
+            append(output, " at ")
+            append(output, node)
+            append(output, "\n")
             node = node + 1
         else:
-            ast_output_append_text(output, "  n")
-            ast_output_append_int(output, node)
-            ast_output_append_text(output, " ")
-            ast_output_append_text(output, ast_kind_name(kind))
-            ast_output_append_text(output, " s")
-            ast_output_append_int(output, size)
-            ast_output_append_text(output, ":")
+            append(output, "  n")
+            append(output, node)
+            append(output, " ")
+            append(output, ast_kind_name(kind))
+            append(output, " s")
+            append(output, size)
+            append(output, ":")
             let argument_index = 0
             while argument_index < size - AST_HEADER_SIZE and argument_index < 12:
-                ast_output_append_text(output, " ")
-                ast_output_append_int(output, ast[node + AST_HEADER_SIZE + argument_index])
+                append(output, " ")
+                append(output, ast[node + AST_HEADER_SIZE + argument_index])
                 argument_index = argument_index + 1
-            ast_output_append_text(output, "\n")
+            append(output, "\n")
             node = node + size
-    write_byte_output(output_path, output)
+    write_buffer(output_path, output)
 
 def compile_source(source_path: str, output_path: str, output_mode: int) -> bool:
     access_violation_count[0] = 0
@@ -388,11 +349,11 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     phase_time = compiler_debug_checkpoint("hir-validate", phase_time)
     if output_mode == COMPILE_OUTPUT_HIR:
         let raw_hir_program = HirProgram{records: hir_output_records, values: hir_values, struct_decls: hir_output_struct_decls}
-        let hir_output: list[byte] = []
+        let hir_output = Buffer{data: []}
         if not hir_model_dump_program(raw_hir_program, hir_output):
             __c_eprint_text("error: HIR validation failed while dumping\n")
             return false
-        write_byte_output(output_path, hir_output)
+        write_buffer(output_path, hir_output)
         compiler_debug_checkpoint("hir-dump", phase_time)
         return true
     let mir_program = mir_model_build_program(validated_hir_records, hir_values, validated_hir_struct_decls, source, constant_starts, constant_ends, constant_values, constant_types, constant_literal_starts, constant_literal_ends, function_return_struct_decls, function_param_offsets, parameter_struct_decls, parameter_default_indexes, parameter_annotation_starts, parameter_annotation_ends, impl_func_indexes, impl_func_decls, impl_func_interface_types, interface_name_starts, interface_name_ends, impl_function_indexes, impl_decl_indexes, impl_interface_name_starts, impl_interface_name_ends)
@@ -400,14 +361,14 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let optimized_mir_program = mir_optimize_program(mir_program)
     phase_time = compiler_debug_checkpoint("mir-opt", phase_time)
     if output_mode == COMPILE_OUTPUT_MIR:
-        let mir_output: list[byte] = []
+        let mir_output = Buffer{data: []}
         if not mir_validate_program(optimized_mir_program):
             __c_eprint_text("error: MIR validation failed\n")
             return false
         if not mir_dump_program(optimized_mir_program, mir_output):
             __c_eprint_text("error: MIR validation failed while dumping\n")
             return false
-        write_byte_output(output_path, mir_output)
+        write_buffer(output_path, mir_output)
         return true
     elif output_mode == COMPILE_OUTPUT_LIR:
         if not mir_validate_program(optimized_mir_program):
@@ -486,8 +447,7 @@ def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool
     let llvm_path = output_path + ".ll"
     if not compile_source(source_path, llvm_path, COMPILE_OUTPUT_LLVM):
         return false
-    let is_built = build(llvm_path, output_path, is_optimized)
-    if not is_built:
+    if not build(llvm_path, output_path, is_optimized):
         __c_file_delete(llvm_path)
         __c_eprint_text("error: failed to build executable\n")
         return false
@@ -518,23 +478,23 @@ def main() -> int:
         return 1
     if argument_count == 5 and arg(3) == "-o":
         let command_name = arg(1)
-        if command_name == "ast":
-            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_AST):
-                return 0
-        elif command_name == "hir":
-            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_HIR):
-                return 0
-        elif command_name == "mir":
-            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_MIR):
-                return 0
-        elif command_name == "lir":
-            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_LIR):
-                return 0
-        elif command_name == "llvm":
-            if compile_source(arg(2), arg(4), COMPILE_OUTPUT_LLVM):
-                return 0
-        else:
-            __c_eprint_text("error: use ast, hir, mir, lir, or llvm\n")
+        let output_mode = -1
+        switch command_name:
+            case "ast":
+                output_mode = COMPILE_OUTPUT_AST
+            case "hir":
+                output_mode = COMPILE_OUTPUT_HIR
+            case "mir":
+                output_mode = COMPILE_OUTPUT_MIR
+            case "lir":
+                output_mode = COMPILE_OUTPUT_LIR
+            case "llvm":
+                output_mode = COMPILE_OUTPUT_LLVM
+            default:
+                __c_eprint_text("error: use ast, hir, mir, lir, or llvm\n")
+                return 1
+        if compile_source(arg(2), arg(4), output_mode):
+            return 0
         return 1
     print("用法: " + arg(0) + usage)
     return 1

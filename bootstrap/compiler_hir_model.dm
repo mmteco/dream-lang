@@ -1,6 +1,7 @@
 from compiler_operator import ir_binary_operator_from_token, ir_unary_operator_from_token, ir_operator_is_comparison, ir_operator_is_boolean_result, IR_OPERATOR_ADD, IR_OPERATOR_NOT
 from compiler_lex import find_struct_declaration_index, source_type_is_enum, is_identifier_start, is_identifier_continue, STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS, STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_KINDS, STRUCT_FIELD_TYPE_DECLS
 from compiler_external import external_id_from_name, external_return_type, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
+from buffer import Buffer
 
 const HIR_MODEL_VERSION: int = 3
 const HIR_MODEL_RECORD_SIZE: int = 11
@@ -1641,44 +1642,11 @@ def hir_model_build_program(ast: list[int], function_body_starts: list[int], fun
 def hir_empty_program() -> HirProgram:
     return HirProgram{records: [], values: [], struct_decls: []}
 
-def hir_output_append_text(output: list[byte], value: str):
-    let bytes = __c_str_to_bytes(value)
-    let index = 0
-    let length = __c_bytes_length(bytes)
-    while index < length:
-        let current = __c_bytes_get(bytes, index)
-        if current == 92 and index + 1 < length and __c_bytes_get(bytes, index + 1) == 110:
-            append(output, 10)
-            index = index + 2
-        else:
-            append(output, current)
-            index = index + 1
-
 def hir_int_list_get(values: list[int], index: int) -> int:
     return values[index]
 
 def hir_int_list_set(values: list[int], index: int, value: int):
     values[index] = value
-
-def hir_output_append_int(output: list[byte], value: int):
-    if value == 0:
-        append(output, b'0')
-        return
-
-    let is_negative = value < 0
-    if is_negative:
-        append(output, b'-')
-        value = 0 - value
-
-    let digits: list[int] = []
-    while value > 0:
-        append(digits, 48 + value % 10)
-        value = value / 10
-
-    let index = len(digits) - 1
-    while index >= 0:
-        append(output, hir_int_list_get(digits, index))
-        index = index - 1
 
 def hir_dump_value_count(program: HirProgram) -> int:
     let count = hir_value_count(program.values)
@@ -1690,47 +1658,47 @@ def hir_dump_value_count(program: HirProgram) -> int:
         record_id = record_id + 1
     return count
 
-def hir_model_dump_program(program: HirProgram, output: list[byte]) -> bool:
+def hir_model_dump_program(program: HirProgram, output: Buffer) -> bool:
     if not hir_validate_model_program(program):
         return false
-    hir_output_append_text(output, "HIR version=")
-    hir_output_append_int(output, HIR_MODEL_VERSION)
-    hir_output_append_text(output, " records=")
-    hir_output_append_int(output, hir_record_count(program.records))
-    hir_output_append_text(output, " values=")
-    hir_output_append_int(output, hir_dump_value_count(program))
-    hir_output_append_text(output, "\n")
+    append(output, "HIR version=")
+    append(output, HIR_MODEL_VERSION)
+    append(output, " records=")
+    append(output, hir_record_count(program.records))
+    append(output, " values=")
+    append(output, hir_dump_value_count(program))
+    append(output, "\n")
     let record_id = 0
     while record_id < hir_record_count(program.records):
         let offset = hir_record_offset(record_id)
-        hir_output_append_text(output, "record id=")
-        hir_output_append_int(output, record_id)
-        hir_output_append_text(output, " kind=")
-        hir_output_append_int(output, program.records[offset])
-        hir_output_append_text(output, " opcode=")
-        hir_output_append_int(output, program.records[offset + 1])
-        hir_output_append_text(output, " type=")
-        hir_output_append_int(output, program.records[offset + 2])
-        hir_output_append_text(output, " range=")
-        hir_output_append_int(output, program.records[offset + 3])
-        hir_output_append_text(output, "..")
-        hir_output_append_int(output, program.records[offset + 4])
-        hir_output_append_text(output, " payload=")
+        append(output, "record id=")
+        append(output, record_id)
+        append(output, " kind=")
+        append(output, program.records[offset])
+        append(output, " opcode=")
+        append(output, program.records[offset + 1])
+        append(output, " type=")
+        append(output, program.records[offset + 2])
+        append(output, " range=")
+        append(output, program.records[offset + 3])
+        append(output, "..")
+        append(output, program.records[offset + 4])
+        append(output, " payload=")
         let payload_count = program.records[offset + 6]
         if program.records[offset + 1] == HIR_OP_LITERAL:
             payload_count = 0
-        hir_output_append_int(output, payload_count)
-        hir_output_append_text(output, " [")
+        append(output, payload_count)
+        append(output, " [")
         let payload_index = 0
         while payload_index < payload_count:
             if payload_index > 0:
-                hir_output_append_text(output, ",")
+                append(output, ",")
             let value_offset = hir_value_offset(program.records[offset + 5] + payload_index)
-            hir_output_append_int(output, program.values[value_offset])
-            hir_output_append_text(output, ":")
-            hir_output_append_int(output, program.values[value_offset + 1])
+            append(output, program.values[value_offset])
+            append(output, ":")
+            append(output, program.values[value_offset + 1])
             payload_index = payload_index + 1
-        hir_output_append_text(output, "]")
-        hir_output_append_text(output, "\n")
+        append(output, "]")
+        append(output, "\n")
         record_id = record_id + 1
     return true

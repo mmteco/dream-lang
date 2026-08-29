@@ -1122,8 +1122,6 @@ def llvm_lir_append_direct_call_argument(program: LirProgram, record_offset: int
         append(output, llvm_lir_join_int("%call_arg_", record_offset + operand_index, ""))
 
 def llvm_lir_direct_call_argument_needs_cast(actual_type: int, expected_type: int) -> bool:
-    if expected_type == LIR_TYPE_DYNAMIC:
-        expected_type = LIR_TYPE_PTR
     if expected_type == LIR_TYPE_DYNAMIC or expected_type == LIR_TYPE_AGGREGATE:
         expected_type = LIR_TYPE_PTR
     if llvm_lir_is_pointer_like(actual_type) and llvm_lir_is_pointer_like(expected_type):
