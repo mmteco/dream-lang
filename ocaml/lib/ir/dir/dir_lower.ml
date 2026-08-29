@@ -519,12 +519,6 @@ and lower_expr context function_builder environment expression =
        | actual_type -> fail_at position (Printf.sprintf
            "append collection: expected list or Append implementation, got %s"
            (Dir.ty_to_string actual_type)))
-  | ECall (EVar ("text_len", _), [argument], position) ->
-      let lowered_argument = lower_expr context function_builder environment argument in
-      expect_type position Str lowered_argument.ty "text_len argument";
-      let value = fresh_value function_builder in
-      emit function_builder (StringLength (value, lowered_argument.operand));
-      { operand = Value value; ty = I32 }
   | ECall (EVar ("argc", _), [], _)
   | ECall (EVar ("__c_process_arg_count", _), [], _) ->
       let value = fresh_value function_builder in

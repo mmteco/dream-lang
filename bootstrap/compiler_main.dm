@@ -33,7 +33,7 @@ def module_path(module_name: str) -> str:
     let configured_paths = env("DREAM_MODULE_PATH")
     let path_start = 0
     let path_end = 0
-    let path_length = text_len(configured_paths)
+    let path_length = len(configured_paths)
     while path_end <= path_length:
         if path_end == path_length or configured_paths[path_end] == ':':
             if path_end > path_start:
@@ -48,7 +48,7 @@ def module_path(module_name: str) -> str:
 
 def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
     let module_start = 0
-    let loaded_length = text_len(loaded_modules)
+    let loaded_length = len(loaded_modules)
     while module_start < loaded_length:
         let module_end = module_start
         while module_end < loaded_length and ord(loaded_modules[module_end]) != 10:
@@ -61,9 +61,9 @@ def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
 def append_imported_module(imported_source: str, module_name: str, file_packages: list[int], file_starts: list[int], file_ends: list[int], file_paths: Buffer) -> str:
     let imported_path = module_path(module_name)
     let module_source = read(imported_path)
-    let start_offset = text_len(imported_source)
+    let start_offset = len(imported_source)
     let new_source = string_concat(imported_source, string_concat(module_source, "\n"))
-    let end_offset = text_len(new_source)
+    let end_offset = len(new_source)
     append(file_packages, classify_package(imported_path))
     append(file_starts, start_offset)
     append(file_ends, end_offset)
@@ -97,19 +97,19 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         if found_new_module:
             scan_source = imported_source
         scan_round = scan_round + 1
-    let user_source_start = text_len(imported_source)
-    if text_len(loaded_modules) != 0:
+    let user_source_start = len(imported_source)
+    if len(loaded_modules) != 0:
         user_source_start = user_source_start + 1
         let final_source = string_concat(imported_source, string_concat("\n", source))
         append(file_packages, classify_package(source_path))
         append(file_starts, user_source_start)
-        append(file_ends, text_len(final_source))
+        append(file_ends, len(final_source))
         append(file_paths, source_path)
         append(file_paths, "\n")
         return final_source
     append(file_packages, classify_package(source_path))
     append(file_starts, 0)
-    append(file_ends, text_len(source))
+    append(file_ends, len(source))
     append(file_paths, source_path)
     append(file_paths, "\n")
     return source
@@ -389,7 +389,7 @@ struct BuildArguments:
     is_valid: bool
 
 def remove_source_extension(source_path: str) -> str:
-    let index = text_len(source_path) - 1
+    let index = len(source_path) - 1
     while index >= 0:
         if source_path[index] == '.':
             if index > 0:
@@ -409,7 +409,7 @@ def parse_build_arguments(argument_count: int):
         output_path = arg(4)
     elif argument_count >= 4:
         output_path = arg(3)
-    if text_len(input_path) < 3:
+    if len(input_path) < 3:
         is_valid = false
     BA_input_path = input_path
     BA_output_path = output_path
@@ -432,7 +432,7 @@ def run_build_command(argument_count: int) -> bool:
     if not BA_is_valid:
         __c_eprint_text("error: build accepts [--dev] <file.dm> [-o output]\n")
         return false
-    let input_length = text_len(BA_input_path)
+    let input_length = len(BA_input_path)
     if input_length < 3 or BA_input_path[input_length - 3:input_length] != ".dm":
         __c_eprint_text("error: input file must have .dm extension\n")
         return false

@@ -752,7 +752,7 @@ def mir_lower_tuple_let(hir: HirProgram, node_id: int, state: MirLowerState) -> 
     let source_start = hir.records[offset + 3]
     let source_end = hir.records[offset + 4]
     let cursor = source_start
-    let source_length = text_len(state.source)
+    let source_length = len(state.source)
     while cursor < source_end and cursor < source_length and state.source[cursor] != '(':
         cursor = cursor + 1
     if cursor >= source_end or cursor >= source_length:

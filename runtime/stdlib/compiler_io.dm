@@ -4,9 +4,6 @@ def read(path: str) -> str:
 def write(path: str, content: str) -> int:
     return __c_file_write(path, content)
 
-def text_len(content: str) -> int:
-    return __c_utf8_rune_count(content)
-
 def argc() -> int:
     return __c_process_arg_count()
 

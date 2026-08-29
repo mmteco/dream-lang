@@ -2,7 +2,6 @@ from compiler_lir_model import LirProgram, lir_record_count, lir_value_count, li
 from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_AND, IR_OPERATOR_OR, IR_OPERATOR_NOT, IR_OPERATOR_POS, IR_OPERATOR_NEG
 from compiler_external import EXTERNAL_COUNT, EXTERNAL_ID_BASE, EXTERNAL_ID_APPEND, EXTERNAL_ID_LEN, external_llvm_name, external_return_type, external_has_declaration, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT, EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
 from buffer import Buffer
-from compiler_io import text_len
 
 let llvm_lir_function_record_cache: list[int] = []
 let llvm_lir_function_terminator_start_cache: list[int] = []
@@ -134,7 +133,7 @@ def llvm_lir_append_hex_byte(value: int, output: Buffer):
     append(output, digits[value % 16:value % 16 + 1])
 
 def llvm_lir_is_string_literal(source_start: int, source_end: int) -> bool:
-    if source_start < 0 or source_end < source_start or source_end > text_len(llvm_lir_source):
+    if source_start < 0 or source_end < source_start or source_end > len(llvm_lir_source):
         return false
     return true
 
@@ -1483,7 +1482,7 @@ def llvm_lir_append_instruction(program: LirProgram, offset: int, output: Buffer
             llvm_lir_append_operand(program, offset, 0, LIR_TYPE_I32, output)
             append(output, " to i8*\n")
         elif result_type == LIR_TYPE_F64:
-            if string_start >= 0 and string_end > string_start and string_end <= text_len(llvm_lir_source):
+            if string_start >= 0 and string_end > string_start and string_end <= len(llvm_lir_source):
                 # 从源码区间取 float 文本（如 "1.5"），LLVM 无裸 double 赋值，用 fadd 0.0 构造
                 append(output, "fadd double ")
                 append(output, llvm_lir_source[string_start:string_end])

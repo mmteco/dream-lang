@@ -1,4 +1,3 @@
-from compiler_io import text_len
 
 const EXTERNAL_ID_PRINT_INT: int = 1000
 const EXTERNAL_ID_PRINT_FLOAT: int = 1001
@@ -126,7 +125,7 @@ const EXTERN_DECL_CODES: str = "111111111111111111111111111111111111111111111111
 def runtime_extern_at(source: str, external_id: int) -> str:
     let current_id = 1
     let line_start = 0
-    let source_length = text_len(source)
+    let source_length = len(source)
     while current_id < external_id and line_start < source_length:
         if source[line_start] == '\n':
             current_id = current_id + 1
@@ -163,7 +162,7 @@ def external_has_declaration(external_id: int) -> bool:
 def external_id_from_name(name: str) -> int:
     let external_id = 1
     let line_start = 0
-    let source_length = text_len(EXTERN_NAMES)
+    let source_length = len(EXTERN_NAMES)
     while external_id <= EXTERNAL_COUNT:
         let line_end = line_start
         while line_end < source_length and EXTERN_NAMES[line_end] != '\n':
