@@ -17,30 +17,26 @@ function run_source
     "./$executable"
 end
 
-function smoke_examples
+function run_examples
+    set mode $argv[1]
     for source_file in (find examples -maxdepth 1 -type f -name '*.dm' | sort)
+        set example_kind ""
         if rg -q '^# dream-test: smoke$' "$source_file"
-            build_source "$source_file"
-            or return 1
+            set example_kind smoke
+        else if rg -q '^# dream-test: dir$' "$source_file"
+            set example_kind dir
+        else
+            continue
         end
-    end
-end
 
-function run_smoke_examples
-    for source_file in (find examples -maxdepth 1 -type f -name '*.dm' | sort)
-        if rg -q '^# dream-test: smoke$' "$source_file"
-            printf '\n=== 测试 %s ===\n' "$source_file"
-            run_source "$source_file"
+        if test "$mode" = examples; and test "$example_kind" != smoke
+            continue
         end
-    end
-end
 
-function run_marked_dir_examples
-    for source_file in (find examples -maxdepth 1 -type f -name '*.dm' | sort)
-        if rg -q '^# dream-test: dir$' "$source_file"
-            printf '\n=== 测试 %s [dir] ===\n' "$source_file"
-            build_source "$source_file"
-            or return 1
+        printf '\n=== 测试 %s ===\n' "$source_file"
+        build_source "$source_file"
+        or return 1
+        if test "$mode" = all
             run_source "$source_file"
         end
     end
@@ -67,13 +63,10 @@ end
 
 switch $mode
     case examples
-        smoke_examples
+        run_examples examples
         or exit 1
     case all
-        smoke_examples
-        or exit 1
-        run_smoke_examples
-        run_marked_dir_examples
+        run_examples all
         or exit 1
         run_dir_tests
         or exit 1

@@ -83,6 +83,7 @@ from compiler_ast import (
     AST_PAT_WILDCARD,
     AST_STMT_ASSIGN,
     AST_STMT_BREAK,
+    AST_STMT_CONTINUE,
     AST_STMT_EXPR,
     AST_STMT_FOR,
     AST_STMT_IF,
@@ -250,7 +251,7 @@ def hir_append_block_value(values: list[int], block_id: int):
 def hir_record_kind_from_ast(kind: int) -> int:
     if kind >= AST_PAT_WILDCARD and kind <= AST_PAT_STRUCT or kind == AST_M_CASE:
         return HIR_RECORD_PATTERN
-    if kind >= AST_STMT_LET and kind <= AST_STMT_BREAK or kind in [AST_ELIF, AST_CASE]:
+    if kind >= AST_STMT_LET and kind <= AST_STMT_CONTINUE or kind in [AST_ELIF, AST_CASE]:
         return HIR_RECORD_STATEMENT
     return HIR_RECORD_EXPRESSION
 
@@ -263,6 +264,8 @@ def hir_opcode_from_ast(kind: int) -> int:
         return HIR_OP_RETURN
     if kind == AST_STMT_BREAK:
         return HIR_OP_BREAK
+    if kind == AST_STMT_CONTINUE:
+        return HIR_OP_CONTINUE
     if kind == AST_STMT_EXPR:
         return HIR_OP_SEQUENCE
     if kind in [AST_STMT_IF, AST_ELIF, AST_EXPR_COND]:
@@ -603,6 +606,8 @@ def hir_validate_record_shape(record_kind: int, opcode: int, payload_count: int)
     if opcode == HIR_OP_RETURN:
         return payload_count == 2
     if opcode == HIR_OP_BREAK:
+        return payload_count == 0
+    if opcode == HIR_OP_CONTINUE:
         return payload_count == 0
     if opcode == HIR_OP_SEQUENCE:
         return payload_count == 1

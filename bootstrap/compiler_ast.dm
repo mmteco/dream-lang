@@ -61,7 +61,8 @@ from compiler_lex import (
     TOKEN_CONS,
     TOKEN_RUNE,
     TOKEN_BREAK,
-    TOKEN_EPRINT
+    TOKEN_EPRINT,
+    TOKEN_CONTINUE
 )
 
 # kind 编号按类别分组,组内连续,组间留空便于未来插入:
@@ -110,6 +111,7 @@ const AST_CASE: int = 40
 const AST_STMT_RETURN: int = 41
 const AST_STMT_EXPR: int = 42
 const AST_STMT_BREAK: int = 43
+const AST_STMT_CONTINUE: int = 44
 
 # === 模式 ===
 const AST_PAT_WILDCARD: int = 64
@@ -270,6 +272,8 @@ def ast_kind_name(kind: int) -> str:
             return "stmt_expr"
         case AST_STMT_BREAK:
             return "stmt_break"
+        case AST_STMT_CONTINUE:
+            return "stmt_continue"
         case AST_M_CASE:
             return "m_case"
         case AST_PAT_WILDCARD:
@@ -300,6 +304,8 @@ def ast_kind_name(kind: int) -> str:
 
 def ast_node_size(ast: list[int], node: int) -> int:
     let kind = ast_node_kind(ast, node)
+    if kind == AST_STMT_CONTINUE:
+        return AST_HEADER_SIZE
     if kind == AST_EXPR_CALL:
         return AST_HEADER_SIZE + 3 + ast_node_arg(ast, node, 1)
     if kind == AST_EXPR_LIST:
@@ -880,6 +886,10 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
     if token_kind_value == TOKEN_BREAK:
         let break_node = ast_append_node(ast, AST_STMT_BREAK, token_start(starts, index), token_end(ends, index), 0)
         return (break_node, ast_next_index(index))
+    if token_kind_value == TOKEN_CONTINUE:
+        let continue_node = ast_append_node(ast, AST_STMT_CONTINUE, token_start(starts, index),
+            token_end(ends, index), 0)
+        return (continue_node, ast_next_index(index))
     if token_kind_value == TOKEN_IF:
         return ast_parse_if_statement(context, index, body_end, ast)
     if token_kind_value == TOKEN_WHILE:

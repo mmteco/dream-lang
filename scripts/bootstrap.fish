@@ -3,7 +3,6 @@
 set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
 cd "$root_dir"
-set -lx DREAM_MODULE_PATH "$root_dir/test/fixtures"
 
 set stage0_compiler ocaml/_build/default/bin/main.exe
 set bootstrap_dir bootstrap
@@ -13,6 +12,11 @@ set stage1_binary tmp/stage1
 set runtime_sources (find "$runtime_dir/core" "$runtime_dir/wrappers" -type f -name '*.c' ! -path "$runtime_dir/core/bytes.c" | sort)
 set compiler_source "$bootstrap_dir/compiler.dm"
 set include_stage3 true
+set full_examples examples/lang_full_*.dm
+set full_dream_example examples/lang_full_dream.dm
+set full_ocaml_example examples/lang_full_ocaml.dm
+set host_output_file tmp/lang_full_host_output
+set ocaml_output_file tmp/lang_full_ocaml_output
 if test (count $argv) -gt 0
     if test "$argv[1]" = '--skip-stage3'
         set include_stage3 false
@@ -21,22 +25,12 @@ if test (count $argv) -gt 0
         exit 2
     end
 end
-set request_source_file tmp/dream_bootstrap_source
-set request_output_file tmp/dream_bootstrap_output
-set cli_output_file tmp/dream_bootstrap_cli_stage2.ll
-set cli_binary_file tmp/dream_bootstrap_stage1_cli_binary
-set cli_dir_host_file tmp/dream_bootstrap_host.dir
-set cli_dir_stage1_file tmp/dream_bootstrap_stage1.dir
-set cli_dir_stage2_file tmp/dream_bootstrap_stage2.dir
-set cli_dir_stage3_file tmp/dream_bootstrap_stage3.dir
 set ast_output_file tmp/dream_bootstrap_ast.ast
 
 mkdir -p tmp
-printf '' > "$request_source_file"
-printf '' > "$request_output_file"
 
 function cleanup_bootstrap_request --on-event fish_exit
-    rm -f "$request_source_file" "$request_output_file" "$cli_output_file" "$cli_binary_file" "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file" "$cli_dir_stage3_file" "$ast_output_file"
+    rm -f "$host_output_file" "$ocaml_output_file" "$ast_output_file"
 end
 
 function compile_llvm
@@ -121,7 +115,8 @@ end
 function check_bootstrapped_example
     set source_file $argv[1]
     set output_file $argv[2]
-    set expected_lines $argv[3..-1]
+    set expected_file $argv[3]
+    set expected_lines (string split \n -- (string collect < "$expected_file"))
     set compilers "tmp/stage2"
     if test "$include_stage3" = true
         set -a compilers "tmp/stage3"
@@ -129,9 +124,16 @@ function check_bootstrapped_example
     set compiler_index 1
     for compiler in $compilers
         set stage_output_file "$output_file.stage$compiler_index"
-        set output_lines (env DREAM_BOOTSTRAP_COMPILER="$compiler" fish --no-config scripts/bootstrap_build.fish run "$source_file" "$stage_output_file" | string split \n)
+        env DREAM_BOOTSTRAP_COMPILER="$compiler" fish --no-config scripts/bootstrap_build.fish run "$source_file" "$stage_output_file" > "$stage_output_file.output"
+        set run_status $status
+        if test $run_status -ne 0
+            echo "错误: Stage $compiler_index 运行失败: $source_file" >&2
+            rm -f "$stage_output_file" "$stage_output_file.output"
+            exit 1
+        end
+        set output_lines (string split \n -- (string collect < "$stage_output_file.output"))
         if test (count $output_lines) -ne (count $expected_lines)
-            echo "错误: Stage $compiler_index 通用 bootstrap build 输出行数错误: $source_file" >&2
+            echo "错误: Stage $compiler_index 输出行数错误: $source_file" >&2
             exit 1
         end
         set line_index 1
@@ -142,134 +144,40 @@ function check_bootstrapped_example
             end
             set line_index (math $line_index + 1)
         end
-        rm -f "$stage_output_file"
+        rm -f "$stage_output_file" "$stage_output_file.output"
         set compiler_index (math $compiler_index + 1)
     end
 end
 
-function check_bootstrapped_build
-    rm -f "$cli_dir_host_file" "$cli_dir_stage1_file" "$cli_dir_stage2_file" "$cli_dir_stage3_file"
-    "$stage0_compiler" dir test/test_const_dir.dm -o "$cli_dir_host_file" >/dev/null
+function check_host_example
+    set source_file $argv[1]
+    set output_file $argv[2]
+    set binary_file "$output_file.binary"
+    "$stage0_compiler" build "$source_file" -o "$binary_file" >/dev/null
     or exit 1
-    DEBUG=1 "$stage1_binary" lir test/test_const_dir.dm -o "$cli_dir_stage1_file"
-    or exit 1
-    DEBUG=1 "tmp/stage2" lir test/test_const_dir.dm -o "$cli_dir_stage2_file"
-    or exit 1
-    cmp "$cli_dir_stage1_file" "$cli_dir_stage2_file"
-    or exit 1
-    set dir_files "$cli_dir_stage1_file" "$cli_dir_stage2_file"
-    if test "$include_stage3" = true
-        DEBUG=1 "tmp/stage3" lir test/test_const_dir.dm -o "$cli_dir_stage3_file"
-        or exit 1
-        cmp "$cli_dir_stage2_file" "$cli_dir_stage3_file"
-        or exit 1
-        set -a dir_files "$cli_dir_stage3_file"
-    end
-    for dir_file in $dir_files
-        if not rg -q '^LIR version=' "$dir_file"; or rg -q 'LIR validation failed' "$dir_file"; or rg -q 'raw-llvm' "$dir_file"
-            echo "错误: $dir_file 未输出统一正式 LIR" >&2
-            exit 1
-        end
-    end
-    rm -f "$cli_binary_file"
-    DEBUG=1 "$stage1_binary" build test/test_string_add_dir.dm -o "$cli_binary_file"
-    or exit 1
-    set cli_output ("$cli_binary_file" | string split \n)
-    if test (count $cli_output) -ne 3; or test "$cli_output[1]" != 'dream language'; or test "$cli_output[2]" != 'hello world'; or test "$cli_output[3]" != '[hello]'
-        echo '错误: Stage 1 build CLI 输出错误' >&2
+    "$binary_file" > "$output_file"
+    set run_status $status
+    rm -f "$binary_file"
+    if test $run_status -ne 0
+        echo "错误: 宿主编译器运行失败: $source_file" >&2
         exit 1
-    end
-    rm -f "$cli_binary_file"
-    check_bootstrapped_example test/fixtures/bootstrap_sample_functions.dm tmp/dream_bootstrap_sample 48 stage2
-    check_bootstrapped_example examples/hello.dm tmp/dream_bootstrap_hello 'Hello, Dream!'
-    check_bootstrapped_example examples/factorial.dm tmp/dream_bootstrap_factorial 120
-    check_bootstrapped_example examples/dynarray_full.dm tmp/dream_bootstrap_dynarray 3 10 20 30 5 40 50 99
-    check_bootstrapped_example examples/quicksort.dm tmp/dream_bootstrap_quicksort 1 2 3 5 7 9
-    check_bootstrapped_example test/test_for_dir.dm tmp/dream_bootstrap_for 60
-    check_bootstrapped_example test/test_bootstrap_collections.dm tmp/dream_bootstrap_collections 3 2 30 1
-    check_bootstrapped_example examples/lang_full_dream.dm tmp/lang_full_dream 3 2 10 6 10 25 2 9 7 2 42 7 6 -1 20 10 2 3 4 6 100 -1 10 42 2 98 ab 3.5 true 65 66 6 3
-    check_bootstrapped_example test/test_rune_index_dir.dm tmp/dream_bootstrap_rune_index true 20320 65536
-    check_bootstrapped_example test/test_bootstrap_struct.dm tmp/dream_bootstrap_struct 7
-    check_bootstrapped_example test/test_bootstrap_struct_function.dm tmp/dream_bootstrap_struct_function 7
-    check_bootstrapped_example test/test_bootstrap_struct_match.dm tmp/dream_bootstrap_struct_match 3
-    check_bootstrapped_example test/test_bootstrap_enum.dm tmp/dream_bootstrap_enum 0 42 2
-    check_bootstrapped_example test/test_bootstrap_switch_basic.dm tmp/dream_bootstrap_switch_basic 20 1 25 1
-    check_bootstrapped_example test/test_bootstrap_match.dm tmp/dream_bootstrap_match 100
-    check_bootstrapped_example test/test_bootstrap_match_guard.dm tmp/dream_bootstrap_match_guard 2
-    check_bootstrapped_example test/test_bootstrap_list_match.dm tmp/dream_bootstrap_list_match 30 0 11
-    check_bootstrapped_example test/test_bootstrap_match_enum.dm tmp/dream_bootstrap_match_enum 42
-    check_bootstrapped_example test/test_bootstrap_match_builtin.dm tmp/dream_bootstrap_match_builtin 7 9
-    check_bootstrapped_example test/test_bootstrap_list_str.dm tmp/dream_bootstrap_list_str 2 b c 2 x 3 a x-y
-    check_bootstrapped_example test/test_bootstrap_match_statement.dm tmp/dream_bootstrap_match_statement 42 -1 7 9
-    check_bootstrapped_example test/test_bootstrap_dict.dm tmp/dream_bootstrap_dict 10 25 2
-    check_bootstrapped_example test/test_bootstrap_dict_string.dm tmp/dream_bootstrap_dict_string two 2
-    check_bootstrapped_example test/test_bootstrap_dict_multiline.dm tmp/dream_bootstrap_dict_multiline 1 2 7 10 20
-    check_bootstrapped_example test/test_global_let.dm tmp/dream_bootstrap_global_let 42 hello 80 1 2 7 42 2
-    check_bootstrapped_example test/test_default_args_bootstrap.dm tmp/dream_bootstrap_default_args 15 10 31 23 6 'item: x!' '> y!'
-    check_bootstrapped_example test/test_list_comp_bootstrap.dm tmp/dream_bootstrap_list_comp 4 2 8 2 3 4
-    check_bootstrapped_example test/test_bootstrap_result.dm tmp/dream_bootstrap_result 4
-    check_bootstrapped_example test/test_bootstrap_return_metadata.dm tmp/dream_bootstrap_return_metadata metadata true
-    check_bootstrapped_example test/test_bootstrap_bool.dm tmp/dream_bootstrap_bool true false false true
-    check_bootstrapped_example test/test_bootstrap_elif_tail.dm tmp/dream_bootstrap_elif_tail 20
-    check_bootstrapped_example test/test_string_add_dir.dm tmp/dream_bootstrap_string_add 'dream language' 'hello world' '[hello]'
-    check_bootstrapped_example test/test_in_dir.dm tmp/dream_bootstrap_in true false
-    check_bootstrapped_example test/test_bootstrap_subset_dir.dm tmp/dream_bootstrap_subset 48 bootstrap
-    check_bootstrapped_example test/test_const_dir.dm tmp/dream_bootstrap_const 42
-    check_bootstrapped_example test/test_dict_dir.dm tmp/dream_bootstrap_dict_dir 10 25 2 two
-    check_bootstrapped_example test/test_enum_dir.dm tmp/dream_bootstrap_enum_dir 2
-    check_bootstrapped_example test/test_expr_dir.dm tmp/dream_bootstrap_expr 10 32 32 65 66
-    check_bootstrapped_example test/test_float_dir.dm tmp/dream_bootstrap_float 5.5 true
-    check_bootstrapped_example test/test_bootstrap_function_value.dm tmp/dream_bootstrap_function_value 42
-    check_bootstrapped_example test/test_function_value_dir.dm tmp/dream_bootstrap_function_value_dir 42
-    check_bootstrapped_example test/test_bootstrap_lambda.dm tmp/dream_bootstrap_lambda 42
-    # TODO: 嵌套 lambda 闭包需要完整的闭包实现（自由变量分析、环境结构、变量捕获等）
-    # 这是一个独立的大型特性，预计需要 3-5 天工作量
-    # 详细方案见 docs/COMPILER_IMPROVEMENT_PLAN.md
-    # check_bootstrapped_example test/test_bootstrap_nested_lambda.dm tmp/dream_bootstrap_nested_lambda 9
-    check_bootstrapped_example test/test_list_match_dir.dm tmp/dream_bootstrap_list_match_dir 30 0 11
-    check_bootstrapped_example test/test_match_dir.dm tmp/dream_bootstrap_match_dir 100
-    check_bootstrapped_example test/test_match_guard_dir.dm tmp/dream_bootstrap_match_guard_dir 2
-    check_bootstrapped_example test/test_bytes_dir.dm tmp/dream_bootstrap_bytes 98 2 bc 120 2
-    check_bootstrapped_example test/test_http_dir.dm tmp/dream_bootstrap_http 0 'invalid HTTP method or URL' false 0 'only HTTP and HTTPS URLs are supported' 200 4 Content-Type text/plain X-Test yes text/plain hello true
-    check_bootstrapped_example test/test_scalar_match_dir.dm tmp/dream_bootstrap_scalar_match 20 1 2 3
-    check_bootstrapped_example test/test_switch_basic_types_dir.dm tmp/dream_bootstrap_switch_basic_types 25 1 1
-    check_bootstrapped_example test/test_switch_multi_case.dm tmp/dream_bootstrap_switch_multi_case 10 10 20 0
-    # TODO: ? 操作符在 Dream 编译器中生成的 IR 有 return 后还有代码的问题
-    # 需要修复 ? 操作符的控制流生成
-    # check_bootstrapped_example test/test_try_dir.dm tmp/dream_bootstrap_try 42 -1
-    # TODO: 多载荷枚举匹配在 Dream 编译器中有未定义变量问题
-    # check_bootstrapped_example test/test_enum_multi_dir.dm tmp/dream_bootstrap_enum_multi 42
-    # TODO: match case 作用域隔离问题 - 多个 case 绑定同名变量时，后续 case 会跳过 alloca
-    # 需要实现完整的 match case 作用域隔离机制（保存/恢复变量列表或使用唯一槽位名）
-    # check_bootstrapped_example test/test_enum_payload_dir.dm tmp/dream_bootstrap_enum_payload 42 2.5 2 1
-    check_bootstrapped_example test/test_generic_dir.dm tmp/dream_bootstrap_generic 41 42 42 42
-    check_bootstrapped_example test/test_lambda_dir.dm tmp/dream_bootstrap_lambda_capture 42 42 ok! 7 3.5 3 param?
-    check_bootstrapped_example test/test_struct_dir.dm tmp/dream_bootstrap_struct_dir 2 5.5 5.5
-    check_bootstrapped_example test/test_struct_import_dir.dm tmp/dream_bootstrap_struct_import 7
-    check_bootstrapped_example test/test_module_namespace_dir.dm tmp/dream_bootstrap_module_namespace 200 'nested http'
-    check_bootstrapped_example test/test_generic_import_dir.dm tmp/dream_bootstrap_generic_import 7
-    check_bootstrapped_example test/test_struct_method_dir.dm tmp/dream_bootstrap_struct_method 7 12 11
-    check_bootstrapped_example test/test_interface_dir.dm tmp/dream_bootstrap_interface 11 7
-    check_bootstrapped_example test/test_interface_args_dir.dm tmp/dream_bootstrap_interface_args 15 true false
-    if test "$include_stage3" = true
-        rm -f "$cli_binary_file"
-        DEBUG=1 "tmp/stage3" build test/test_string_add_dir.dm -o "$cli_binary_file"
-        or exit 1
-        set stage3_output ("$cli_binary_file" | string split \n)
-        if test (count $stage3_output) -ne 3; or test "$stage3_output[1]" != 'dream language'; or test "$stage3_output[2]" != 'hello world'; or test "$stage3_output[3]" != '[hello]'
-            echo '错误: Stage 3 build CLI 输出错误' >&2
-            exit 1
-        end
-        rm -f "$cli_binary_file"
     end
 end
 
+if test (count $full_examples) -ne 2
+    echo '错误: examples/lang_full_*.dm 必须恰好包含 2 个文件' >&2
+    exit 1
+end
+
+check_host_example "$full_ocaml_example" "$ocaml_output_file"
+check_host_example "$full_dream_example" "$host_output_file"
+
 $stage0_compiler build "$compiler_source" -o "$stage1_binary" >/dev/null
 or exit 1
-check_bootstrapped_ast test/test_pratt_ast_dir.dm expr_unary expr_logical expr_cond expr_call expr_index
+check_bootstrapped_ast "$full_dream_example" expr_unary expr_logical expr_cond expr_call expr_index
 rg -q 'stmt_return s6: [1-9][0-9]* ' "$ast_output_file"
 or exit 1
-check_bootstrapped_ast examples/lang_full_dream.dm expr_attr expr_binary expr_bool expr_builtin_enum expr_call expr_cond expr_dict expr_float expr_index expr_lambda expr_list expr_list_comp expr_logical expr_match expr_method_call expr_print expr_rune expr_slice expr_string expr_struct expr_tuple expr_unary expr_var pat_bool pat_builtin pat_cons pat_enum pat_float pat_int pat_list pat_rune pat_string pat_struct pat_var pat_wildcard m_case stmt_assign stmt_break stmt_case stmt_elif stmt_expr stmt_for stmt_if stmt_let stmt_let_tuple stmt_return stmt_switch stmt_while
+check_bootstrapped_ast "$full_dream_example" expr_attr expr_binary expr_bool expr_builtin_enum expr_call expr_cond expr_dict expr_float expr_index expr_lambda expr_list expr_list_comp expr_logical expr_match expr_method_call expr_print expr_rune expr_slice expr_string expr_struct expr_tuple expr_unary expr_var pat_bool pat_builtin pat_cons pat_enum pat_float pat_int pat_list pat_rune pat_string pat_struct pat_var pat_wildcard m_case stmt_assign stmt_break stmt_case stmt_elif stmt_expr stmt_for stmt_if stmt_let stmt_let_tuple stmt_return stmt_switch stmt_while
 rg -q 'expr_print s5: [0-9]+ 1$' "$ast_output_file"
 or exit 1
 "$stage1_binary" llvm "$compiler_source" -o "tmp/stage2.ll"
@@ -279,18 +187,6 @@ or exit 1
 
 compile_llvm "tmp/stage2" "tmp/stage2.ll"
 or exit 1
-
-"$stage1_binary" llvm test/fixtures/bootstrap_sample_functions.dm -o "tmp/sample_functions.ll"
-or exit 1
-
-compile_llvm "tmp/sample_functions" "tmp/sample_functions.ll"
-or exit 1
-set sample_output ("tmp/sample_functions" | string split \n)
-if test (count $sample_output) -ne 2; or test "$sample_output[1]" != 48; or test "$sample_output[2]" != stage2
-    echo '错误: sample_functions 输出不符合预期' >&2
-    exit 1
-end
-printf '%s\n' $sample_output
 
 "tmp/stage2" help >/dev/null
 or exit 1
@@ -313,6 +209,4 @@ else
     check_lir_lowering stage2
     check_bool_abi stage2
 end
-check_bootstrapped_build
-
-rm -f "$request_source_file" "$request_output_file"
+check_bootstrapped_example "$full_dream_example" tmp/lang_full_dream "$host_output_file"

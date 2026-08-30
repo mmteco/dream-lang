@@ -1,25 +1,21 @@
-EXAMPLE_SOURCES := $(wildcard examples/*.dm)
-EXAMPLE_TARGETS := $(patsubst examples/%.dm,%,$(EXAMPLE_SOURCES))
+OCAML_COMPILER := ocaml/_build/default/bin/main.exe
 FISH ?= fish
 RUNTIME_DIR ?= runtime/c
 STAGE3 ?= 0
 
-.PHONY: build clean run test examples runtime-check check bootstrap bootstrap-verify bootstrap-build compile dynarray repro-diff help $(EXAMPLE_TARGETS)
+.DEFAULT_GOAL := build
+.PHONY: build clean run test runtime-check check bootstrap bootstrap-verify bootstrap-build compile repro-diff help
 
-# 默认目标
 help:
 	@echo "Dream 语言编译器 - 可用命令:"
 	@echo ""
 	@echo "  make build       - 构建编译器"
 	@echo "  make clean       - 清理构建产物"
-	@echo "  make test        - 运行 smoke 和 DIR 回归测试"
-	@echo "  make examples    - 编译标记为 smoke 的示例程序"
-	@echo "  make runtime     - 构建运行时库"
+	@echo "  make test        - 运行完整语言和 DIR 回归测试"
 	@echo "  make runtime-check - 运行 runtime 常规测试和 UBSan 测试"
 	@echo "  make check       - 运行完整构建、测试和自举验证"
-	@echo "  make <example>   - 编译并运行 examples/<example>.dm"
-	@echo "  make bootstrap   - 快速执行 Stage 0 → Stage 1 → Stage 2 验证"
-	@echo "  make bootstrap STAGE3=1 - 执行 Stage 2 → Stage 3 固定点验证"
+	@echo "  make bootstrap   - 执行 Stage 0 → Stage 1 → Stage 2 验证"
+	@echo "  make bootstrap STAGE3=1 - 额外执行 Stage 2 → Stage 3 固定点验证"
 	@echo "  make bootstrap-build FILE=path/to/file.dm - 使用 Stage 2 bootstrapped 编译器构建"
 	@echo "  make bootstrap-verify - 验证已生成的自举 LLVM 文件"
 	@echo "  make repro-diff FILE=path/to/file.dm - stage1/stage2 逐级 IR 差分定位"
@@ -32,10 +28,6 @@ build:
 # 清理所有构建产物
 clean:
 	$(FISH) scripts/clean.fish
-
-# 构建运行时库
-runtime:
-	$(MAKE) -C $(RUNTIME_DIR)
 
 # 运行时常规测试和未定义行为检查。
 runtime-check:
@@ -52,19 +44,9 @@ check: build
 	$(MAKE) runtime-check
 	$(MAKE) bootstrap
 
-# 编译所有示例程序
-examples: build
-	$(FISH) scripts/test.fish examples
-
 # 运行所有示例测试
 test: build
 	$(FISH) scripts/test.fish all
-
-# 单独运行任意示例
-$(EXAMPLE_TARGETS): build
-	$(FISH) scripts/dream.fish run examples/$@.dm
-
-dynarray: dynarray_full
 
 # 执行自举：Stage 0 生成 Stage 1，后续阶段继续编译自身并验证固定点。
 bootstrap: build
@@ -88,7 +70,7 @@ compile: build
 		echo "错误: 请指定文件路径，例如: make compile FILE=examples/hello.dm"; \
 		exit 1; \
 	fi
-	$(FISH) scripts/dream.fish build "$(FILE)"
+	$(OCAML_COMPILER) build "$(FILE)"
 
 # 编译并运行自定义文件 (使用方法: make run FILE=path/to/file.dm)
 run: build
@@ -96,7 +78,7 @@ run: build
 		echo "错误: 请指定文件路径，例如: make run FILE=examples/hello.dm"; \
 		exit 1; \
 	fi
-	$(FISH) scripts/dream.fish run "$(FILE)"
+	$(OCAML_COMPILER) run "$(FILE)"
 
 # 自举差分定位:同一输入经 stage1/stage2 逐级 dump IR 并报告首个分歧层级
 repro-diff:

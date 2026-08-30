@@ -1,6 +1,11 @@
 # dream-test: dir
 # Dream 语言导览：覆盖自举编译器当前支持的表达式、语句和模式语法。
 from bytes import encode, decode
+from io import open, exists, delete
+from path import join, normalize, basename, dirname, ext, stem
+from time import monotonic_ms, elapsed_ms
+from http import parse_response
+import json
 
 const BASE: int = 3
 const DOUBLE_BASE = 6
@@ -234,5 +239,51 @@ def main():
             break
         break_found = break_found + break_n
     print(break_found)
+
+    # in、continue 与文件 I/O
+    print(2 in numbers)
+    print(99 in numbers)
+    print("dream" in "dream language")
+    print(b'b' in "abc".encode())
+
+    let odd_sum = 0
+    for odd_value in [1, 2, 3, 4, 5]:
+        if odd_value % 2 == 0:
+            continue
+        odd_sum = odd_sum + odd_value
+    print(odd_sum)
+
+    let io_path = "/tmp/dream_lang_full_io.txt"
+    let io_writer = open(io_path, "w")
+    let io_write_result = io_writer.write("full dream")
+    let io_write_status = match io_write_result:
+        Ok(value): value
+        Err(_): -1
+    print(io_write_status)
+    io_writer.close()
+    let io_reader = open(io_path)
+    print(io_reader.read())
+    io_reader.close()
+    print(exists(io_path))
+    print(delete(io_path))
+
+    # 路径、时间、JSON 与 HTTP 响应解析
+    print(normalize("a/./b/../c.txt"))
+    print(join("/tmp/data", "item.json"))
+    print(basename("/tmp/data/item.json"))
+    print(dirname("/tmp/data/item.json"))
+    print(ext("/tmp/data/item.json"))
+    print(stem("/tmp/data/item.json"))
+
+    let start_ms = monotonic_ms()
+    print(elapsed_ms(start_ms) >= 0)
+
+    let json_value = json.loads('''{"name":"Dream","items":[1,true,null]}''')
+    print(json.dumps(json_value))
+
+    let response = parse_response("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nhello")
+    print(response.status)
+    print(response.header("Content-Type"))
+    print(response.body)
 
 main()

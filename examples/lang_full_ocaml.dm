@@ -1,8 +1,5 @@
 # dream-test: smoke
 # 语法综合导览：覆盖 Dream 语言的主要语法特性，作为宿主与自举回归的覆盖用例。
-from bytes import encode, decode
-from io import read, write
-
 interface Shape:
     def area(self) -> int
 
@@ -335,12 +332,6 @@ def main():
     print(pieces[1])
     print("-".join(pieces))
 
-    # bytes
-    let encoded = encode("abc")
-    print(encoded[0])
-    print(encoded[1])
-    print(decode(encoded[0:2]))
-
     # lambda 与闭包
     let closure = lambda (value: int) -> value + 1
     print(closure(1))
@@ -416,7 +407,7 @@ def main():
     print(64 >> 3)
     print(+5)
 
-    # interface/impl、运算符重载、match type of、模式匹配、文件 I/O、默认参数、嵌套 match、dict 字符串键
+    # interface/impl、运算符重载、match type of、模式匹配、默认参数、嵌套 match、dict 字符串键
     let rect = Rect{width: 3, height: 4}
     print(rect.area())
     let vec1 = Vec2{x: 1, y: 2}
@@ -448,8 +439,6 @@ def main():
     print(nested_result)
     print(add_default(10))
     print(add_default(10, 20))
-    let write_result = write("/tmp/dream_tour_io.txt", "tour io")
-    print(read("/tmp/dream_tour_io.txt"))
     let shape_value: Shape = Rect{width: 5, height: 6}
     print(shape_value.area())
 

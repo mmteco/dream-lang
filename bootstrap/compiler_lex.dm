@@ -50,6 +50,7 @@ const TOKEN_RUNE: int = 48
 const TOKEN_BREAK: int = 49
 const TOKEN_EPRINT: int = 50
 const TOKEN_IN: int = 51
+const TOKEN_CONTINUE: int = 52
 
 struct ParseContext:
     src: str
@@ -576,6 +577,8 @@ def keyword_kind(source: str, start: int, end: int) -> int:
         return TOKEN_WHILE
     if word == "break":
         return TOKEN_BREAK
+    if word == "continue":
+        return TOKEN_CONTINUE
     if word == "for":
         return TOKEN_FOR
     if word == "in":

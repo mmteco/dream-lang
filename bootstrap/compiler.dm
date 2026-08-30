@@ -70,7 +70,8 @@ from compiler_lex import (
     TOKEN_CONS,
     TOKEN_RUNE,
     TOKEN_BREAK,
-    TOKEN_EPRINT
+    TOKEN_EPRINT,
+    TOKEN_CONTINUE
 )
 from compiler_ast import (
     ast_validate_program,
@@ -126,6 +127,7 @@ from compiler_ast import (
     AST_PAT_WILDCARD,
     AST_STMT_ASSIGN,
     AST_STMT_BREAK,
+    AST_STMT_CONTINUE,
     AST_STMT_EXPR,
     AST_STMT_FOR,
     AST_STMT_IF,

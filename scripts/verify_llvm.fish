@@ -16,15 +16,12 @@ if test (count $llvm_files) -eq 0
 end
 
 for llvm_file in $llvm_files
-    set log_file "tmp/"(basename "$llvm_file")'.verify.log'
     if not test -f "$llvm_file"
         echo "错误: 缺少 $llvm_file" >&2
         exit 1
     end
-    if not clang -Wno-override-module -c -o /dev/null -x ir "$llvm_file" >"$log_file" 2>&1
+    if not clang -Wno-override-module -c -o /dev/null -x ir "$llvm_file"
         echo "错误: LLVM 验证失败: $llvm_file" >&2
-        cat "$log_file" >&2
         exit 1
     end
-    rm -f "$log_file"
 end

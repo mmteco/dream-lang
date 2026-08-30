@@ -1,10 +1,6 @@
 #!/usr/bin/env fish
 
-# Bootstrap 版本管理器
-# 功能：
-# 1. bootstrap 成功后保存 stage2 作为历史版本
-# 2. 使用历史版本编译新版编译器
-# 3. 支持版本切换和回滚
+# Bootstrap 版本管理器：保存、切换和使用历史 stage2。
 
 set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
@@ -21,7 +17,6 @@ function show_help
     echo "  current            显示当前使用的版本"
     echo "  bootstrap          运行完整 bootstrap 并自动保存"
     echo "  compile <input>    使用当前 stage2 编译文件"
-    echo "  archive <suffix>   归档当前版本到 ~/Downloads/dream-history/"
 end
 
 function save_version
@@ -95,21 +90,6 @@ function list_versions
         end
     end
 
-    set archive_dir "$HOME/Downloads/dream-history"
-    if test -d "$archive_dir"
-        set has_archives false
-        for version_file in "$archive_dir"/stage2_*
-            if test -f "$version_file"
-                if not test "$has_archives" = true
-                    echo ""
-                    echo "归档版本 (~/Downloads/dream-history/):"
-                    set has_archives true
-                end
-                set version_name (basename "$version_file" | string replace 'stage2_' '')
-                echo "  $version_name"
-            end
-        end
-    end
 end
 
 function show_current
@@ -159,32 +139,7 @@ function compile_file
     end
 
     set output_file (string replace -r '\.dm$' '' "$input_file")
-    "$current_link" build "$input_file" -o "$output_file"
-end
-
-function archive_version
-    set suffix $argv[1]
-    if test -z "$suffix"
-        echo "错误: 请指定归档后缀（如版本号）" >&2
-        return 1
-    end
-
-    if not test -L "$current_link"
-        echo "错误: 未设置当前版本，先运行 bootstrap" >&2
-        return 1
-    end
-
-    set archive_dir "$HOME/Downloads/dream-history"
-    mkdir -p "$archive_dir"
-
-    set current_target (realpath "$current_link")
-    set archive_name "stage2_$suffix"
-    set archive_path "$archive_dir/$archive_name"
-
-    cp "$current_target" "$archive_path"
-    chmod +x "$archive_path"
-
-    echo "已归档到: $archive_path"
+    env DREAM_BOOTSTRAP_COMPILER="$current_link" fish --no-config scripts/bootstrap_build.fish build "$input_file" "$output_file"
 end
 
 # 主命令分发
@@ -202,8 +157,6 @@ switch "$command"
         run_bootstrap
     case compile
         compile_file $argv[2]
-    case archive
-        archive_version $argv[2]
     case help -h --help ''
         show_help
     case '*'

@@ -64,7 +64,7 @@ Stage 0: OCaml compiler
 
 ### Stage 1/2 的边界
 
-Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；完整语言能力按可独立验证的语法块逐步迁移。因此自举验收使用 `make bootstrap` 以及 `scripts/bootstrap.fish` 中登记的回归，`examples/lang_full_dream.dm` 已作为 Stage2/Stage3 的综合 build/run 回归，但不要求 Stage 1 直接支持它。
+Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；完整语言能力按可独立验证的语法块逐步迁移。`make bootstrap` 只验证 `examples/lang_full_dream.dm` 和 `examples/lang_full_ocaml.dm` 两个完整语言样例：前者作为 Stage 2/Stage 3 的综合 build/run 回归，后者由宿主编译器验证宿主语言覆盖。单项语法和运行时回归使用 `make test` 或针对性的 `make bootstrap-build FILE=...`。
 
 以下能力属于完整语言路线，但不是当前自举前置条件：
 
@@ -75,7 +75,7 @@ Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；�
 
 这些能力仍由宿主 DIR 编译器和 `lang_full_dream.dm` 验证，待 DM 编译器完成 AST、类型检查和 DreamIR 管线后再迁移。当前 bootstrap 编译器的 lexer、表达式/语句解析仍是过渡实现；其发射器已直接构建结构化 DIR records，与 OCaml 版本保持同一流水线方向（`token/HIR → 结构化 DIR records → DIR verifier → DIR LLVM lowering → LLVM IR`），不再存在「先生成 LLVM 文本、再反解析为 DIR」的反向路径。
 
-**Stage 1/2 已支持能力**（回归见 `make bootstrap`、`scripts/bootstrap.fish` 与登记的 `test/*_dir.dm`）：
+**Stage 1/2 已支持能力**（综合回归见 `make bootstrap`，单项回归见 `make test` 或 `make bootstrap-build FILE=...`）：
 
 - 基础：整数、变量、四则运算、`let`、函数声明/参数/`return`/调用、`print`、字符串、列表、循环、`switch/case/default`
 - 集合：整数列表字面量/索引/赋值/推导式、`for value in list[int]`、整数 tuple 字面量/解包、一元负号
@@ -86,7 +86,7 @@ Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；�
 - match：`switch/case/default` 支持 int/bool/float/str；整数 `match`、通配符、`[tag, payload]` 基础 enum match（用户 enum + Some/None + Ok/Err）
 - 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/c/core/*.c` 和 `runtime/c/wrappers/*.c`
 - CLI 与格式：Stage 1/2 提供 `build`/`llvm`/`dir` CLI；宿主与 DM 统一输出正式 DreamIR 文本，typed record 仅为内部序列化 ABI，未映射指令以 `native llvm` 记录保留
-- 固定点：Stage 0 → 1 → 2 → 3 字节一致固定点，Stage 3 独立执行 `dir`/`build` 回归（`lang_full_dream.dm`、`quicksort.dm`、rune 索引、基础捕获 lambda、登记的 DIR 示例）
+- 固定点：Stage 0 → 1 → 2 → 3 字节一致固定点，Stage 3 独立执行 `lang_full_dream.dm` 综合 `dir`/`build` 回归；其他 DIR 和语法样例不在自举主流程中重复执行。
 
 **待接入**：
 
@@ -199,7 +199,7 @@ AST → 类型检查后 AST → 单态化 → DreamIR（类型化 CFG/SSA）→ 
 - **结构化 trace 而非无界打印**：直接在编译器里 `print` 会改变生成代码并放大输出；用 `DEBUG` 环境变量控制分段计时与关键路径输出。
 - **循环 watchdog**：前端循环记录 token/index 是否推进、单函数 DIR 指令数/输出字节数、block 数预算，异常时立即报告上下文。
 - **分层缩小失败样本**：源文件 → token dump → AST dump → typed AST dump → 正式 DreamIR dump → verifier error → LLVM dump → clang error → runtime 执行，每层可单独保存和重新输入。
-- **测试金字塔**：DIR 单元测试（类型/block 参数/重复 value/return 类型/打印稳定）→ lowering 测试（phi/switch/intrinsic 映射/verifier 通过）→ 编译器测试（AST→DIR 各构造、类型错误不生成 DIR）→ 端到端（examples、`test/*_dir.dm`）→ 自举测试（各级生成合法产物、固定点、诊断完整）。
+- **测试金字塔**：DIR 单元测试（类型/block 参数/重复 value/return 类型/打印稳定）→ lowering 测试（phi/switch/intrinsic 映射/verifier 通过）→ 编译器测试（AST→DIR 各构造、类型错误不生成 DIR）→ 端到端（`make test`）→ 自举测试（`make bootstrap` 仅验证两个 `examples/lang_full_*.dm` 完整样例、各级生成合法产物、固定点和诊断完整）。
 
 ## 已完成里程碑 ✅
 
