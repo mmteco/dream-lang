@@ -132,7 +132,7 @@ const LIR_TERM_MAX: int = LIR_TERM_UNREACHABLE
 
 struct LirRecord:
     record_kind: int
-    function_index: int
+    func_index: int
     block_index: int
     opcode: int
     type_tag: int
@@ -198,7 +198,7 @@ def lir_build_default_layouts() -> list[int]:
 
 def lir_append_record(records: list[int], record: LirRecord):
     append(records, record.record_kind)
-    append(records, record.function_index)
+    append(records, record.func_index)
     append(records, record.block_index)
     append(records, record.opcode)
     append(records, record.type_tag)
@@ -408,7 +408,7 @@ def lir_lower_mir_record(mir: MirProgram, record_id: int, records: list[int], va
     let target_operand_count = lir_value_count(values) - target_operand_start
     let target = LirRecord{
         record_kind: target_kind,
-        function_index: mir.records[source_offset + 1],
+        func_index: mir.records[source_offset + 1],
         block_index: mir.records[source_offset + 2],
         opcode: target_opcode,
         type_tag: target_type,
@@ -441,8 +441,8 @@ def lir_model_build_program(mir: MirProgram) -> LirProgram:
     lir_debug_checkpoint("params", phase_time)
     return program
 
-def lir_value_cache_index(function_index: int, value: int) -> int:
-    return function_index * lir_value_cache_width[0] + value
+def lir_value_cache_index(func_index: int, value: int) -> int:
+    return func_index * lir_value_cache_width[0] + value
 
 def lir_resize_int_list(target: list[int], size: int, fill_value: int):
     # 原地扩缩并统一填充；不用 "= []" 重绑定全局列表，自举发射器对该形态有误译
@@ -488,53 +488,53 @@ def lir_prepare_value_cache(program: LirProgram):
     record_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
-        let function_index = program.records[offset + 1]
+        let func_index = program.records[offset + 1]
         let result_value = program.records[offset + 5]
-        if function_index >= 0 and result_value >= 0:
-            let value_index = lir_value_cache_index(function_index, result_value)
+        if func_index >= 0 and result_value >= 0:
+            let value_index = lir_value_cache_index(func_index, result_value)
             if value_index < len(lir_value_type_cache):
                 if program.records[offset] in [LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION]:
                     lir_value_type_cache[value_index] = program.records[offset + 4]
                 if program.records[offset] == LIR_RECORD_PARAMETER and program.records[offset + 2] >= 0:
                     lir_block_parameter_cache[value_index] = program.records[offset + 2]
-        if program.records[offset] == LIR_RECORD_PARAMETER and function_index >= 0 and program.records[offset + 2] >= 0:
-            let block_cache_index = function_index * lir_block_cache_width[0] + program.records[offset + 2]
+        if program.records[offset] == LIR_RECORD_PARAMETER and func_index >= 0 and program.records[offset + 2] >= 0:
+            let block_cache_index = func_index * lir_block_cache_width[0] + program.records[offset + 2]
             if lir_block_parameter_start_cache[block_cache_index] < 0:
                 lir_block_parameter_start_cache[block_cache_index] = offset
             lir_block_parameter_count_cache[block_cache_index] = lir_block_parameter_count_cache[block_cache_index] + 1
         record_id = record_id + 1
 
-def lir_value_type_in_function(records: list[int], function_index: int, value: int) -> int:
-    if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
-        let value_index = lir_value_cache_index(function_index, value)
+def lir_value_type_in_function(records: list[int], func_index: int, value: int) -> int:
+    if func_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
+        let value_index = lir_value_cache_index(func_index, value)
         if value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_type_cache[value_index] != 0:
             return lir_value_type_cache[value_index]
     let record_id = 0
     while record_id < lir_record_count(records):
         let offset = lir_record_offset(record_id)
-        if records[offset + 1] == function_index and records[offset + 5] == value:
+        if records[offset + 1] == func_index and records[offset + 5] == value:
             if records[offset] in [LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION]:
                 return records[offset + 4]
         record_id = record_id + 1
     return LIR_TYPE_DYNAMIC
 
-def lir_value_exists(records: list[int], function_index: int, value: int) -> bool:
-    if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
-        let value_index = lir_value_cache_index(function_index, value)
+def lir_value_exists(records: list[int], func_index: int, value: int) -> bool:
+    if func_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
+        let value_index = lir_value_cache_index(func_index, value)
         if value_index >= 0 and value_index < len(lir_value_type_cache) and lir_value_type_cache[value_index] != 0:
             return true
     let record_id = 0
     while record_id < lir_record_count(records):
         let offset = lir_record_offset(record_id)
-        if records[offset + 1] == function_index and records[offset + 5] == value:
+        if records[offset + 1] == func_index and records[offset + 5] == value:
             if records[offset] in [LIR_RECORD_PARAMETER, LIR_RECORD_INSTRUCTION]:
                 return true
         record_id = record_id + 1
     return false
 
-def lir_is_block_parameter_value(records: list[int], function_index: int, value: int) -> bool:
-    if function_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
-        let value_index = lir_value_cache_index(function_index, value)
+def lir_is_block_parameter_value(records: list[int], func_index: int, value: int) -> bool:
+    if func_index >= 0 and value >= 0 and lir_value_cache_width[0] > 0:
+        let value_index = lir_value_cache_index(func_index, value)
         return (
             value_index >= 0 and
             value_index < len(lir_block_parameter_cache) and
@@ -545,7 +545,7 @@ def lir_is_block_parameter_value(records: list[int], function_index: int, value:
         let offset = lir_record_offset(record_id)
         if (
             records[offset] == LIR_RECORD_PARAMETER and
-            records[offset + 1] == function_index and
+            records[offset + 1] == func_index and
             records[offset + 5] == value and
             records[offset + 2] >= 0
         ):
@@ -553,10 +553,10 @@ def lir_is_block_parameter_value(records: list[int], function_index: int, value:
         record_id = record_id + 1
     return false
 
-def lir_block_parameter_offset(function_index: int, block_index: int, parameter_index: int) -> int:
-    if function_index < 0 or block_index < 0 or parameter_index < 0 or lir_block_cache_width[0] <= 0:
+def lir_block_parameter_offset(func_index: int, block_index: int, parameter_index: int) -> int:
+    if func_index < 0 or block_index < 0 or parameter_index < 0 or lir_block_cache_width[0] <= 0:
         return -1
-    let block_cache_index = function_index * lir_block_cache_width[0] + block_index
+    let block_cache_index = func_index * lir_block_cache_width[0] + block_index
     if block_cache_index < 0 or block_cache_index >= len(lir_block_parameter_start_cache):
         return -1
     let parameter_count = lir_block_parameter_count_cache[block_cache_index]
@@ -585,12 +585,12 @@ def lir_edge_argument_type(program: LirProgram, term_offset: int, operand_index:
 
 def lir_merge_block_parameter_type(program: LirProgram, term_offset: int, target_block: int, argument_index: int,
     parameter_index: int):
-    let function_index = program.records[term_offset + 1]
-    let parameter_offset = lir_block_parameter_offset(function_index, target_block, parameter_index)
+    let func_index = program.records[term_offset + 1]
+    let parameter_offset = lir_block_parameter_offset(func_index, target_block, parameter_index)
     if parameter_offset < 0:
         return
     let parameter_value = program.records[parameter_offset + 5]
-    let cache_index = lir_value_cache_index(function_index, parameter_value)
+    let cache_index = lir_value_cache_index(func_index, parameter_value)
     if cache_index < 0 or cache_index >= len(lir_block_parameter_inferred_cache):
         return
     let incoming_type = lir_edge_argument_type(program, term_offset, argument_index, target_block)
@@ -648,9 +648,9 @@ def lir_infer_block_parameter_types(program: LirProgram):
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
         if program.records[offset] == LIR_RECORD_PARAMETER and program.records[offset + 2] >= 0:
-            let function_index = program.records[offset + 1]
+            let func_index = program.records[offset + 1]
             let result_value = program.records[offset + 5]
-            let value_index = lir_value_cache_index(function_index, result_value)
+            let value_index = lir_value_cache_index(func_index, result_value)
             # 多重 and 展开为嵌套判断：自举发射器对长 and 链有误译
             if value_index >= 0:
                 if value_index < len(lir_block_parameter_inferred_cache):
@@ -688,7 +688,7 @@ def lir_validate_model_program(program: LirProgram) -> bool:
     while record_id < record_count:
         let offset = lir_record_offset(record_id)
         let kind = records[offset]
-        let function_index = records[offset + 1]
+        let func_index = records[offset + 1]
         let block_index = records[offset + 2]
         let opcode = records[offset + 3]
         let type_tag = records[offset + 4]
@@ -729,9 +729,9 @@ def lir_validate_model_program(program: LirProgram) -> bool:
         if layout_id < 0 or layout_id >= lir_layout_count(layouts):
             return lir_validation_error(record_id, "layout")
         if kind == LIR_RECORD_MODULE:
-            if function_index != -1 or block_index != -1:
+            if func_index != -1 or block_index != -1:
                 return lir_validation_error(record_id, "module owner")
-        elif function_index < 0:
+        elif func_index < 0:
             return lir_validation_error(record_id, "missing function")
         if kind in [LIR_RECORD_BLOCK, LIR_RECORD_INSTRUCTION, LIR_RECORD_TERMINATOR]:
             if block_index < 0:
@@ -739,21 +739,21 @@ def lir_validate_model_program(program: LirProgram) -> bool:
         if kind == LIR_RECORD_FUNCTION:
             if active_block >= 0 and not block_has_terminator:
                 return lir_validation_error(record_id, "unterminated block before function")
-            active_function = function_index
+            active_function = func_index
             active_block = -1
             block_has_terminator = true
         elif kind == LIR_RECORD_BLOCK:
             if active_block >= 0 and not block_has_terminator:
                 return lir_validation_error(record_id, "block owner")
-            if function_index != active_function:
+            if func_index != active_function:
                 return lir_validation_error(record_id, "block order")
             active_block = block_index
             block_has_terminator = false
         elif kind == LIR_RECORD_INSTRUCTION:
-            if function_index != active_function or block_index != active_block or block_has_terminator:
+            if func_index != active_function or block_index != active_block or block_has_terminator:
                 return lir_validation_error(record_id, "instruction placement")
         elif kind == LIR_RECORD_TERMINATOR:
-            if function_index != active_function or block_index != active_block or block_has_terminator:
+            if func_index != active_function or block_index != active_block or block_has_terminator:
                 return lir_validation_error(record_id, "terminator placement")
             if opcode == LIR_TERM_JUMP and operand_count < 1:
                 return lir_validation_error(record_id, "jump operands")

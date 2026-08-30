@@ -254,7 +254,7 @@ def mir_opt_constant_fold(program: MirProgram) -> MirProgram:
             let auxiliary_count = program.records[source_offset + 9]
             let target = MirRecord{
                 record_kind: record_kind,
-                function_index: program.records[source_offset + 1],
+                func_index: program.records[source_offset + 1],
                 block_index: program.records[source_offset + 2],
                 opcode: target_opcode,
                 type_tag: type_tag,
@@ -329,7 +329,7 @@ def mir_opt_dce(program: MirProgram) -> MirProgram:
             let auxiliary_start = mir_opt_append_auxiliary(program, offset, values)
             let target = MirRecord{
                 record_kind: kind,
-                function_index: program.records[offset + 1],
+                func_index: program.records[offset + 1],
                 block_index: program.records[offset + 2],
                 opcode: opcode,
                 type_tag: program.records[offset + 4],
@@ -345,17 +345,17 @@ def mir_opt_dce(program: MirProgram) -> MirProgram:
         record_id = record_id + 1
     return MirProgram{records: records, values: values}
 
-def mir_opt_max_block(program: MirProgram, function_index: int) -> int:
+def mir_opt_max_block(program: MirProgram, func_index: int) -> int:
     let maximum = -1
     let record_id = 0
     while record_id < mir_record_count(program.records):
         let offset = mir_record_offset(record_id)
-        if program.records[offset + 1] == function_index and program.records[offset + 2] > maximum:
+        if program.records[offset + 1] == func_index and program.records[offset + 2] > maximum:
             maximum = program.records[offset + 2]
         record_id = record_id + 1
     return maximum
 
-def mir_opt_mark_blocks(program: MirProgram, function_index: int, reachable: list[int]):
+def mir_opt_mark_blocks(program: MirProgram, func_index: int, reachable: list[int]):
     if len(reachable) > 0:
         reachable[0] = 1
     let changed = true
@@ -366,7 +366,7 @@ def mir_opt_mark_blocks(program: MirProgram, function_index: int, reachable: lis
             let offset = mir_record_offset(record_id)
             let current_block = program.records[offset + 2]
             let is_active_block = false
-            if program.records[offset + 1] == function_index and program.records[offset] == MIR_RECORD_TERMINATOR:
+            if program.records[offset + 1] == func_index and program.records[offset] == MIR_RECORD_TERMINATOR:
                 if current_block >= 0 and current_block < len(reachable):
                     is_active_block = reachable[current_block] != 0
             if is_active_block:
@@ -384,13 +384,13 @@ def mir_opt_mark_blocks(program: MirProgram, function_index: int, reachable: lis
                     operand_index = operand_index + 1
             record_id = record_id + 1
 
-def mir_opt_reachable_blocks(program: MirProgram, function_index: int) -> list[int]:
+def mir_opt_reachable_blocks(program: MirProgram, func_index: int) -> list[int]:
     let reachable: list[int] = []
     let block_index = 0
-    while block_index <= mir_opt_max_block(program, function_index):
+    while block_index <= mir_opt_max_block(program, func_index):
         append(reachable, 0)
         block_index = block_index + 1
-    mir_opt_mark_blocks(program, function_index, reachable)
+    mir_opt_mark_blocks(program, func_index, reachable)
     return reachable
 
 def mir_opt_remove_unreachable(program: MirProgram) -> MirProgram:
@@ -402,11 +402,11 @@ def mir_opt_remove_unreachable(program: MirProgram) -> MirProgram:
     while record_id < mir_record_count(program.records):
         let offset = mir_record_offset(record_id)
         let kind = program.records[offset]
-        let function_index = program.records[offset + 1]
+        let func_index = program.records[offset + 1]
         let block = program.records[offset + 2]
-        if function_index >= 0 and function_index != active_function:
-            active_function = function_index
-            reachable = mir_opt_reachable_blocks(program, function_index)
+        if func_index >= 0 and func_index != active_function:
+            active_function = func_index
+            reachable = mir_opt_reachable_blocks(program, func_index)
         let remove = false
         if kind in [MIR_RECORD_BLOCK, MIR_RECORD_INSTRUCTION,
             MIR_RECORD_TERMINATOR] or kind == MIR_RECORD_PARAMETER and block >= 0:
@@ -428,7 +428,7 @@ def mir_opt_remove_unreachable(program: MirProgram) -> MirProgram:
             let auxiliary_start = mir_opt_append_auxiliary(program, offset, values)
             let target = MirRecord{
                 record_kind: kind,
-                function_index: program.records[offset + 1],
+                func_index: program.records[offset + 1],
                 block_index: block,
                 opcode: program.records[offset + 3],
                 type_tag: program.records[offset + 4],

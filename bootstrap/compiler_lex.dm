@@ -180,14 +180,14 @@ struct ConstantTable:
     literal_ends: list[int]
 
 struct ImplTable:
-    function_indexes: list[int]
+    func_indexes: list[int]
     declaration_indexes: list[int]
     interface_types: list[int]
 
 struct InterfaceTable:
     name_starts: list[int]
     name_ends: list[int]
-    function_indexes: list[int]
+    func_indexes: list[int]
     declaration_indexes: list[int]
     impl_name_starts: list[int]
     impl_name_ends: list[int]
@@ -331,12 +331,12 @@ def closure_environment_slot_width(value_type: int) -> int:
         return 2
     return 1
 
-def is_function_value_type(value_type: int) -> bool:
+def is_func_value_type(value_type: int) -> bool:
     if value_type < 0:
         return true
     return value_type >= VALUE_TYPE_FUNCTION_PARAMETER
 
-def function_value_index(value_type: int) -> int:
+def func_value_index(value_type: int) -> int:
     return value_type - VALUE_TYPE_FUNCTION_BASE
 
 def is_lambda_value_type(value_type: int) -> bool:
@@ -487,11 +487,11 @@ def lambda_capture_type(tokens: TokenStream, lambda_token_index: int, capture_st
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    let function_definition_index = lambda_token_index - 1
-    while function_definition_index >= 0 and token_kind(kinds, function_definition_index) != TOKEN_DEF:
-        function_definition_index = function_definition_index - 1
+    let func_definition_index = lambda_token_index - 1
+    while func_definition_index >= 0 and token_kind(kinds, func_definition_index) != TOKEN_DEF:
+        func_definition_index = func_definition_index - 1
     let declaration_index = lambda_token_index - 1
-    while declaration_index > function_definition_index:
+    while declaration_index > func_definition_index:
         if token_kind(kinds, declaration_index) == TOKEN_LET and token_kind(kinds,
             declaration_index + 1) == TOKEN_IDENTIFIER:
             let declaration_name_start = token_start(starts, declaration_index + 1)
@@ -511,7 +511,7 @@ def lambda_capture_type(tokens: TokenStream, lambda_token_index: int, capture_st
                     value_index = value_index + 1
                 return lambda_capture_expression_type(kinds, value_index)
         declaration_index = declaration_index - 1
-    let parameter_index = function_definition_index + 2
+    let parameter_index = func_definition_index + 2
     while parameter_index < lambda_token_index:
         if token_kind(kinds, parameter_index) == TOKEN_IDENTIFIER:
             let parameter_name_start = token_start(starts, parameter_index)
@@ -854,21 +854,21 @@ def line_indent(source: str, position: int) -> int:
         current_position = current_position + 1
     return result
 
-def enclosing_method_prefix(tokens: TokenStream, function_name_start: int) -> str:
+def enclosing_method_prefix(tokens: TokenStream, func_name_start: int) -> str:
     let source = tokens.src
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    if line_indent(source, function_name_start) == 0:
+    if line_indent(source, func_name_start) == 0:
         return ""
-    let function_token_index = 0
-    let function_token_found = false
-    while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
-        if token_start(starts, function_token_index) == function_name_start:
-            function_token_found = true
-        function_token_index = function_token_index + 1
-    function_token_index = function_token_index - 1
-    let scan_index = function_token_index
+    let func_token_index = 0
+    let func_token_found = false
+    while token_kind(kinds, func_token_index) != TOKEN_EOF and not func_token_found:
+        if token_start(starts, func_token_index) == func_name_start:
+            func_token_found = true
+        func_token_index = func_token_index + 1
+    func_token_index = func_token_index - 1
+    let scan_index = func_token_index
     while scan_index >= 0:
         if line_indent(source, token_start(starts, scan_index)) == 0:
             let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
@@ -906,18 +906,18 @@ def enclosing_method_prefix(tokens: TokenStream, function_name_start: int) -> st
         scan_index = scan_index - 1
     return ""
 
-def enclosing_self_struct_declaration(tokens: TokenStream, function_name_start: int) -> int:
+def enclosing_self_struct_declaration(tokens: TokenStream, func_name_start: int) -> int:
     let source = tokens.src
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    let function_token_index = 0
-    let function_token_found = false
-    while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
-        if token_start(starts, function_token_index) == function_name_start:
-            function_token_found = true
-        function_token_index = function_token_index + 1
-    let scan_index = function_token_index - 1
+    let func_token_index = 0
+    let func_token_found = false
+    while token_kind(kinds, func_token_index) != TOKEN_EOF and not func_token_found:
+        if token_start(starts, func_token_index) == func_name_start:
+            func_token_found = true
+        func_token_index = func_token_index + 1
+    let scan_index = func_token_index - 1
     while scan_index >= 0:
         if line_indent(source, token_start(starts, scan_index)) == 0:
             let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
@@ -940,27 +940,27 @@ def enclosing_self_struct_declaration(tokens: TokenStream, function_name_start: 
         scan_index = scan_index - 1
     return -1
 
-def function_symbol_name(tokens: TokenStream, function_name_start: int, function_name_end: int) -> str:
+def func_symbol_name(tokens: TokenStream, func_name_start: int, func_name_end: int) -> str:
     let source = tokens.src
-    let method_prefix = enclosing_method_prefix(tokens, function_name_start)
+    let method_prefix = enclosing_method_prefix(tokens, func_name_start)
     if len(method_prefix) == 0:
-        return source[function_name_start:function_name_end]
-    let function_name = source[function_name_start:function_name_end]
-    return method_prefix + function_name
+        return source[func_name_start:func_name_end]
+    let func_name = source[func_name_start:func_name_end]
+    return method_prefix + func_name
 
 # 反查函数名所在 impl 行的接口泛型类型码；不在 impl 区段内返回 -1
-def enclosing_impl_interface_type(tokens: TokenStream, function_name_start: int) -> int:
+def enclosing_impl_interface_type(tokens: TokenStream, func_name_start: int) -> int:
     let source = tokens.src
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    let function_token_index = 0
-    let function_token_found = false
-    while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
-        if token_start(starts, function_token_index) == function_name_start:
-            function_token_found = true
-        function_token_index = function_token_index + 1
-    let scan_index = function_token_index - 1
+    let func_token_index = 0
+    let func_token_found = false
+    while token_kind(kinds, func_token_index) != TOKEN_EOF and not func_token_found:
+        if token_start(starts, func_token_index) == func_name_start:
+            func_token_found = true
+        func_token_index = func_token_index + 1
+    let scan_index = func_token_index - 1
     while scan_index >= 0:
         if line_indent(source, token_start(starts, scan_index)) == 0:
             let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
@@ -1013,38 +1013,38 @@ def collect_impl_functions(tokens: TokenStream, functions: FunctionTable, impls:
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    let function_starts = functions.starts
-    let function_ends = functions.ends
-    let impl_func_indexes = impls.function_indexes
+    let func_starts = functions.starts
+    let func_ends = functions.ends
+    let impl_func_indexes = impls.func_indexes
     let impl_func_decls = impls.declaration_indexes
     let impl_func_interface_types = impls.interface_types
-    let function_index = 0
-    while function_index < len(function_starts):
-        let function_name_start = function_starts[function_index]
-        let function_name_end = function_ends[function_index]
-        if source[function_name_start:function_name_end] == "append":
-            let declaration_index = enclosing_self_struct_declaration(tokens, function_name_start)
+    let func_index = 0
+    while func_index < len(func_starts):
+        let func_name_start = func_starts[func_index]
+        let func_name_end = func_ends[func_index]
+        if source[func_name_start:func_name_end] == "append":
+            let declaration_index = enclosing_self_struct_declaration(tokens, func_name_start)
             if declaration_index >= 0:
-                let interface_type = enclosing_impl_interface_type(tokens, function_name_start)
+                let interface_type = enclosing_impl_interface_type(tokens, func_name_start)
                 if interface_type >= 0:
-                    append(impl_func_indexes, function_index)
+                    append(impl_func_indexes, func_index)
                     append(impl_func_decls, declaration_index)
                     append(impl_func_interface_types, interface_type)
-        function_index = function_index + 1
+        func_index = func_index + 1
 
-def enclosing_impl_interface_range(tokens: TokenStream, function_name_start: int) -> (int, int):
+def enclosing_impl_interface_range(tokens: TokenStream, func_name_start: int) -> (int, int):
     # 函数所在 impl 块的接口名区间；非 impl 方法返回 (-1, -1)
     let source = tokens.src
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    let function_token_index = 0
-    let function_token_found = false
-    while token_kind(kinds, function_token_index) != TOKEN_EOF and not function_token_found:
-        if token_start(starts, function_token_index) == function_name_start:
-            function_token_found = true
-        function_token_index = function_token_index + 1
-    let scan_index = function_token_index - 1
+    let func_token_index = 0
+    let func_token_found = false
+    while token_kind(kinds, func_token_index) != TOKEN_EOF and not func_token_found:
+        if token_start(starts, func_token_index) == func_name_start:
+            func_token_found = true
+        func_token_index = func_token_index + 1
+    let scan_index = func_token_index - 1
     while scan_index >= 0:
         if line_indent(source, token_start(starts, scan_index)) == 0:
             let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
@@ -1062,10 +1062,10 @@ def collect_interfaces(tokens: TokenStream, functions: FunctionTable, interfaces
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    let function_starts = functions.starts
+    let func_starts = functions.starts
     let interface_name_starts = interfaces.name_starts
     let interface_name_ends = interfaces.name_ends
-    let impl_function_indexes = interfaces.function_indexes
+    let impl_func_indexes = interfaces.func_indexes
     let impl_decl_indexes = interfaces.declaration_indexes
     let impl_interface_name_starts = interfaces.impl_name_starts
     let impl_interface_name_ends = interfaces.impl_name_ends
@@ -1081,11 +1081,11 @@ def collect_interfaces(tokens: TokenStream, functions: FunctionTable, interfaces
             append(interface_name_starts, token_start(starts, token_index + 1))
             append(interface_name_ends, token_end(ends, token_index + 1))
         token_index = token_index + 1
-    let function_index = 0
-    while function_index < len(function_starts):
-        let declaration_index = enclosing_self_struct_declaration(tokens, function_starts[function_index])
+    let func_index = 0
+    while func_index < len(func_starts):
+        let declaration_index = enclosing_self_struct_declaration(tokens, func_starts[func_index])
         if declaration_index >= 0:
-            let method_prefix = enclosing_method_prefix(tokens, function_starts[function_index])
+            let method_prefix = enclosing_method_prefix(tokens, func_starts[func_index])
             let interface_index = 0
             while interface_index < len(interface_name_starts):
                 let interface_start = interface_name_starts[interface_index]
@@ -1095,20 +1095,20 @@ def collect_interfaces(tokens: TokenStream, functions: FunctionTable, interfaces
                     len(method_prefix) >= len(interface_prefix) and
                     method_prefix[:len(interface_prefix)] == interface_prefix
                 ):
-                    append(impl_function_indexes, function_index)
+                    append(impl_func_indexes, func_index)
                     append(impl_decl_indexes, declaration_index)
                     append(impl_interface_name_starts, interface_start)
                     append(impl_interface_name_ends, interface_end)
                     interface_index = len(interface_name_starts)
                 else:
                     interface_index = interface_index + 1
-        function_index = function_index + 1
+        func_index = func_index + 1
 
-def function_has_body(tokens: TokenStream, body_start: int, body_end: int, function_name_start: int) -> bool:
+def func_has_body(tokens: TokenStream, body_start: int, body_end: int, func_name_start: int) -> bool:
     let source = tokens.src
     let kinds = tokens.kinds
     let starts = tokens.starts
-    let definition_indent = line_indent(source, function_name_start)
+    let definition_indent = line_indent(source, func_name_start)
     let current_index = body_start
     while current_index < body_end:
         if token_kind(kinds, current_index) != TOKEN_NEWLINE and line_indent(source, token_start(starts,
@@ -1135,23 +1135,23 @@ def find_struct_name_for_variable(tokens: TokenStream, name_start: int, name_end
         token_index = token_index + 1
     return ""
 
-def find_method_function_index(tokens: TokenStream, struct_name: str, method_name: str,
+def find_method_func_index(tokens: TokenStream, struct_name: str, method_name: str,
     functions: FunctionTable) -> int:
     let source = tokens.src
-    let function_starts = functions.starts
-    let function_ends = functions.ends
-    let function_index = 0
-    while function_index < len(function_starts):
-        let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
+    let func_starts = functions.starts
+    let func_ends = functions.ends
+    let func_index = 0
+    while func_index < len(func_starts):
+        let candidate_name = source[func_starts[func_index]:func_ends[func_index]]
         if candidate_name == method_name:
-            let candidate_prefix = enclosing_method_prefix(tokens, function_starts[function_index])
+            let candidate_prefix = enclosing_method_prefix(tokens, func_starts[func_index])
             let struct_suffix = struct_name + "_"
             let struct_prefix = "__dir_method_" + struct_suffix
             if candidate_prefix == struct_prefix:
-                return function_index
+                return func_index
             if len(candidate_prefix) > 0:
-                return function_index
-        function_index = function_index + 1
+                return func_index
+        func_index = func_index + 1
     return -1
 
 def find_interface_name_for_variable(tokens: TokenStream, name_start: int, name_end: int) -> str:
@@ -1243,37 +1243,37 @@ def interface_method_count(tokens: TokenStream, interface_name: str) -> int:
         token_index = token_index + 1
     return 0
 
-def find_interface_method_function_index(tokens: TokenStream, interface_name: str, struct_name: str, method_name: str,
+def find_interface_method_func_index(tokens: TokenStream, interface_name: str, struct_name: str, method_name: str,
     functions: FunctionTable) -> int:
     let source = tokens.src
-    let function_starts = functions.starts
-    let function_ends = functions.ends
+    let func_starts = functions.starts
+    let func_ends = functions.ends
     let interface_target_prefix = interface_name + "_"
     let target_prefix = interface_target_prefix + struct_name
     let target_prefix_with_separator = target_prefix + "_"
     let method_prefix_body = "__dir_impl_" + target_prefix_with_separator
-    let function_index = 0
-    while function_index < len(function_starts):
-        let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
+    let func_index = 0
+    while func_index < len(func_starts):
+        let candidate_name = source[func_starts[func_index]:func_ends[func_index]]
         if candidate_name == method_name:
-            let candidate_prefix = enclosing_method_prefix(tokens, function_starts[function_index])
+            let candidate_prefix = enclosing_method_prefix(tokens, func_starts[func_index])
             if candidate_prefix == method_prefix_body:
-                return function_index
-        function_index = function_index + 1
+                return func_index
+        func_index = func_index + 1
     return -1
 
-def find_interface_declaration_function_index(tokens: TokenStream, method_name: str, functions: FunctionTable) -> int:
+def find_interface_declaration_func_index(tokens: TokenStream, method_name: str, functions: FunctionTable) -> int:
     let source = tokens.src
-    let function_starts = functions.starts
-    let function_ends = functions.ends
-    let function_index = 0
-    while function_index < len(function_starts):
-        let candidate_name = source[function_starts[function_index]:function_ends[function_index]]
+    let func_starts = functions.starts
+    let func_ends = functions.ends
+    let func_index = 0
+    while func_index < len(func_starts):
+        let candidate_name = source[func_starts[func_index]:func_ends[func_index]]
         if candidate_name == method_name:
-            let candidate_prefix = enclosing_method_prefix(tokens, function_starts[function_index])
-            if len(candidate_prefix) == 0 and not function_has_body(tokens, 0, 0, function_starts[function_index]):
-                return function_index
-        function_index = function_index + 1
+            let candidate_prefix = enclosing_method_prefix(tokens, func_starts[func_index])
+            if len(candidate_prefix) == 0 and not func_has_body(tokens, 0, 0, func_starts[func_index]):
+                return func_index
+        func_index = func_index + 1
     return -1
 
 def is_body_line(source: str, kinds: list[int], starts: list[int], index: int, body_indent: int) -> bool:
@@ -1374,12 +1374,12 @@ def find_variable(source: str, name_start: int, name_end: int, variable_starts: 
         index = index + 1
     return result
 
-def find_function(source: str, name_start: int, name_end: int, function_starts: list[int],
-    function_ends: list[int]) -> int:
+def find_function(source: str, name_start: int, name_end: int, func_starts: list[int],
+    func_ends: list[int]) -> int:
     let result = -1
     let index = 0
-    while index < len(function_starts):
-        if source_ranges_equal(source, name_start, name_end, function_starts[index], function_ends[index]):
+    while index < len(func_starts):
+        if source_ranges_equal(source, name_start, name_end, func_starts[index], func_ends[index]):
             result = index
         index = index + 1
     return result
@@ -1688,7 +1688,7 @@ def get_return_type(tokens: TokenStream, index: int) -> int:
         return VALUE_TYPE_INTERFACE
     return 1
 
-def find_function_open_parenthesis(kinds: list[int], name_index: int) -> int:
+def find_func_open_parenthesis(kinds: list[int], name_index: int) -> int:
     let current_index = name_index + 1
     while token_kind(kinds, current_index) not in [TOKEN_OPEN_PAREN, TOKEN_EOF, TOKEN_NEWLINE]:
         current_index = current_index + 1
@@ -1716,23 +1716,23 @@ def find_parameter_boundary(kinds: list[int], start_index: int) -> int:
         current_index = current_index + 1
     return current_index
 
-def function_parameter_type(tokens: TokenStream, name_start: int, name_end: int, parameter_number: int,
+def func_parameter_type(tokens: TokenStream, name_start: int, name_end: int, parameter_number: int,
     functions: FunctionTable) -> int:
     let source = tokens.src
-    let function_starts = functions.starts
-    let function_ends = functions.ends
-    let function_param_offsets = functions.param_offsets
-    let function_param_counts = functions.param_counts
+    let func_starts = functions.starts
+    let func_ends = functions.ends
+    let func_param_offsets = functions.param_offsets
+    let func_param_counts = functions.param_counts
     let parameter_starts = functions.param_starts
     let parameter_ends = functions.param_ends
-    let function_index = find_function(source, name_start, name_end, function_starts, function_ends)
-    if function_index < 0:
+    let func_index = find_function(source, name_start, name_end, func_starts, func_ends)
+    if func_index < 0:
         return 0
-    if function_index >= len(function_param_counts):
+    if func_index >= len(func_param_counts):
         return 0
-    if parameter_number < 0 or parameter_number >= function_param_counts[function_index]:
+    if parameter_number < 0 or parameter_number >= func_param_counts[func_index]:
         return 0
-    let parameter_index = function_param_offsets[function_index] + parameter_number
+    let parameter_index = func_param_offsets[func_index] + parameter_number
     if parameter_index < 0 or parameter_index >= len(parameter_starts) or parameter_index >= len(parameter_ends):
         return 0
     return parameter_type_from_declaration(tokens, parameter_starts[parameter_index], parameter_ends[parameter_index])
@@ -1742,18 +1742,18 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
     let kinds = tokens.kinds
     let starts = tokens.starts
     let ends = tokens.ends
-    let function_starts = functions.starts
-    let function_ends = functions.ends
-    let function_bodies = functions.bodies
-    let function_body_ends = functions.body_ends
-    let function_param_offsets = functions.param_offsets
-    let function_param_counts = functions.param_counts
+    let func_starts = functions.starts
+    let func_ends = functions.ends
+    let func_bodies = functions.bodies
+    let func_body_ends = functions.body_ends
+    let func_param_offsets = functions.param_offsets
+    let func_param_counts = functions.param_counts
     let parameter_starts = functions.param_starts
     let parameter_ends = functions.param_ends
     let parameter_types = functions.param_types
     let parameter_struct_decls = functions.param_struct_decls
-    let function_return_types = functions.return_types
-    let function_return_struct_decls = functions.return_struct_decls
+    let func_return_types = functions.return_types
+    let func_return_struct_decls = functions.return_struct_decls
     let parameter_default_indexes = functions.default_indexes
     let parameter_annotation_starts = functions.annotation_starts
     let parameter_annotation_ends = functions.annotation_ends
@@ -1776,16 +1776,16 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
                 while token_kind(kinds, header_scan) not in [TOKEN_COLON, TOKEN_NEWLINE, TOKEN_EOF]:
                     header_scan = header_scan + 1
                 interface_header_end = header_scan
-        let is_function_definition = false
+        let is_func_definition = false
         if token_kind(kinds, current_index) == TOKEN_DEF:
             if interface_indent < 0:
-                is_function_definition = true
-        if is_function_definition:
+                is_func_definition = true
+        if is_func_definition:
             let name_index = current_index + 1
-            let open_index = find_function_open_parenthesis(kinds, name_index)
-            append(function_starts, token_start(starts, name_index))
-            append(function_ends, token_end(ends, name_index))
-            append(function_param_offsets, len(parameter_starts))
+            let open_index = find_func_open_parenthesis(kinds, name_index)
+            append(func_starts, token_start(starts, name_index))
+            append(func_ends, token_end(ends, name_index))
+            append(func_param_offsets, len(parameter_starts))
             let parameter_index = open_index + 1
             let parameter_count = 0
             while token_kind(kinds, parameter_index) not in [TOKEN_CLOSE_PAREN, TOKEN_EOF]:
@@ -1831,18 +1831,18 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
                         parameter_index = parameter_index + 1
                 if not is_parameter:
                     parameter_index = parameter_index + 1
-            append(function_param_counts, parameter_count)
+            append(func_param_counts, parameter_count)
             let header_index = parameter_index
-            let function_return_type = 1
-            let function_return_struct_decl = -1
+            let func_return_type = 1
+            let func_return_struct_decl = -1
             let return_type_scan_index = header_index + 1
             while token_kind(kinds, return_type_scan_index) not in [TOKEN_NEWLINE, TOKEN_EOF]:
                 if token_kind(kinds, return_type_scan_index) == TOKEN_ARROW:
-                    function_return_type = get_return_type(tokens, return_type_scan_index + 1)
-                    function_return_struct_decl = struct_field_type_declaration(tokens, return_type_scan_index + 1)
+                    func_return_type = get_return_type(tokens, return_type_scan_index + 1)
+                    func_return_struct_decl = struct_field_type_declaration(tokens, return_type_scan_index + 1)
                 return_type_scan_index = return_type_scan_index + 1
-            append(function_return_types, function_return_type)
-            append(function_return_struct_decls, function_return_struct_decl)
+            append(func_return_types, func_return_type)
+            append(func_return_struct_decls, func_return_struct_decl)
             while token_kind(kinds, header_index) not in [TOKEN_NEWLINE, TOKEN_EOF]:
                 header_index = header_index + 1
             let body_index = header_index + 1
@@ -1859,12 +1859,12 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
                     found_body_boundary = true
                 if not is_top_level_boundary:
                     body_end = body_end + 1
-            append(function_bodies, body_index)
-            append(function_body_ends, body_end)
+            append(func_bodies, body_index)
+            append(func_body_ends, body_end)
             current_index = body_end
-        if not is_function_definition:
+        if not is_func_definition:
             current_index = current_index + 1
-    return len(function_starts)
+    return len(func_starts)
 
 def find_constant_index(source: str, constant_starts: list[int], constant_ends: list[int], name_start: int,
     name_end: int) -> int:
@@ -2064,23 +2064,23 @@ def collect_global_lets(tokens: TokenStream, globals: GlobalTable) -> int:
         token_index = token_index + 1
     return len(global_let_name_starts)
 
-def function_parameter_default(name_start: int, name_end: int, parameter_number: int, context: ParseContext) -> int:
-    let function_index = find_function(context.src, name_start, name_end, context.fn_starts, context.fn_ends)
-    if function_index < 0:
+def func_parameter_default(name_start: int, name_end: int, parameter_number: int, context: ParseContext) -> int:
+    let func_index = find_function(context.src, name_start, name_end, context.fn_starts, context.fn_ends)
+    if func_index < 0:
         return -1
-    if function_index >= len(context.param_counts):
+    if func_index >= len(context.param_counts):
         return -1
-    if parameter_number < 0 or parameter_number >= context.param_counts[function_index]:
+    if parameter_number < 0 or parameter_number >= context.param_counts[func_index]:
         return -1
-    let parameter_index = context.param_offsets[function_index] + parameter_number
+    let parameter_index = context.param_offsets[func_index] + parameter_number
     if parameter_index < 0 or parameter_index >= len(context.pd):
         return -1
     return context.pd[parameter_index]
 
-def function_parameter_count(name_start: int, name_end: int, context: ParseContext) -> int:
-    let function_index = find_function(context.src, name_start, name_end, context.fn_starts, context.fn_ends)
-    if function_index < 0:
+def func_parameter_count(name_start: int, name_end: int, context: ParseContext) -> int:
+    let func_index = find_function(context.src, name_start, name_end, context.fn_starts, context.fn_ends)
+    if func_index < 0:
         return -1
-    if function_index >= len(context.param_counts):
+    if func_index >= len(context.param_counts):
         return -1
-    return context.param_counts[function_index]
+    return context.param_counts[func_index]

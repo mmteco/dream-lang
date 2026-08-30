@@ -19,9 +19,9 @@ from compiler_external import external_return_type, external_has_declaration, EX
 from compiler_external import EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
 from buffer import Buffer
 
-let llvm_lir_function_record_cache: list[int] = []
-let llvm_lir_function_terminator_start_cache: list[int] = []
-let llvm_lir_function_terminator_count_cache: list[int] = []
+let llvm_lir_func_record_cache: list[int] = []
+let llvm_lir_func_terminator_start_cache: list[int] = []
+let llvm_lir_func_terminator_count_cache: list[int] = []
 let llvm_lir_terminator_record_cache: list[int] = []
 let llvm_lir_source: str = ""
 
@@ -102,8 +102,8 @@ def llvm_lir_block_name(block: int) -> str:
 def llvm_lir_block_ref_name(block: int) -> str:
     return "%" + llvm_lir_block_name(block)
 
-def llvm_lir_function_name(function_index: int) -> str:
-    return llvm_lir_join_int("@dm_function_", function_index, "")
+def llvm_lir_func_name(func_index: int) -> str:
+    return llvm_lir_join_int("@dm_func_", func_index, "")
 
 def llvm_lir_is_external_symbol(symbol: int) -> bool:
     return symbol >= LIR_EXTERNAL_BASE
@@ -269,34 +269,34 @@ def llvm_lir_print_name(program: LirProgram, record_offset: int) -> str:
         return "@dream_print_bool"
     return "@dream_print_string"
 
-def llvm_lir_prepare_function_cache(program: LirProgram):
+def llvm_lir_prepare_func_cache(program: LirProgram):
     let maximum_function = -1
     let record_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
-        let function_index = program.records[offset + 1]
-        if function_index > maximum_function:
-            maximum_function = function_index
+        let func_index = program.records[offset + 1]
+        if func_index > maximum_function:
+            maximum_function = func_index
         record_id = record_id + 1
     # 原地扩缩缓存，不做全局列表重绑定（自举发射器对该形态有误译）
-    llvm_lir_resize_int_list(llvm_lir_function_record_cache, maximum_function + 1, -1)
-    llvm_lir_resize_int_list(llvm_lir_function_terminator_start_cache, maximum_function + 1, -1)
-    llvm_lir_resize_int_list(llvm_lir_function_terminator_count_cache, maximum_function + 1, 0)
+    llvm_lir_resize_int_list(llvm_lir_func_record_cache, maximum_function + 1, -1)
+    llvm_lir_resize_int_list(llvm_lir_func_terminator_start_cache, maximum_function + 1, -1)
+    llvm_lir_resize_int_list(llvm_lir_func_terminator_count_cache, maximum_function + 1, 0)
     record_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
         if program.records[offset] == LIR_RECORD_FUNCTION:
-            let function_index = program.records[offset + 1]
-            if function_index >= 0 and function_index < len(llvm_lir_function_record_cache):
-                llvm_lir_function_record_cache[function_index] = record_id
+            let func_index = program.records[offset + 1]
+            if func_index >= 0 and func_index < len(llvm_lir_func_record_cache):
+                llvm_lir_func_record_cache[func_index] = record_id
         elif program.records[offset] == LIR_RECORD_TERMINATOR:
-            let function_index = program.records[offset + 1]
-            if function_index >= 0 and function_index < len(llvm_lir_function_terminator_start_cache):
-                if llvm_lir_function_terminator_start_cache[function_index] < 0:
-                    llvm_lir_function_terminator_start_cache[function_index] = len(llvm_lir_terminator_record_cache)
+            let func_index = program.records[offset + 1]
+            if func_index >= 0 and func_index < len(llvm_lir_func_terminator_start_cache):
+                if llvm_lir_func_terminator_start_cache[func_index] < 0:
+                    llvm_lir_func_terminator_start_cache[func_index] = len(llvm_lir_terminator_record_cache)
                 append(llvm_lir_terminator_record_cache, record_id)
-                let terminator_count = llvm_lir_function_terminator_count_cache[function_index] + 1
-                llvm_lir_function_terminator_count_cache[function_index] = terminator_count
+                let terminator_count = llvm_lir_func_terminator_count_cache[func_index] + 1
+                llvm_lir_func_terminator_count_cache[func_index] = terminator_count
         record_id = record_id + 1
 
 def llvm_lir_operand_kind(program: LirProgram, record_offset: int, operand_index: int) -> int:
@@ -307,11 +307,11 @@ def llvm_lir_operand_value(program: LirProgram, record_offset: int, operand_inde
     let operand_start = program.records[record_offset + 6]
     return program.values[lir_value_offset(operand_start + operand_index) + 1]
 
-def llvm_lir_value_type(program: LirProgram, function_index: int, value: int) -> int:
-    return lir_value_type_in_function(program.records, function_index, value)
+def llvm_lir_value_type(program: LirProgram, func_index: int, value: int) -> int:
+    return lir_value_type_in_function(program.records, func_index, value)
 
-def llvm_lir_has_value(program: LirProgram, function_index: int, value: int) -> bool:
-    return lir_value_exists(program.records, function_index, value)
+def llvm_lir_has_value(program: LirProgram, func_index: int, value: int) -> bool:
+    return lir_value_exists(program.records, func_index, value)
 
 def llvm_lir_zero(type_tag: int) -> str:
     if type_tag == LIR_TYPE_VOID:
@@ -338,8 +338,8 @@ def llvm_lir_operand(program: LirProgram, record_offset: int, operand_index: int
     let operand_kind = llvm_lir_operand_kind(program, record_offset, operand_index)
     let operand_value = llvm_lir_operand_value(program, record_offset, operand_index)
     if operand_kind == LIR_OPERAND_VALUE:
-        let function_index = program.records[record_offset + 1]
-        if not llvm_lir_has_value(program, function_index, operand_value):
+        let func_index = program.records[record_offset + 1]
+        if not llvm_lir_has_value(program, func_index, operand_value):
             return llvm_lir_zero(expected_type)
         return llvm_lir_value_name(operand_value)
     if operand_kind == LIR_OPERAND_BLOCK:
@@ -347,7 +347,7 @@ def llvm_lir_operand(program: LirProgram, record_offset: int, operand_index: int
     if operand_kind == LIR_OPERAND_SYMBOL:
         if llvm_lir_is_external_symbol(operand_value):
             return llvm_lir_external_name(operand_value)
-        return llvm_lir_function_name(operand_value)
+        return llvm_lir_func_name(operand_value)
     if operand_kind == LIR_OPERAND_TYPE:
         return llvm_lir_type(operand_value)
     if llvm_lir_is_pointer_like(expected_type):
@@ -365,8 +365,8 @@ def llvm_emit_operand(program: LirProgram, record_offset: int, operand_index: in
     let operand_kind = llvm_lir_operand_kind(program, record_offset, operand_index)
     let operand_value = llvm_lir_operand_value(program, record_offset, operand_index)
     if operand_kind == LIR_OPERAND_VALUE:
-        let function_index = program.records[record_offset + 1]
-        if not llvm_lir_has_value(program, function_index, operand_value):
+        let func_index = program.records[record_offset + 1]
+        if not llvm_lir_has_value(program, func_index, operand_value):
             append(output, llvm_lir_zero(expected_type))
         else:
             append(output, "%v")
@@ -380,7 +380,7 @@ def llvm_emit_operand(program: LirProgram, record_offset: int, operand_index: in
         if llvm_lir_is_external_symbol(operand_value):
             append(output, llvm_lir_external_name(operand_value))
             return
-        append(output, "@dm_function_")
+        append(output, "@dm_func_")
         append(output, operand_value)
         return
     if operand_kind == LIR_OPERAND_TYPE:
@@ -857,7 +857,7 @@ def llvm_emit_struct_create(program: LirProgram, offset: int, output: Buffer, re
         append(output, ")\n")
         operand_index = operand_index + 1
 
-def llvm_lir_dict_function_name(key_type: int, value_type: int, operation: int) -> str:
+def llvm_lir_dict_func_name(key_type: int, value_type: int, operation: int) -> str:
     if operation == 1:
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_I32:
             return "@dream_dict_create_str_int"
@@ -895,7 +895,7 @@ def llvm_emit_dict_create(program: LirProgram, offset: int, output: Buffer, resu
     append(output, "  ")
     append(output, result_name)
     append(output, " = call i8* ")
-    append(output, llvm_lir_dict_function_name(key_type, value_type, 1))
+    append(output, llvm_lir_dict_func_name(key_type, value_type, 1))
     append(output, "(i32 ")
     if operand_count > 0:
         llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
@@ -905,7 +905,7 @@ def llvm_emit_dict_create(program: LirProgram, offset: int, output: Buffer, resu
     let operand_index = 1
     while operand_index + 1 < operand_count:
         append(output, "  call void ")
-        append(output, llvm_lir_dict_function_name(key_type, value_type, 2))
+        append(output, llvm_lir_dict_func_name(key_type, value_type, 2))
         append(output, "(i8* ")
         append(output, result_name)
         append(output, ", ")
@@ -931,7 +931,7 @@ def llvm_emit_dict_get(program: LirProgram, offset: int, output: Buffer, result_
     append(output, " = call ")
     append(output, llvm_lir_type(value_type))
     append(output, " ")
-    append(output, llvm_lir_dict_function_name(key_type, value_type, 3))
+    append(output, llvm_lir_dict_func_name(key_type, value_type, 3))
     append(output, "(i8* ")
     llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
     append(output, ", ")
@@ -1008,19 +1008,19 @@ def llvm_emit_tuple_get(program: LirProgram, offset: int, output: Buffer, result
     llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
     append(output, ")\n")
 
-def llvm_lir_find_function_record(program: LirProgram, function_index: int) -> int:
-    if function_index >= 0 and function_index < len(llvm_lir_function_record_cache):
-        return llvm_lir_function_record_cache[function_index]
+def llvm_lir_find_func_record(program: LirProgram, func_index: int) -> int:
+    if func_index >= 0 and func_index < len(llvm_lir_func_record_cache):
+        return llvm_lir_func_record_cache[func_index]
     let record_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
-        if program.records[offset] == LIR_RECORD_FUNCTION and program.records[offset + 1] == function_index:
+        if program.records[offset] == LIR_RECORD_FUNCTION and program.records[offset + 1] == func_index:
             return record_id
         record_id = record_id + 1
     return -1
 
-def llvm_lir_function_parameter_type(program: LirProgram, function_index: int, parameter_index: int) -> int:
-    let record_id = llvm_lir_find_function_record(program, function_index)
+def llvm_lir_func_parameter_type(program: LirProgram, func_index: int, parameter_index: int) -> int:
+    let record_id = llvm_lir_find_func_record(program, func_index)
     if record_id < 0:
         return LIR_TYPE_DYNAMIC
     let offset = lir_record_offset(record_id)
@@ -1056,10 +1056,10 @@ def llvm_emit_runtime_declarations(output: Buffer):
     append(output, "declare i8* @concat_dynarray_ptr(i8*, i8*)\n")
     append(output, "declare i8* @string_substring(i8*, i32, i32)\n")
 
-def llvm_emit_function_signature(program: LirProgram, record_id: int, output: Buffer):
+def llvm_emit_func_signature(program: LirProgram, record_id: int, output: Buffer):
     # 写函数 LLVM 签名 "return_type (param_types...)"，供函数指针表 bitcast 使用
-    let function_offset = lir_record_offset(record_id)
-    append(output, llvm_lir_type(llvm_lir_function_return_type(program, function_offset)))
+    let func_offset = lir_record_offset(record_id)
+    append(output, llvm_lir_type(llvm_lir_func_return_type(program, func_offset)))
     append(output, " (")
     let scan_record = record_id + 1
     let parameter_index = 0
@@ -1078,26 +1078,26 @@ def llvm_emit_function_signature(program: LirProgram, record_id: int, output: Bu
             scan_record = scan_record + 1
     append(output, ")")
 
-def llvm_emit_function_table(program: LirProgram, output: Buffer):
-    # 函数指针表：@dm_function_table = [ptr @dm_function_N, ...]
-    let function_count = len(llvm_lir_function_record_cache)
-    append(output, "@dm_function_table = private global [")
-    append(output, function_count)
+def llvm_emit_func_table(program: LirProgram, output: Buffer):
+    # 函数指针表：@dm_func_table = [ptr @dm_func_N, ...]
+    let func_count = len(llvm_lir_func_record_cache)
+    append(output, "@dm_func_table = private global [")
+    append(output, func_count)
     append(output, " x ptr] [")
-    let function_index = 0
-    while function_index < function_count:
-        if function_index > 0:
+    let func_index = 0
+    while func_index < func_count:
+        if func_index > 0:
             append(output, ", ")
-        let record_id = llvm_lir_find_function_record(program, function_index)
+        let record_id = llvm_lir_find_func_record(program, func_index)
         if record_id >= 0:
             if program.records[lir_record_offset(record_id) + 3] == LIR_FUNCTION_ENTRY:
                 append(output, "ptr null")
             else:
-                append(output, "ptr @dm_function_")
-                append(output, function_index)
+                append(output, "ptr @dm_func_")
+                append(output, func_index)
         else:
             append(output, "ptr null")
-        function_index = function_index + 1
+        func_index = func_index + 1
     append(output, "]\n")
     append(output, "declare i32 @string_compare(i8*, i8*)\n")
     append(output, "declare i8* @dream_dict_create_int_int(i32)\n")
@@ -1257,9 +1257,9 @@ def llvm_lir_direct_call_argument_needs_cast(actual_type: int, expected_type: in
         return false
     return actual_type != expected_type
 
-def llvm_lir_block_parameter_type(program: LirProgram, function_index: int, block_index: int,
+def llvm_lir_block_parameter_type(program: LirProgram, func_index: int, block_index: int,
     parameter_index: int) -> int:
-    let offset = lir_block_parameter_offset(function_index, block_index, parameter_index)
+    let offset = lir_block_parameter_offset(func_index, block_index, parameter_index)
     if offset < 0:
         return LIR_TYPE_DYNAMIC
     if offset + 4 >= len(program.records):
@@ -1363,18 +1363,18 @@ def llvm_emit_edge_cast(program: LirProgram, record_offset: int, operand_index: 
 def llvm_emit_edge_casts(program: LirProgram, record_offset: int, target_block: int, argument_start: int,
     argument_count: int, output: Buffer):
     let parameter_index = 0
-    let function_index = program.records[record_offset + 1]
+    let func_index = program.records[record_offset + 1]
     while parameter_index < argument_count:
-        let expected_type = llvm_lir_block_parameter_type(program, function_index, target_block, parameter_index)
+        let expected_type = llvm_lir_block_parameter_type(program, func_index, target_block, parameter_index)
         llvm_emit_edge_cast(program, record_offset, argument_start + parameter_index, expected_type, output)
         parameter_index = parameter_index + 1
 
-def llvm_emit_direct_call_casts(program: LirProgram, record_offset: int, function_index: int, output: Buffer):
+def llvm_emit_direct_call_casts(program: LirProgram, record_offset: int, func_index: int, output: Buffer):
     let operand_count = program.records[record_offset + 7]
     let operand_index = 1
     let argument_index = 0
     while operand_index < operand_count:
-        let expected_type = llvm_lir_function_parameter_type(program, function_index, argument_index)
+        let expected_type = llvm_lir_func_parameter_type(program, func_index, argument_index)
         if expected_type == LIR_TYPE_DYNAMIC:
             expected_type = LIR_TYPE_PTR
         let actual_type = LIR_TYPE_I32
@@ -1466,14 +1466,14 @@ def llvm_emit_direct_call_casts(program: LirProgram, record_offset: int, functio
         operand_index = operand_index + 1
         argument_index = argument_index + 1
 
-def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: int, function_index: int, output: Buffer):
+def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: int, func_index: int, output: Buffer):
     let operand_count = program.records[record_offset + 7]
     let operand_index = 1
     let argument_index = 0
     while operand_index < operand_count:
         if argument_index > 0:
             append(output, ", ")
-        let expected_type = llvm_lir_function_parameter_type(program, function_index, argument_index)
+        let expected_type = llvm_lir_func_parameter_type(program, func_index, argument_index)
         llvm_emit_direct_call_argument(program, record_offset, operand_index, expected_type, output)
         operand_index = operand_index + 1
         argument_index = argument_index + 1
@@ -1736,7 +1736,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
             if is_external_target:
                 append(output, llvm_lir_external_call_name(program, offset, target))
             else:
-                append(output, llvm_lir_function_name(target))
+                append(output, llvm_lir_func_name(target))
             append(output, "(")
             if is_external_target:
                 llvm_lir_render_call_arguments_from(program, offset, 1, output)
@@ -1767,8 +1767,8 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
             append(output, "  %fn_ptr_")
             append(output, offset)
             append(output, " = getelementptr inbounds [")
-            append(output, len(llvm_lir_function_record_cache))
-            append(output, " x ptr], ptr @dm_function_table, i32 0, i32 ")
+            append(output, len(llvm_lir_func_record_cache))
+            append(output, " x ptr], ptr @dm_func_table, i32 0, i32 ")
             append(output, fn_index_name)
             append(output, "\n  %fn_ptr_load_")
             append(output, offset)
@@ -2097,9 +2097,9 @@ def llvm_emit_terminator(program: LirProgram, offset: int, return_type: int, out
         let condition = llvm_lir_operand(program, offset, 0, LIR_TYPE_I1)
         if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE:
             let condition_value = llvm_lir_operand_value(program, offset, 0)
-            let function_index = program.records[offset + 1]
-            let condition_type = llvm_lir_value_type(program, function_index, condition_value)
-            let has_condition = llvm_lir_has_value(program, function_index, condition_value)
+            let func_index = program.records[offset + 1]
+            let condition_type = llvm_lir_value_type(program, func_index, condition_value)
+            let has_condition = llvm_lir_has_value(program, func_index, condition_value)
             if condition_type == LIR_TYPE_I32 and has_condition:
                 let condition_name = llvm_lir_join_int("%branch_cond_", program.records[offset + 2], "")
                 append(output, "  ")
@@ -2153,11 +2153,11 @@ def llvm_emit_terminator(program: LirProgram, offset: int, return_type: int, out
                 append(output, "\n")
         else:
             let return_value = llvm_lir_operand_value(program, offset, 0)
-            let function_index = program.records[offset + 1]
+            let func_index = program.records[offset + 1]
             let actual_type = LIR_TYPE_DYNAMIC
             if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE and llvm_lir_has_value(program,
-                function_index, return_value):
-                actual_type = llvm_lir_value_type(program, function_index, return_value)
+                func_index, return_value):
+                actual_type = llvm_lir_value_type(program, func_index, return_value)
             let cast_name = llvm_lir_join_int("%return_cast_", offset, "")
             if llvm_lir_is_pointer_like(actual_type) and return_type == LIR_TYPE_I32:
                 append(output, "  ")
@@ -2181,7 +2181,7 @@ def llvm_emit_terminator(program: LirProgram, offset: int, return_type: int, out
             append(output, llvm_lir_type(return_type))
             append(output, " ")
             if llvm_lir_operand_kind(program, offset, 0) == LIR_OPERAND_VALUE and llvm_lir_has_value(program,
-                function_index, return_value):
+                func_index, return_value):
                 if llvm_lir_types_compatible(actual_type, return_type):
                     llvm_emit_operand(program, offset, 0, return_type, output)
                 elif llvm_lir_is_pointer_like(actual_type) and return_type == LIR_TYPE_I32:
@@ -2286,7 +2286,7 @@ def llvm_emit_block_parameter(program: LirProgram, block_record_id: int, paramet
     parameter_index: int, output: Buffer):
     let block_offset = lir_record_offset(block_record_id)
     let parameter_offset = lir_record_offset(parameter_record_id)
-    let function_index = program.records[block_offset + 1]
+    let func_index = program.records[block_offset + 1]
     let block_index = program.records[block_offset + 2]
     let type_tag = program.records[parameter_offset + 4]
     # void 值不构成合法 phi；按整型槽处理
@@ -2297,15 +2297,15 @@ def llvm_emit_block_parameter(program: LirProgram, block_record_id: int, paramet
     let incoming_count = 0
     let term_start = 0
     let term_count = 0
-    if function_index >= 0 and function_index < len(llvm_lir_function_terminator_start_cache):
-        term_start = llvm_lir_function_terminator_start_cache[function_index]
-        term_count = llvm_lir_function_terminator_count_cache[function_index]
+    if func_index >= 0 and func_index < len(llvm_lir_func_terminator_start_cache):
+        term_start = llvm_lir_func_terminator_start_cache[func_index]
+        term_count = llvm_lir_func_terminator_count_cache[func_index]
     if term_start < 0:
         term_start = 0
     let term_index = term_start
     while term_index < term_start + term_count:
         let offset = lir_record_offset(llvm_lir_terminator_record_cache[term_index])
-        if program.records[offset + 1] == function_index and program.records[offset] == LIR_RECORD_TERMINATOR:
+        if program.records[offset + 1] == func_index and program.records[offset] == LIR_RECORD_TERMINATOR:
             let incoming_count_box: list[int] = [incoming_count]
             llvm_emit_edge_incoming(program, offset, block_index, parameter_index, type_tag, incoming,
                 incoming_count_box)
@@ -2328,7 +2328,7 @@ def llvm_emit_block_parameter(program: LirProgram, block_record_id: int, paramet
         append(output, " 0, 0")
     append(output, "\n")
 
-def llvm_lir_function_return_type(program: LirProgram, offset: int) -> int:
+def llvm_lir_func_return_type(program: LirProgram, offset: int) -> int:
     let auxiliary_count = program.records[offset + 9]
     if auxiliary_count == 0:
         return LIR_TYPE_VOID
@@ -2336,19 +2336,19 @@ def llvm_lir_function_return_type(program: LirProgram, offset: int) -> int:
     let value_offset = lir_value_offset(value_id)
     return program.values[value_offset + 1]
 
-def llvm_lir_emit_function(program: LirProgram, function_id: int, function_record_id: int, output: Buffer):
-    let function_offset = lir_record_offset(function_record_id)
-    let return_type = llvm_lir_function_return_type(program, function_offset)
-    let is_process_entry = program.records[function_offset + 3] == LIR_FUNCTION_ENTRY
+def llvm_lir_emit_function(program: LirProgram, func_id: int, func_record_id: int, output: Buffer):
+    let func_offset = lir_record_offset(func_record_id)
+    let return_type = llvm_lir_func_return_type(program, func_offset)
+    let is_process_entry = program.records[func_offset + 3] == LIR_FUNCTION_ENTRY
     append(output, "define ")
     append(output, llvm_lir_type(return_type))
     append(output, " ")
     if is_process_entry:
         append(output, "@main")
     else:
-        append(output, llvm_lir_function_name(function_id))
+        append(output, llvm_lir_func_name(func_id))
     append(output, "(")
-    let record_id = function_record_id + 1
+    let record_id = func_record_id + 1
     let first_block = record_id
     let parameter_index = 0
     let scanning_parameters = true
@@ -2406,7 +2406,7 @@ def llvm_lir_emit_function(program: LirProgram, function_id: int, function_recor
 def llvm_lower_lir(program: LirProgram, source: str, output: Buffer) -> bool:
     llvm_lir_source = source
     let phase_time = llvm_lir_debug_start()
-    llvm_lir_prepare_function_cache(program)
+    llvm_lir_prepare_func_cache(program)
     phase_time = llvm_lir_debug_checkpoint("cache", phase_time)
     append(output, "; Dream LIR to LLVM IR\n")
     append(output, "; DIR records=")
@@ -2419,13 +2419,13 @@ def llvm_lower_lir(program: LirProgram, source: str, output: Buffer) -> bool:
     append(output, "\n")
     phase_time = llvm_lir_debug_checkpoint("declarations", phase_time)
     let record_id = 0
-    let function_id = 0
+    let func_id = 0
     while record_id < lir_record_count(program.records):
         let offset = lir_record_offset(record_id)
         if program.records[offset] == LIR_RECORD_FUNCTION:
-            llvm_lir_emit_function(program, function_id, record_id, output)
-            function_id = function_id + 1
+            llvm_lir_emit_function(program, func_id, record_id, output)
+            func_id = func_id + 1
         record_id = record_id + 1
-    llvm_emit_function_table(program, output)
+    llvm_emit_func_table(program, output)
     llvm_lir_debug_checkpoint("functions", phase_time)
     return true

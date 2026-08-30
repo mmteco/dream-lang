@@ -233,40 +233,40 @@ def compiler_debug_checkpoint(label: str, previous_time: int) -> int:
 
 def build_ast_compilation(
     context: ParseContext,
-    function_bodies: list[int],
-    function_body_ends: list[int],
+    func_bodies: list[int],
+    func_body_ends: list[int],
     global_let_expression_indexes: list[int],
     nodes: list[int],
-    function_nodes_start: list[int],
-    function_nodes_end: list[int],
+    func_nodes_start: list[int],
+    func_nodes_end: list[int],
     global_nodes: list[int]
 ) -> bool:
-    if not ast_build_program(context, nodes, function_nodes_start, function_nodes_end, global_nodes, function_bodies,
-        function_body_ends, global_let_expression_indexes):
+    if not ast_build_program(context, nodes, func_nodes_start, func_nodes_end, global_nodes, func_bodies,
+        func_body_ends, global_let_expression_indexes):
         return false
     return ast_validate_program(nodes)
 
-def write_ast_output(output_path: str, source: str, function_starts: list[int], function_ends: list[int],
-    nodes: list[int], function_nodes_start: list[int], function_nodes_end: list[int]):
+def write_ast_output(output_path: str, source: str, func_starts: list[int], func_ends: list[int],
+    nodes: list[int], func_nodes_start: list[int], func_nodes_end: list[int]):
     let ast = nodes
     let output = Buffer{data: []}
     append(output, "module dream\nfunctions=")
-    append(output, len(function_nodes_start))
+    append(output, len(func_nodes_start))
     append(output, " pool=")
     append(output, len(ast))
     append(output, "\n")
-    let function_index = 0
-    while function_index < len(function_nodes_start):
+    let func_index = 0
+    while func_index < len(func_nodes_start):
         append(output, "func ")
-        append(output, function_index)
+        append(output, func_index)
         append(output, " ")
-        append(output, source[function_starts[function_index]:function_ends[function_index]])
+        append(output, source[func_starts[func_index]:func_ends[func_index]])
         append(output, " body=")
-        append(output, function_nodes_start[function_index])
+        append(output, func_nodes_start[func_index])
         append(output, "..")
-        append(output, function_nodes_end[function_index])
+        append(output, func_nodes_end[func_index])
         append(output, "\n")
-        function_index = function_index + 1
+        func_index = func_index + 1
     let node = 1
     while node < len(ast):
         let kind = ast[node]
@@ -316,18 +316,18 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     }
     lex(tokens)
     phase_time = compiler_debug_checkpoint("lex", phase_time)
-    let function_starts = []
-    let function_ends = []
-    let function_bodies = []
-    let function_body_ends = []
-    let function_param_offsets = []
-    let function_param_counts = []
+    let func_starts = []
+    let func_ends = []
+    let func_bodies = []
+    let func_body_ends = []
+    let func_param_offsets = []
+    let func_param_counts = []
     let parameter_starts = []
     let parameter_ends = []
     let parameter_types = []
     let parameter_struct_decls = []
-    let function_return_types = []
-    let function_return_struct_decls = []
+    let func_return_types = []
+    let func_return_struct_decls = []
     let constant_starts = []
     let constant_ends = []
     let constant_values = []
@@ -338,18 +338,18 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let parameter_annotation_starts: list[int] = []
     let parameter_annotation_ends: list[int] = []
     let functions = FunctionTable{
-        starts: function_starts,
-        ends: function_ends,
-        bodies: function_bodies,
-        body_ends: function_body_ends,
-        param_offsets: function_param_offsets,
-        param_counts: function_param_counts,
+        starts: func_starts,
+        ends: func_ends,
+        bodies: func_bodies,
+        body_ends: func_body_ends,
+        param_offsets: func_param_offsets,
+        param_counts: func_param_counts,
         param_starts: parameter_starts,
         param_ends: parameter_ends,
         param_types: parameter_types,
         param_struct_decls: parameter_struct_decls,
-        return_types: function_return_types,
-        return_struct_decls: function_return_struct_decls,
+        return_types: func_return_types,
+        return_struct_decls: func_return_struct_decls,
         default_indexes: parameter_default_indexes,
         annotation_starts: parameter_annotation_starts,
         annotation_ends: parameter_annotation_ends
@@ -363,8 +363,8 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         literal_ends: constant_literal_ends
     }
     let ast_nodes: list[int] = []
-    let ast_function_nodes_start: list[int] = []
-    let ast_function_nodes_end: list[int] = []
+    let ast_func_nodes_start: list[int] = []
+    let ast_func_nodes_end: list[int] = []
     let ast_global_nodes: list[int] = []
     collect_declared_types(tokens)
     collect_struct_fields(tokens)
@@ -374,21 +374,21 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let impl_func_decls: list[int] = []
     let impl_func_interface_types: list[int] = []
     let impls = ImplTable{
-        function_indexes: impl_func_indexes,
+        func_indexes: impl_func_indexes,
         declaration_indexes: impl_func_decls,
         interface_types: impl_func_interface_types
     }
     collect_impl_functions(tokens, functions, impls)
     let interface_name_starts: list[int] = []
     let interface_name_ends: list[int] = []
-    let impl_function_indexes: list[int] = []
+    let interface_func_indexes: list[int] = []
     let impl_decl_indexes: list[int] = []
     let impl_interface_name_starts: list[int] = []
     let impl_interface_name_ends: list[int] = []
     let interfaces = InterfaceTable{
         name_starts: interface_name_starts,
         name_ends: interface_name_ends,
-        function_indexes: impl_function_indexes,
+        func_indexes: interface_func_indexes,
         declaration_indexes: impl_decl_indexes,
         impl_name_starts: impl_interface_name_starts,
         impl_name_ends: impl_interface_name_ends
@@ -400,13 +400,13 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         kinds: kinds,
         starts: starts,
         ends: ends,
-        fn_starts: function_starts,
-        fn_ends: function_ends,
-        param_offsets: function_param_offsets,
-        param_counts: function_param_counts,
+        fn_starts: func_starts,
+        fn_ends: func_ends,
+        param_offsets: func_param_offsets,
+        param_counts: func_param_counts,
         param_starts: parameter_starts,
         param_ends: parameter_ends,
-        ret_types: function_return_types,
+        ret_types: func_return_types,
         pd: parameter_default_indexes,
         cst_starts: constant_starts,
         cst_ends: constant_ends,
@@ -426,35 +426,35 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         expression_indexes: global_let_expression_indexes
     }
     collect_global_lets(tokens, globals)
-    let is_ast_valid = build_ast_compilation(parse_context, function_bodies, function_body_ends,
-        global_let_expression_indexes, ast_nodes, ast_function_nodes_start, ast_function_nodes_end, ast_global_nodes)
+    let is_ast_valid = build_ast_compilation(parse_context, func_bodies, func_body_ends,
+        global_let_expression_indexes, ast_nodes, ast_func_nodes_start, ast_func_nodes_end, ast_global_nodes)
     phase_time = compiler_debug_checkpoint("ast", phase_time)
     if not is_ast_valid:
         __c_eprint_text("error: AST validation failed\n")
         return false
     if output_mode == COMPILE_OUTPUT_AST:
-        write_ast_output(output_path, source, function_starts, function_ends, ast_nodes, ast_function_nodes_start,
-            ast_function_nodes_end)
+        write_ast_output(output_path, source, func_starts, func_ends, ast_nodes, ast_func_nodes_start,
+            ast_func_nodes_end)
         return true
     let hir_records: list[int] = []
     let hir_values: list[int] = []
     let hir_struct_decls: list[int] = []
     if not hir_model_build_program(
         ast_nodes,
-        ast_function_nodes_start,
-        ast_function_nodes_end,
+        ast_func_nodes_start,
+        ast_func_nodes_end,
         ast_global_nodes,
         global_let_name_starts,
         global_let_name_ends,
         global_let_collected_types,
-        function_starts,
-        function_ends,
-        function_param_offsets,
-        function_param_counts,
+        func_starts,
+        func_ends,
+        func_param_offsets,
+        func_param_counts,
         parameter_starts,
         parameter_ends,
         parameter_types,
-        function_return_types,
+        func_return_types,
         parameter_default_indexes,
         constant_starts,
         constant_ends,
@@ -513,8 +513,8 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         constant_types,
         constant_literal_starts,
         constant_literal_ends,
-        function_return_struct_decls,
-        function_param_offsets,
+        func_return_struct_decls,
+        func_param_offsets,
         parameter_struct_decls,
         parameter_default_indexes,
         parameter_annotation_starts,
@@ -524,7 +524,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         impl_func_interface_types,
         interface_name_starts,
         interface_name_ends,
-        impl_function_indexes,
+        interface_func_indexes,
         impl_decl_indexes,
         impl_interface_name_starts,
         impl_interface_name_ends,

@@ -1930,26 +1930,26 @@ def ast_parse_global_let(context: ParseContext, expression_index: int, ast: list
     let (_, node) = ast_parse_expression(context, expression_index, ast)
     return node
 
-def ast_build_function(context: ParseContext, function_index: int, ast: list[int], function_bodies: list[int],
-    function_body_ends: list[int]) -> (int, int):
-    let (next_index, block_start) = ast_parse_stmt_block(context, function_bodies[function_index],
-        function_body_ends[function_index], ast)
+def ast_build_function(context: ParseContext, func_index: int, ast: list[int], func_bodies: list[int],
+    func_body_ends: list[int]) -> (int, int):
+    let (next_index, block_start) = ast_parse_stmt_block(context, func_bodies[func_index],
+        func_body_ends[func_index], ast)
     return (next_index, block_start)
 
 def ast_build_program(context: ParseContext, ast: list[int], fn_ast_starts: list[int], fn_ast_ends: list[int],
-    global_let_nodes: list[int], function_bodies: list[int], function_body_ends: list[int],
+    global_let_nodes: list[int], func_bodies: list[int], func_body_ends: list[int],
     global_let_expression_indexes: list[int]) -> bool:
     append(ast, 0)
     let fn_starts = context.fn_starts
-    let function_index = 0
-    while function_index < len(fn_starts):
-        let (block_end_index, block_start) = ast_build_function(context, function_index, ast, function_bodies,
-            function_body_ends)
+    let func_index = 0
+    while func_index < len(fn_starts):
+        let (block_end_index, block_start) = ast_build_function(context, func_index, ast, func_bodies,
+            func_body_ends)
         if block_start == 0:
             return false
         append(fn_ast_starts, block_start)
         append(fn_ast_ends, len(ast))
-        function_index = function_index + 1
+        func_index = func_index + 1
     let global_index = 0
     while global_index < len(global_let_expression_indexes):
         let node = ast_parse_global_let(context, global_let_expression_indexes[global_index], ast)
