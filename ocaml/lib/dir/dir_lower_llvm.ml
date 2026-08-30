@@ -22,6 +22,11 @@ let rec llvm_ty = function
   | ClosureEnv _ -> "i8*"
   | Func _ -> "%dir_closure*"
 
+let llvm_extern_ty (type_value : ty) =
+  match type_value with
+  | Bool -> "zeroext i1"
+  | _ -> llvm_ty type_value
+
 and llvm_function_ty parameter_types return_type =
   Printf.sprintf "%s (%s)" (llvm_ty return_type)
     (String.concat ", " ("i8*" :: List.map llvm_ty parameter_types))
@@ -877,7 +882,7 @@ let render module_ =
   if literals <> [] then Buffer.add_char buffer '\n';
   List.iter (fun declaration ->
     Printf.bprintf buffer "declare %s @%s(%s)\n"
-      (llvm_ty declaration.return_type) declaration.name
+      (llvm_extern_ty declaration.return_type) declaration.name
       (String.concat ", " (List.map llvm_ty declaration.parameters))
   ) module_.externs;
   if module_.externs <> [] then Buffer.add_char buffer '\n';

@@ -1,12 +1,19 @@
 from buffer import Buffer
-from io import read, write, exists
+from io import read, write, exists, delete
+from fs import mkdir, rename
+from str import from_int
+from crypto import sha256
 from sys import argc, arg, env, build
+from time import monotonic_ms
 
 const COMPILE_OUTPUT_AST: int = 0
 const COMPILE_OUTPUT_HIR: int = 1
 const COMPILE_OUTPUT_MIR: int = 2
 const COMPILE_OUTPUT_LIR: int = 3
 const COMPILE_OUTPUT_LLVM: int = 4
+const COMPILER_CACHE_VERSION: str = "dream-compiler-cache-v1"
+
+let compiler_temp_sequence: list[int] = [0]
 
 def module_name_component_end(module_name: str, start: int) -> int:
     let end = start
@@ -285,8 +292,87 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     append(file_paths, "\n")
     return rewrite_module_namespace(source, namespace_modules)
 
-def write_buffer(path: str, output: Buffer) -> int:
-    return __c_file_write_bytes(path, __c_bytes_from_array(output.data))
+def ensure_compiler_dirs() -> bool:
+    if not mkdir("target"):
+        return false
+    if not mkdir("target/tmp"):
+        return false
+    if not mkdir("target/cache"):
+        return false
+    return mkdir("target/cache/v1")
+
+def compiler_temp_token(label: str) -> str:
+    let sequence = compiler_temp_sequence[0]
+    compiler_temp_sequence[0] = compiler_temp_sequence[0] + 1
+    let label_hash = sha256(label)
+    return from_int(monotonic_ms()) + "_" + label_hash[0:16] + "_" + from_int(sequence)
+
+def compiler_temp_path(label: str) -> str:
+    return "target/tmp/" + label + "_" + compiler_temp_token(label)
+
+def write_text_atomic(path: str, content: str) -> bool:
+    let temp_path = compiler_temp_path("text")
+    let result = write(temp_path, content)
+    let written = match result:
+        Ok(_): true
+        Err(_): false
+    if not written:
+        delete(temp_path)
+        return false
+    if not rename(temp_path, path):
+        delete(temp_path)
+        return false
+    return true
+
+def write_buffer(path: str, output: Buffer) -> bool:
+    let temp_path = compiler_temp_path("buffer")
+    let written = __c_file_write_bytes(temp_path, __c_bytes_from_array(output.data))
+    if written < 0:
+        delete(temp_path)
+        return false
+    if not rename(temp_path, path):
+        delete(temp_path)
+        return false
+    return true
+
+def copy_text_file(source_path: str, output_path: str) -> bool:
+    if not exists(source_path):
+        return false
+    return write_text_atomic(output_path, read(source_path))
+
+def compiler_cache_key(source_path: str, source: str, output_mode: int) -> str:
+    let key_source = COMPILER_CACHE_VERSION + "|" + source_path + "|" + from_int(output_mode) + "|" + source
+    return sha256(key_source)
+
+def compiler_cache_dir(cache_key: str) -> str:
+    return "target/cache/v1/" + cache_key
+
+def compiler_cache_artifact(cache_key: str) -> str:
+    return compiler_cache_dir(cache_key) + "/artifact"
+
+def compiler_cache_manifest(cache_key: str) -> str:
+    return compiler_cache_dir(cache_key) + "/manifest"
+
+def compiler_cache_hit(cache_key: str, output_path: str, output_mode: int) -> bool:
+    if output_mode == COMPILE_OUTPUT_LLVM:
+        return false
+    let artifact_path = compiler_cache_artifact(cache_key)
+    let manifest_path = compiler_cache_manifest(cache_key)
+    if not exists(artifact_path) or not exists(manifest_path):
+        return false
+    return copy_text_file(artifact_path, output_path)
+
+def compiler_cache_store(cache_key: str, output_path: str, output_mode: int, source_length: int) -> bool:
+    if output_mode == COMPILE_OUTPUT_LLVM:
+        return true
+    let cache_dir = compiler_cache_dir(cache_key)
+    if not mkdir(cache_dir):
+        return false
+    if not copy_text_file(output_path, compiler_cache_artifact(cache_key)):
+        return false
+    let manifest = "schema=1\nversion=" + COMPILER_CACHE_VERSION + "\nmode=" + from_int(output_mode)
+    let manifest_with_length = manifest + "\nsource_length=" + from_int(source_length) + "\n"
+    return write_text_atomic(compiler_cache_manifest(cache_key), manifest_with_length)
 
 def compiler_debug_start() -> int:
     if __c_debug_on():
@@ -320,7 +406,7 @@ def build_ast_compilation(
     return ast_validate_program(nodes)
 
 def write_ast_output(output_path: str, source: str, func_starts: list[int], func_ends: list[int],
-    nodes: list[int], func_nodes_start: list[int], func_nodes_end: list[int]):
+    nodes: list[int], func_nodes_start: list[int], func_nodes_end: list[int]) -> bool:
     let ast = nodes
     let output = Buffer{data: []}
     append(output, "module dream\nfunctions=")
@@ -366,10 +452,13 @@ def write_ast_output(output_path: str, source: str, func_starts: list[int], func
                 argument_index = argument_index + 1
             append(output, "\n")
             node = node + size
-    write_buffer(output_path, output)
+    return write_buffer(output_path, output)
 
 def compile_source(source_path: str, output_path: str, output_mode: int) -> bool:
     access_violation_count[0] = 0
+    if not ensure_compiler_dirs():
+        __c_eprint_text("error: failed to create compiler target directories\n")
+        return false
     let phase_time = compiler_debug_start()
     let raw_source = read(source_path)
     let file_packages = []
@@ -377,6 +466,9 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let file_ends: list[int] = []
     let file_paths = Buffer{data: []}
     let source = load_imported_source(raw_source, source_path, file_packages, file_starts, file_ends, file_paths)
+    let cache_key = compiler_cache_key(source_path, source, output_mode)
+    if compiler_cache_hit(cache_key, output_path, output_mode):
+        return true
     phase_time = compiler_debug_checkpoint("load", phase_time)
     let kinds = []
     let starts = []
@@ -506,8 +598,11 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         __c_eprint_text("error: AST validation failed\n")
         return false
     if output_mode == COMPILE_OUTPUT_AST:
-        write_ast_output(output_path, source, func_starts, func_ends, ast_nodes, ast_func_nodes_start,
-            ast_func_nodes_end)
+        if not write_ast_output(output_path, source, func_starts, func_ends, ast_nodes, ast_func_nodes_start,
+            ast_func_nodes_end):
+            return false
+        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+            __c_eprint_text("warning: failed to store compiler cache\n")
         return true
     let hir_records: list[int] = []
     let hir_values: list[int] = []
@@ -572,7 +667,10 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not hir_model_dump_program(raw_hir_program, hir_output):
             __c_eprint_text("error: HIR validation failed while dumping\n")
             return false
-        write_buffer(output_path, hir_output)
+        if not write_buffer(output_path, hir_output):
+            return false
+        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+            __c_eprint_text("warning: failed to store compiler cache\n")
         compiler_debug_checkpoint("hir-dump", phase_time)
         return true
     let mir_program = mir_model_build_program(
@@ -613,7 +711,10 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not mir_dump_program(optimized_mir_program, mir_output):
             __c_eprint_text("error: MIR validation failed while dumping\n")
             return false
-        write_buffer(output_path, mir_output)
+        if not write_buffer(output_path, mir_output):
+            return false
+        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+            __c_eprint_text("warning: failed to store compiler cache\n")
         return true
     elif output_mode == COMPILE_OUTPUT_LIR:
         if not mir_validate_program(optimized_mir_program):
@@ -630,7 +731,10 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not lir_dump_validated_program(lir_program, lir_output):
             __c_eprint_text("error: LIR validation failed while dumping\n")
             return false
-        write_buffer(output_path, lir_output)
+        if not write_buffer(output_path, lir_output):
+            return false
+        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+            __c_eprint_text("warning: failed to store compiler cache\n")
         return true
     elif output_mode == COMPILE_OUTPUT_LLVM:
         if not mir_validate_program(optimized_mir_program):
@@ -649,7 +753,12 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not is_llvm_valid:
             __c_eprint_text("error: LLVM lowering failed\n")
             return false
-        write_buffer(output_path, llvm_output)
+        if not write_buffer(output_path, llvm_output):
+            return false
+        phase_time = compiler_debug_checkpoint("llvm-write", phase_time)
+        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+            __c_eprint_text("warning: failed to store compiler cache\n")
+        phase_time = compiler_debug_checkpoint("llvm-cache-store", phase_time)
         return true
     __c_eprint_text("error: only ast, hir, mir, lir, and llvm outputs are supported\n")
     return false
@@ -689,13 +798,26 @@ def parse_build_arguments(argument_count: int):
     BA_is_valid = is_valid
 
 def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool:
-    let llvm_path = output_path + ".ll"
-    if not compile_source(source_path, llvm_path, COMPILE_OUTPUT_LLVM):
+    if not ensure_compiler_dirs():
+        __c_eprint_text("error: failed to create compiler target directories\n")
         return false
-    if not build(llvm_path, output_path, is_optimized):
-        __c_file_delete(llvm_path)
+    let build_token = compiler_temp_token("build_" + source_path)
+    let llvm_path = "target/tmp/llvm_" + build_token + ".ll"
+    let build_output_path = "target/tmp/output_" + build_token
+    if not compile_source(source_path, llvm_path, COMPILE_OUTPUT_LLVM):
+        delete(llvm_path)
+        return false
+    if not build(llvm_path, build_output_path, is_optimized):
+        delete(llvm_path)
+        delete(build_output_path)
         __c_eprint_text("error: failed to build executable\n")
         return false
+    if not rename(build_output_path, output_path):
+        delete(llvm_path)
+        delete(build_output_path)
+        __c_eprint_text("error: failed to publish executable\n")
+        return false
+    delete(llvm_path)
     return true
 
 def run_build_command(argument_count: int) -> bool:

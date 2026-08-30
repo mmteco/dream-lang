@@ -287,9 +287,15 @@ let c_runtime_functions_table =
     ("__c_file_exists", TyFunc ([TyStr], TyBool));
     ("__c_file_append", TyFunc ([TyStr; TyStr], TyInt));
     ("__c_file_delete", TyFunc ([TyStr], TyBool));
+    ("__c_file_is_dir", TyFunc ([TyStr], TyBool));
+    ("__c_file_mkdir", TyFunc ([TyStr], TyBool));
+    ("__c_file_rename", TyFunc ([TyStr; TyStr], TyBool));
+    ("__c_file_size", TyFunc ([TyStr], TyInt));
     ("__c_file_read_bytes", TyFunc ([TyStr], TyBytes));
     ("__c_file_write_bytes", TyFunc ([TyStr; TyBytes], TyInt));
     ("__c_file_append_bytes", TyFunc ([TyStr; TyBytes], TyInt));
+    ("__c_crypto_sha256", TyFunc ([TyStr], TyStr));
+    ("__c_crypto_sha256_bytes", TyFunc ([TyBytes], TyStr));
 
     (* 网络 I/O *)
     ("__c_net_connect", TyFunc ([TyStr; TyInt], TyInt));

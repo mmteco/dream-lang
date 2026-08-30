@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include "file.h"
@@ -126,7 +127,7 @@ bool __c_file_mkdir(const char* path) {
         return false;
     }
 
-    if (mkdir(path, 0777) == 0) {
+    if (mkdirat(AT_FDCWD, path, 0777) == 0) {
         return true;
     }
 
@@ -138,7 +139,7 @@ bool __c_file_rename(const char* old_path, const char* new_path) {
         return false;
     }
 
-    return rename(old_path, new_path) == 0;
+    return renameat(AT_FDCWD, old_path, AT_FDCWD, new_path) == 0;
 }
 
 int __c_file_size(const char* path) {

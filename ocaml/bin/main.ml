@@ -99,6 +99,7 @@ let compile_to_exe_at ?(optimized=true) output_ll output_exe =
     "runtime/c/wrappers/net.c";
     "runtime/c/wrappers/http.c";
     "runtime/c/wrappers/process.c";
+    "runtime/c/wrappers/crypto.c";
     "runtime/c/wrappers/compiler.c"
   ] in
   let runtime_args = String.concat " " runtime_files in

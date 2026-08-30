@@ -233,7 +233,7 @@ int __c_time_ms(void) {
     return (int)(ts.tv_sec * 1000LL + ts.tv_nsec / 1000000);
 }
 
-int __c_debug_on(void) {
+bool __c_debug_on(void) {
     return getenv("DEBUG") != NULL;
 }
 

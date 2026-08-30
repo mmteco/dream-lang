@@ -1194,8 +1194,11 @@ def llvm_emit_external_declarations(output: Buffer):
     let external_id = EXTERNAL_ID_BASE
     while external_id < EXTERNAL_ID_BASE + EXTERNAL_COUNT:
         if external_has_declaration(external_id):
+            let external_type = llvm_lir_external_type(external_id)
             append(output, "declare ")
-            append(output, llvm_lir_type(llvm_lir_external_type(external_id)))
+            if external_type == LIR_TYPE_I1:
+                append(output, "zeroext ")
+            append(output, llvm_lir_type(external_type))
             append(output, " ")
             append(output, llvm_lir_external_name(LIR_EXTERNAL_BASE + external_id))
             append(output, "(...)\n")

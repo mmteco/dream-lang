@@ -115,7 +115,9 @@ const EXTERNAL_ID_NET_WRITE: int = 1113
 const EXTERNAL_ID_NET_READ: int = 1114
 const EXTERNAL_ID_NET_CLOSE: int = 1115
 const EXTERNAL_ID_HTTP_REQUEST: int = 1116
-const EXTERNAL_COUNT: int = 117
+const EXTERNAL_ID_CRYPTO_SHA256: int = 1117
+const EXTERNAL_ID_CRYPTO_SHA256_BYTES: int = 1118
+const EXTERNAL_COUNT: int = 119
 const EXTERNAL_ID_BASE: int = 1000
 const EXTERNAL_RETURN_UNIT: int = 1
 const EXTERNAL_RETURN_INT: int = 2
@@ -244,11 +246,13 @@ def extern_names() -> list[str]:
         "__c_net_read",
         "__c_net_close",
         "__c_http_request",
+        "__c_crypto_sha256",
+        "__c_crypto_sha256_bytes",
     ]
 
 # EXTERN_RETURN_CODES：每字符一个返回类型码（'1'-'6' 对应 EXTERNAL_RETURN_*），与 EXTERN_NAMES 行对齐。
 const EXTERN_RETURN_CODES_PART_1: str = "11111111622666666336242433231132354555333335453512552332522255551111555555552222"
-const EXTERN_RETURN_CODES_PART_2: str = "2211213555555224635522222633325522636"
+const EXTERN_RETURN_CODES_PART_2: str = "221121355555522463552222263332552263666"
 
 def extern_return_codes() -> str:
     return (
@@ -257,7 +261,7 @@ def extern_return_codes() -> str:
     )
 # EXTERN_DECL_CODES：每字符一个 LLVM 声明标志（'1'=通用 declare；'0'=专用 declare，由 LLVM 发射器硬编码），与 EXTERN_NAMES 行对齐。
 const EXTERN_DECL_CODES_PART_1: str = "11111111111111111111111111111111111111111111111111111111111111110000000000001111"
-const EXTERN_DECL_CODES_PART_2: str = "1100101111111111111111111111111111111"
+const EXTERN_DECL_CODES_PART_2: str = "110010111111111111111111111111111111111"
 
 def extern_decl_codes() -> str:
     return (
@@ -296,238 +300,10 @@ def external_has_declaration(external_id: int) -> bool:
     return ord(extern_decl_codes()[external_id - EXTERNAL_ID_BASE]) - 48 != 0
 
 def external_id_from_name(name: str) -> int:
-    if name == "dream_print_int":
-        return 1000
-    if name == "dream_print_float":
-        return 1001
-    if name == "dream_print_bool":
-        return 1002
-    if name == "dream_print_string":
-        return 1003
-    if name == "dream_eprint_int":
-        return 1004
-    if name == "dream_eprint_float":
-        return 1005
-    if name == "dream_eprint_bool":
-        return 1006
-    if name == "dream_eprint_string":
-        return 1007
-    if name == "string_concat":
-        return 1008
-    if name == "string_length":
-        return 1009
-    if name == "string_find":
-        return 1010
-    if name == "string_upper":
-        return 1011
-    if name == "string_lower":
-        return 1012
-    if name == "string_strip":
-        return 1013
-    if name == "string_split":
-        return 1014
-    if name == "string_join":
-        return 1015
-    if name == "dict_items_tuples":
-        return 1016
-    if name == "string_starts_with":
-        return 1017
-    if name == "string_ends_with":
-        return 1018
-    if name == "string_replace":
-        return 1019
-    if name == "int_floordiv":
-        return 1020
-    if name == "float_floordiv":
-        return 1021
-    if name == "int_pow":
-        return 1022
-    if name == "float_pow":
-        return 1023
-    if name == "string_is_digit":
-        return 1024
-    if name == "string_is_alpha":
-        return 1025
-    if name == "__c_time_ms":
-        return 1026
-    if name == "__c_debug_on":
-        return 1027
-    if name == "__c_eprint_text":
-        return 1028
-    if name == "__c_eprint_int":
-        return 1029
-    if name == "__c_range_equal":
-        return 1030
-    if name == "__c_fnv_hash_range":
-        return 1031
-    if name == "string_is_whitespace":
-        return 1032
-    if name == "union_create_int":
-        return 1033
-    if name == "union_create_float":
-        return 1034
-    if name == "union_create_string":
-        return 1035
-    if name == "union_create_bool":
-        return 1036
-    if name == "union_create_bytes":
-        return 1037
-    if name == "union_is_int":
-        return 1038
-    if name == "union_is_float":
-        return 1039
-    if name == "union_is_string":
-        return 1040
-    if name == "union_is_bool":
-        return 1041
-    if name == "union_is_bytes":
-        return 1042
-    if name == "union_get_int":
-        return 1043
-    if name == "union_get_float":
-        return 1044
-    if name == "union_get_string":
-        return 1045
-    if name == "union_get_bool":
-        return 1046
-    if name == "union_get_bytes":
-        return 1047
-    if name == "union_print_value":
-        return 1048
-    if name == "__c_process_arg_count":
-        return 1049
-    if name == "__c_process_arg":
-        return 1050
-    if name == "__c_file_read":
-        return 1051
-    if name == "__c_file_write":
-        return 1052
-    if name == "__c_file_exists":
-        return 1053
-    if name == "__c_file_delete":
-        return 1054
-    if name == "__c_build_llvm":
-        return 1055
-    if name == "__c_file_read_bytes":
-        return 1056
-    if name == "__c_file_write_bytes":
-        return 1057
-    if name == "__c_bytes_length":
-        return 1058
-    if name == "__c_bytes_get":
-        return 1059
-    if name == "__c_bytes_slice":
-        return 1060
-    if name == "__c_bytes_from_array":
-        return 1061
-    if name == "__c_str_to_bytes":
-        return 1062
-    if name == "__c_bytes_to_str":
-        return 1063
-    if name == "dict_set_int_int":
-        return 1064
-    if name == "dict_set_int_str":
-        return 1065
-    if name == "dict_set_str_int":
-        return 1066
-    if name == "dict_set_str_str":
-        return 1067
-    if name == "dream_dict_create_int_int":
-        return 1068
-    if name == "dream_dict_create_int_str":
-        return 1069
-    if name == "dream_dict_create_str_int":
-        return 1070
-    if name == "dream_dict_create_str_str":
-        return 1071
-    if name == "dream_dict_get_int_int":
-        return 1072
-    if name == "dream_dict_get_int_str":
-        return 1073
-    if name == "dream_dict_get_str_int":
-        return 1074
-    if name == "dream_dict_get_str_str":
-        return 1075
-    if name == "dream_dict_size_int_int":
-        return 1076
-    if name == "dream_dict_size_int_str":
-        return 1077
-    if name == "dream_dict_size_str_int":
-        return 1078
-    if name == "dream_dict_size_str_str":
-        return 1079
-    if name == "__c_utf8_rune_count":
-        return 1080
-    if name == "__c_utf8_rune_at":
-        return 1081
-    if name == "print":
-        return 1082
-    if name == "eprint":
-        return 1083
-    if name == "len":
-        return 1084
-    if name == "append":
-        return 1085
-    if name == "__c_range_equals_cstr":
-        return 1086
-    if name == "__c_utf8_encode_rune":
-        return 1087
-    if name == "enum_create_simple":
-        return 1088
-    if name == "enum_create_int":
-        return 1089
-    if name == "enum_create_float":
-        return 1090
-    if name == "enum_create_string":
-        return 1091
-    if name == "enum_create_bool":
-        return 1092
-    if name == "enum_get_tag":
-        return 1093
-    if name == "enum_get_int":
-        return 1094
-    if name == "enum_get_float":
-        return 1095
-    if name == "enum_get_string":
-        return 1096
-    if name == "enum_get_bool":
-        return 1097
-    if name == "__c_interface_box":
-        return 1098
-    if name == "__c_interface_obj":
-        return 1099
-    if name == "__c_interface_tag":
-        return 1100
-    if name == "__c_file_append":
-        return 1101
-    if name == "__c_file_append_bytes":
-        return 1102
-    if name == "__c_rune_to_int":
-        return 1103
-    if name == "__c_utf8_byte_offset":
-        return 1104
-    if name == "__c_env":
-        return 1105
-    if name == "__c_file_is_dir":
-        return 1106
-    if name == "__c_file_mkdir":
-        return 1107
-    if name == "__c_file_rename":
-        return 1108
-    if name == "__c_file_size":
-        return 1109
-    if name == "enum_create_tuple_ptr":
-        return 1110
-    if name == "enum_get_data":
-        return 1111
-    if name == "__c_net_connect":
-        return 1112
-    if name == "__c_net_write":
-        return 1113
-    if name == "__c_net_read":
-        return 1114
-    if name == "__c_net_close":
-        return 1115
-    if name == "__c_http_request":
-        return 1116
+    let names = extern_names()
+    let index = 0
+    while index < len(names):
+        if names[index] == name:
+            return EXTERNAL_ID_BASE + index
+        index = index + 1
     return -1
