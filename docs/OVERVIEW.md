@@ -40,7 +40,7 @@ ocaml/lib/typeck/           类型检查（HM 推导、统一、泛型收集、�
   ↓
 ocaml/lib/monomorphize.ml   泛型单态化（为每个具体类型生成专门函数）
   ↓
-ocaml/lib/ir/dir/           DreamIR 后端（唯一正式后端）
+ocaml/lib/dir/              DreamIR 后端（唯一正式后端）
   │  dir_lower.ml     类型检查后 AST → 结构化 DIR
   │  dir_verify.ml    DIR 验证
   │  dir_lower_llvm.ml DIR → LLVM 文本
@@ -48,7 +48,7 @@ ocaml/lib/ir/dir/           DreamIR 后端（唯一正式后端）
 clang + runtime/c/core + runtime/c/wrappers      链接生成可执行文件
 ```
 
-DreamIR 是类型化 CFG/SSA 中间表示：SSA 值使用稳定 ID（`%v1`），block 参数表达合流（LLVM lowering 转 `phi`），字符串/列表等以高层指令存在（`string_length`、`list_get` 等），ABI 细节由 `dir_lower_llvm.ml` 集中处理。所有 runtime 函数签名只有一个来源（`ocaml/lib/ir/dir/dir_lower.ml` 的 runtime 注册表）。
+DreamIR 是类型化 CFG/SSA 中间表示：SSA 值使用稳定 ID（`%v1`），block 参数表达合流（LLVM lowering 转 `phi`），字符串/列表等以高层指令存在（`string_length`、`list_get` 等），ABI 细节由 `dir_lower_llvm.ml` 集中处理。所有 runtime 函数签名只有一个来源（`ocaml/lib/dir/dir_lower.ml` 的 runtime 注册表）。
 
 ### bootstrap 自举编译器
 
@@ -79,7 +79,7 @@ dream/
 │   │   ├── ast.ml / types.ml / env.ml / error.ml / lexer.mll / parser.mly
 │   │   ├── symbol_analyzer.ml / exhaustiveness.ml / monomorphize.ml / module_loader.ml
 │   │   ├── typeck/    # 类型检查（typeck.ml、tc_expr.ml、tc_stmt.ml、tc_generics.ml、tc_defaults.ml、tc_utils.ml）
-│   │   ├── ir/dir/    # DreamIR 后端（dir.ml、dir_lower.ml、dir_verify.ml、dir_printer.ml、dir_lower_llvm.ml）
+│   │   ├── dir/       # DreamIR 后端（dir.ml、dir_lower.ml、dir_verify.ml、dir_printer.ml、dir_lower_llvm.ml）
 │   │   └── compiler/  # 编译管线（dir_compiler.ml）
 │   └── test/          # OCaml 单元测试（dir_test.ml）
 ├── bootstrap/         # 自举编译器源码（Dream 语言编写，compiler*.dm）
