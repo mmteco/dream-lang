@@ -192,8 +192,8 @@ let imported_definitions program =
               Ast.SImpl (impl_info, position) :: definitions
           | Ast.SImport (dependency_path, _, _) ->
               add_module definitions dependency_path None
-          | Ast.SFromImport (dependency_name, _, _) ->
-              add_module definitions [dependency_name] None
+          | Ast.SFromImport (dependency_path, _, _) ->
+              add_module definitions dependency_path None
           | _ -> definitions
         ) definitions module_program in
         definitions
@@ -203,9 +203,9 @@ let imported_definitions program =
     match statement with
     | Ast.SImport (module_path, _, _) ->
         add_module definitions module_path None
-    | Ast.SFromImport (module_name, selections, _) ->
+    | Ast.SFromImport (module_path, selections, _) ->
         let selected_names = Some (List.map fst selections) in
-        add_module definitions [module_name] selected_names
+        add_module definitions module_path selected_names
     | _ -> definitions
   ) [] program in
   program @ List.rev imported

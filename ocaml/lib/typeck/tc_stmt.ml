@@ -814,8 +814,7 @@ let rec check_statement env = function
            (new_env, empty_subst))
 
   | SFromImport (module_name, selections, _pos) ->
-      let module_path = [module_name] in
-      (match Module_loader.import_selected_from_module module_path selections with
+      (match Module_loader.import_selected_from_module module_name selections with
        | Error msg ->
            Printf.eprintf "Import error: %s\n" msg;
            (env, empty_subst)

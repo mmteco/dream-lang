@@ -11,7 +11,6 @@ let configured_module_paths () =
 
 let resolve_module_path module_path =
   (* module_path 是 string list，例如 ["file"] 或 ["os", "path"] *)
-  let module_name = String.concat "." module_path in
   let standard_paths = [
     "runtime/stdlib";
     "bootstrap";
@@ -21,7 +20,8 @@ let resolve_module_path module_path =
   let rec find_path = function
     | [] -> None
     | directory :: rest ->
-        let path = Filename.concat directory (module_name ^ ".dm") in
+        let relative_path = String.concat Filename.dir_sep module_path in
+        let path = Filename.concat directory (relative_path ^ ".dm") in
         if Sys.file_exists path then Some path else find_path rest
   in
   find_path search_paths

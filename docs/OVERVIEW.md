@@ -117,6 +117,15 @@ Dream 使用自动内存管理，结合引用计数和分代垃圾回收：
 
 标准库 Runtime 函数直接链接到可执行文件中（`str_length`、`dynarray_push`、`dict_set`、`file_read`、`print_*` 等），另有 Dream 源码标准库 `runtime/stdlib/`（`ops.dm` 运算符重载接口、`io.dm` 文件 I/O 包装等）。
 
+模块名由文件路径决定，点号对应目录分隔符。例如 `from net.http import get` 会按模块搜索路径查找 `net/http.dm`；单层模块仍可直接使用 `from io import open`。括号导入支持多行格式：
+
+```dm
+from net.http import (
+    get,
+    post
+)
+```
+
 ## 网络 I/O 与爬虫标准库路线
 
 标准库的近期目标是支持网络 I/O、本地文件读写和爬虫脚本。当前 `io` 已能完成整文件文本/bytes 读写、追加、存在性检查和删除；`fs`、`path`、`url`、`time`、`net` 和 `http` 已提供对应的基础能力，但还不具备流式文件句柄和统一错误信息。

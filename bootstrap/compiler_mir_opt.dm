@@ -1,13 +1,50 @@
-from compiler_mir_model import MirProgram, MirRecord, mir_record_count, mir_value_count, mir_record_offset
-from compiler_mir_model import mir_value_offset, mir_append_record, mir_append_operand, MIR_RECORD_MODULE
-from compiler_mir_model import MIR_RECORD_FUNCTION, MIR_RECORD_BLOCK, MIR_RECORD_PARAMETER, MIR_RECORD_INSTRUCTION
-from compiler_mir_model import MIR_RECORD_TERMINATOR, MIR_OPERAND_VALUE, MIR_OPERAND_INT, MIR_OPERAND_BLOCK
-from compiler_mir_model import MIR_OPERAND_TYPE, MIR_TYPE_BOOL, MIR_TYPE_I32, MIR_OP_CONST, MIR_OP_BINARY, MIR_OP_UNARY
-from compiler_mir_model import MIR_OP_SELECT, MIR_OP_CAST, MIR_OP_LOCAL, MIR_OP_SEQUENCE, MIR_TERM_JUMP, MIR_TERM_BRANCH
-from compiler_mir_model import MIR_TERM_SWITCH
-from compiler_operator import IR_OPERATOR_ADD, IR_OPERATOR_SUB, IR_OPERATOR_MUL, IR_OPERATOR_DIV, IR_OPERATOR_MOD
-from compiler_operator import IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE, IR_OPERATOR_GE, IR_OPERATOR_EQ
-from compiler_operator import IR_OPERATOR_NE, IR_OPERATOR_AND, IR_OPERATOR_OR
+from compiler_mir_model import (
+    MirProgram,
+    MirRecord,
+    mir_record_count,
+    mir_value_count,
+    mir_record_offset,
+    mir_value_offset,
+    mir_append_record,
+    mir_append_operand,
+    MIR_RECORD_MODULE,
+    MIR_RECORD_FUNCTION,
+    MIR_RECORD_BLOCK,
+    MIR_RECORD_PARAMETER,
+    MIR_RECORD_INSTRUCTION,
+    MIR_RECORD_TERMINATOR,
+    MIR_OPERAND_VALUE,
+    MIR_OPERAND_INT,
+    MIR_OPERAND_BLOCK,
+    MIR_OPERAND_TYPE,
+    MIR_TYPE_BOOL,
+    MIR_TYPE_I32,
+    MIR_OP_CONST,
+    MIR_OP_BINARY,
+    MIR_OP_UNARY,
+    MIR_OP_SELECT,
+    MIR_OP_CAST,
+    MIR_OP_LOCAL,
+    MIR_OP_SEQUENCE,
+    MIR_TERM_JUMP,
+    MIR_TERM_BRANCH,
+    MIR_TERM_SWITCH
+)
+from compiler_operator import (
+    IR_OPERATOR_ADD,
+    IR_OPERATOR_SUB,
+    IR_OPERATOR_MUL,
+    IR_OPERATOR_DIV,
+    IR_OPERATOR_MOD,
+    IR_OPERATOR_LT,
+    IR_OPERATOR_GT,
+    IR_OPERATOR_LE,
+    IR_OPERATOR_GE,
+    IR_OPERATOR_EQ,
+    IR_OPERATOR_NE,
+    IR_OPERATOR_AND,
+    IR_OPERATOR_OR
+)
 
 def mir_opt_max_result(program: MirProgram) -> int:
     let maximum = -1

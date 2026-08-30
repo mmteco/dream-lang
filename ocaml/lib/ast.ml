@@ -303,7 +303,7 @@ and statement =
   | SStruct of struct_def
   | SInterface of interface_def
   | SImport of string list * string option * position  (* module path * alias * position *)
-  | SFromImport of string * (string * string option) list * position  (* module * (name * alias) list * position *)
+  | SFromImport of string list * (string * string option) list * position  (* module path * (name * alias) list * position *)
   | SAssign of string * expr * position
   | SIndexAssign of expr * expr * expr * position
   | SFieldAssign of expr * string * expr * position  (* 字段赋值: obj.field = value *)

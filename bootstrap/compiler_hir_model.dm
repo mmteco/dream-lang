@@ -1,24 +1,97 @@
-from compiler_operator import ir_binary_operator_from_token, ir_unary_operator_from_token, ir_operator_is_comparison
-from compiler_operator import ir_operator_is_boolean_result, IR_OPERATOR_ADD, IR_OPERATOR_NOT
-from compiler_lex import find_struct_declaration_index, source_type_is_enum, is_identifier_start, is_identifier_continue
-from compiler_lex import STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR
-from compiler_lex import STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS
-from compiler_lex import STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_KINDS, STRUCT_FIELD_TYPE_DECLS
-from compiler_external import external_id_from_name, external_return_type, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT
-from compiler_external import EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_STRING
-from compiler_ast import ast_node_kind, ast_node_arg, ast_node_start, ast_node_end, ast_next_node, ast_stmt_next_node
-from compiler_ast import ast_node_size
-from compiler_ast import AST_HEADER_SIZE, AST_CASE, AST_ELIF, AST_M_CASE, AST_EXPR_ATTR, AST_EXPR_BINARY
-from compiler_ast import AST_EXPR_BOOL, AST_EXPR_BUILTIN_ENUM, AST_EXPR_CALL, AST_EXPR_COND, AST_EXPR_DICT
-from compiler_ast import AST_EXPR_ENUM, AST_EXPR_FLOAT, AST_EXPR_INDEX, AST_EXPR_INT, AST_EXPR_LAMBDA
-from compiler_ast import AST_EXPR_LIST, AST_EXPR_LIST_COMP, AST_EXPR_LOGICAL, AST_EXPR_MATCH, AST_EXPR_METHOD_CALL
-from compiler_ast import AST_EXPR_PRINT, AST_EXPR_RUNE, AST_EXPR_SLICE, AST_EXPR_STRING
-from compiler_ast import AST_EXPR_STRUCT, AST_EXPR_TUPLE, AST_EXPR_UNARY, AST_EXPR_VAR, AST_PAT_BOOL, AST_PAT_BUILTIN
-from compiler_ast import AST_PAT_CONS, AST_PAT_ENUM, AST_PAT_FLOAT, AST_PAT_INT, AST_PAT_LIST, AST_PAT_RUNE
-from compiler_ast import AST_PAT_STRING
-from compiler_ast import AST_PAT_STRUCT, AST_PAT_VAR, AST_PAT_WILDCARD, AST_STMT_ASSIGN, AST_STMT_BREAK, AST_STMT_EXPR
-from compiler_ast import AST_STMT_FOR, AST_STMT_IF, AST_STMT_LET, AST_STMT_LET_TUPLE, AST_STMT_RETURN, AST_STMT_SWITCH
-from compiler_ast import AST_STMT_WHILE
+from compiler_operator import (
+    ir_binary_operator_from_token,
+    ir_unary_operator_from_token,
+    ir_operator_is_comparison,
+    ir_operator_is_boolean_result,
+    IR_OPERATOR_ADD,
+    IR_OPERATOR_NOT
+)
+from compiler_lex import (
+    find_struct_declaration_index,
+    source_type_is_enum,
+    is_identifier_start,
+    is_identifier_continue,
+    STRUCT_FIELD_INT,
+    STRUCT_FIELD_BOOL,
+    STRUCT_FIELD_FLOAT,
+    STRUCT_FIELD_STR,
+    STRUCT_FIELD_LIST_INT,
+    STRUCT_FIELD_LIST_STR,
+    STRUCT_FIELD_DECLARATIONS,
+    STRUCT_FIELD_NAME_STARTS,
+    STRUCT_FIELD_NAME_ENDS,
+    STRUCT_FIELD_KINDS,
+    STRUCT_FIELD_TYPE_DECLS
+)
+from compiler_external import (
+    external_id_from_name,
+    external_return_type,
+    EXTERNAL_RETURN_UNIT,
+    EXTERNAL_RETURN_INT,
+    EXTERNAL_RETURN_BOOL,
+    EXTERNAL_RETURN_FLOAT,
+    EXTERNAL_RETURN_STRING
+)
+from compiler_ast import (
+    ast_node_kind,
+    ast_node_arg,
+    ast_node_start,
+    ast_node_end,
+    ast_next_node,
+    ast_stmt_next_node,
+    ast_node_size,
+    AST_HEADER_SIZE,
+    AST_CASE,
+    AST_ELIF,
+    AST_M_CASE,
+    AST_EXPR_ATTR,
+    AST_EXPR_BINARY,
+    AST_EXPR_BOOL,
+    AST_EXPR_BUILTIN_ENUM,
+    AST_EXPR_CALL,
+    AST_EXPR_COND,
+    AST_EXPR_DICT,
+    AST_EXPR_ENUM,
+    AST_EXPR_FLOAT,
+    AST_EXPR_INDEX,
+    AST_EXPR_INT,
+    AST_EXPR_LAMBDA,
+    AST_EXPR_LIST,
+    AST_EXPR_LIST_COMP,
+    AST_EXPR_LOGICAL,
+    AST_EXPR_MATCH,
+    AST_EXPR_METHOD_CALL,
+    AST_EXPR_PRINT,
+    AST_EXPR_RUNE,
+    AST_EXPR_SLICE,
+    AST_EXPR_STRING,
+    AST_EXPR_STRUCT,
+    AST_EXPR_TUPLE,
+    AST_EXPR_UNARY,
+    AST_EXPR_VAR,
+    AST_PAT_BOOL,
+    AST_PAT_BUILTIN,
+    AST_PAT_CONS,
+    AST_PAT_ENUM,
+    AST_PAT_FLOAT,
+    AST_PAT_INT,
+    AST_PAT_LIST,
+    AST_PAT_RUNE,
+    AST_PAT_STRING,
+    AST_PAT_STRUCT,
+    AST_PAT_VAR,
+    AST_PAT_WILDCARD,
+    AST_STMT_ASSIGN,
+    AST_STMT_BREAK,
+    AST_STMT_EXPR,
+    AST_STMT_FOR,
+    AST_STMT_IF,
+    AST_STMT_LET,
+    AST_STMT_LET_TUPLE,
+    AST_STMT_RETURN,
+    AST_STMT_SWITCH,
+    AST_STMT_WHILE
+)
 from buffer import Buffer
 
 const HIR_MODEL_VERSION: int = 3

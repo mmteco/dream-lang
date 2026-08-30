@@ -1,17 +1,63 @@
-from compiler_operator import IR_OPERATOR_EQ, IR_OPERATOR_NE, IR_OPERATOR_LT, IR_OPERATOR_GT, IR_OPERATOR_LE
-from compiler_operator import IR_OPERATOR_GE, IR_OPERATOR_IN, IR_OPERATOR_AND, IR_OPERATOR_OR
-from compiler_lex import source_ranges_equal, find_struct_declaration_index, is_identifier_start, is_identifier_continue
-from compiler_lex import STRUCT_FIELD_INT, STRUCT_FIELD_BOOL, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR
-from compiler_lex import STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DECLARATIONS
-from compiler_lex import STRUCT_FIELD_NAME_STARTS, STRUCT_FIELD_NAME_ENDS, STRUCT_FIELD_SLOTS, STRUCT_FIELD_KINDS
-from compiler_lex import STRUCT_FIELD_TYPE_DECLS, lex, token_kind, token_start, token_end, TOKEN_IDENTIFIER
-from compiler_lex import TOKEN_INTEGER, TOKEN_RUNE, TOKEN_MINUS, TOKEN_COLON, TOKEN_COMMA, TOKEN_CONS
-from compiler_lex import TOKEN_OPEN_BRACKET, TOKEN_CLOSE_BRACKET, TOKEN_OPEN_PAREN, TOKEN_CLOSE_PAREN, TOKEN_OPEN_BRACE
-from compiler_lex import TOKEN_CLOSE_BRACE, TOKEN_DOT
-from compiler_external import external_id_from_name, external_return_type, EXTERNAL_RETURN_UNIT, EXTERNAL_RETURN_INT
-from compiler_external import EXTERNAL_RETURN_BOOL, EXTERNAL_RETURN_FLOAT, EXTERNAL_RETURN_POINTER
-from compiler_external import EXTERNAL_RETURN_STRING, EXTERNAL_ID_LEN, EXTERNAL_ID_ENUM_CREATE_TUPLE_PTR
-from compiler_external import EXTERNAL_ID_ENUM_GET_DATA
+from compiler_operator import (
+    IR_OPERATOR_EQ,
+    IR_OPERATOR_NE,
+    IR_OPERATOR_LT,
+    IR_OPERATOR_GT,
+    IR_OPERATOR_LE,
+    IR_OPERATOR_GE,
+    IR_OPERATOR_IN,
+    IR_OPERATOR_AND,
+    IR_OPERATOR_OR
+)
+from compiler_lex import (
+    source_ranges_equal,
+    find_struct_declaration_index,
+    is_identifier_start,
+    is_identifier_continue,
+    STRUCT_FIELD_INT,
+    STRUCT_FIELD_BOOL,
+    STRUCT_FIELD_FLOAT,
+    STRUCT_FIELD_STR,
+    STRUCT_FIELD_LIST_INT,
+    STRUCT_FIELD_LIST_STR,
+    STRUCT_FIELD_DECLARATIONS,
+    STRUCT_FIELD_NAME_STARTS,
+    STRUCT_FIELD_NAME_ENDS,
+    STRUCT_FIELD_SLOTS,
+    STRUCT_FIELD_KINDS,
+    STRUCT_FIELD_TYPE_DECLS,
+    lex,
+    token_kind,
+    token_start,
+    token_end,
+    TOKEN_IDENTIFIER,
+    TOKEN_INTEGER,
+    TOKEN_RUNE,
+    TOKEN_MINUS,
+    TOKEN_COLON,
+    TOKEN_COMMA,
+    TOKEN_CONS,
+    TOKEN_OPEN_BRACKET,
+    TOKEN_CLOSE_BRACKET,
+    TOKEN_OPEN_PAREN,
+    TOKEN_CLOSE_PAREN,
+    TOKEN_OPEN_BRACE,
+    TOKEN_CLOSE_BRACE,
+    TOKEN_DOT
+)
+from compiler_external import (
+    external_id_from_name,
+    external_return_type,
+    EXTERNAL_RETURN_UNIT,
+    EXTERNAL_RETURN_INT,
+    EXTERNAL_RETURN_BOOL,
+    EXTERNAL_RETURN_FLOAT,
+    EXTERNAL_RETURN_POINTER,
+    EXTERNAL_RETURN_STRING,
+    EXTERNAL_ID_LEN,
+    EXTERNAL_ID_ENUM_CREATE_TUPLE_PTR,
+    EXTERNAL_ID_ENUM_GET_DATA
+)
 from buffer import Buffer
 
 const MIR_MODEL_VERSION: int = 3

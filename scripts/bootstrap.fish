@@ -246,6 +246,7 @@ function check_bootstrapped_build
     check_bootstrapped_example test/test_lambda_dir.dm tmp/dream_bootstrap_lambda_capture 42 42 ok! 7 3.5 3 param?
     check_bootstrapped_example test/test_struct_dir.dm tmp/dream_bootstrap_struct_dir 2 5.5 5.5
     check_bootstrapped_example test/test_struct_import_dir.dm tmp/dream_bootstrap_struct_import 7
+    check_bootstrapped_example test/test_module_namespace_dir.dm tmp/dream_bootstrap_module_namespace 200 'nested http'
     check_bootstrapped_example test/test_generic_import_dir.dm tmp/dream_bootstrap_generic_import 7
     check_bootstrapped_example test/test_struct_method_dir.dm tmp/dream_bootstrap_struct_method 7 12 11
     check_bootstrapped_example test/test_interface_dir.dm tmp/dream_bootstrap_interface 11 7

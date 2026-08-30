@@ -8,6 +8,80 @@ const COMPILE_OUTPUT_MIR: int = 2
 const COMPILE_OUTPUT_LIR: int = 3
 const COMPILE_OUTPUT_LLVM: int = 4
 
+def module_name_component_end(module_name: str, start: int) -> int:
+    let end = start
+    while end < len(module_name) and module_name[end] != '.':
+        end = end + 1
+    return end
+
+def parse_module_name(
+    source: str, kinds: list[int], starts: list[int], ends: list[int], start_index: int
+) -> str:
+    if token_kind(kinds, start_index) != TOKEN_IDENTIFIER:
+        return ""
+    let module_name = source[token_start(starts, start_index):token_end(ends, start_index)]
+    let module_index = start_index + 1
+    while (
+        token_kind(kinds, module_index) == TOKEN_DOT and
+        token_kind(kinds, module_index + 1) == TOKEN_IDENTIFIER
+    ):
+        let component_index = module_index + 1
+        module_name = module_name + "."
+        module_name = module_name + source[token_start(starts, component_index):token_end(ends, component_index)]
+        module_index = component_index + 1
+    return module_name
+
+def module_name_match_end(source: str, kinds: list[int], starts: list[int], ends: list[int], token_index: int,
+    module_name: str) -> int:
+    if len(module_name) == 0:
+        return -1
+    let component_start = 0
+    let current_index = token_index
+    while component_start < len(module_name):
+        let component_end = module_name_component_end(module_name, component_start)
+        if token_kind(kinds, current_index) != TOKEN_IDENTIFIER:
+            return -1
+        if (
+            source[token_start(starts, current_index):token_end(ends, current_index)] !=
+            module_name[component_start:component_end]
+        ):
+            return -1
+        if component_end == len(module_name):
+            return current_index
+        if (
+            token_kind(kinds, current_index + 1) != TOKEN_DOT or
+            token_kind(kinds, current_index + 2) != TOKEN_IDENTIFIER
+        ):
+            return -1
+        component_start = component_end + 1
+        current_index = current_index + 2
+    return -1
+
+def import_statement_end(kinds: list[int], starts: list[int], ends: list[int], statement_index: int) -> int:
+    let current_index = statement_index + 1
+    let parenthesis_depth = 0
+    while token_kind(kinds, current_index) != TOKEN_EOF:
+        let kind = token_kind(kinds, current_index)
+        if kind == TOKEN_OPEN_PAREN:
+            parenthesis_depth = parenthesis_depth + 1
+        elif kind == TOKEN_CLOSE_PAREN and parenthesis_depth > 0:
+            parenthesis_depth = parenthesis_depth - 1
+            if parenthesis_depth == 0:
+                return token_end(ends, current_index)
+        elif kind == TOKEN_NEWLINE and parenthesis_depth == 0:
+            return token_start(starts, current_index)
+        current_index = current_index + 1
+    return token_end(ends, current_index)
+
+def is_from_import_token(source: str, kinds: list[int], starts: list[int], ends: list[int], token_index: int) -> bool:
+    let current_index = token_index - 1
+    while current_index >= 0 and token_kind(kinds, current_index) != TOKEN_NEWLINE:
+        if token_kind(kinds, current_index) == TOKEN_IDENTIFIER and source_equals(source, token_start(starts,
+            current_index), token_end(ends, current_index), "from"):
+            return true
+        current_index = current_index - 1
+    return false
+
 def module_path(module_name: str) -> str:
     switch module_name:
         case "sys":
@@ -32,6 +106,14 @@ def module_path(module_name: str) -> str:
             return "bootstrap/compiler_llvm_emit.dm"
         case "compiler_main":
             return "bootstrap/compiler_main.dm"
+    let relative_path = ""
+    let path_index = 0
+    while path_index < len(module_name):
+        if module_name[path_index] == '.':
+            relative_path = relative_path + "/"
+        else:
+            relative_path = relative_path + module_name[path_index:path_index + 1]
+        path_index = path_index + 1
     let configured_paths = env("DREAM_MODULE_PATH")
     let path_start = 0
     let path_end = 0
@@ -41,13 +123,13 @@ def module_path(module_name: str) -> str:
             if path_end > path_start:
                 let root = configured_paths[path_start:path_end]
                 let candidate = root + "/"
-                candidate = candidate + module_name
+                candidate = candidate + relative_path
                 candidate = candidate + ".dm"
                 if exists(candidate):
                     return candidate
             path_start = path_end + 1
         path_end = path_end + 1
-    let with_prefix = "runtime/stdlib/" + module_name
+    let with_prefix = "runtime/stdlib/" + relative_path
     return with_prefix + ".dm"
 
 def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
@@ -111,23 +193,17 @@ def rewrite_module_namespace(source: str, module_names: str) -> str:
         while token_kind(kinds, token_index) != TOKEN_EOF:
             let token_start_offset = token_start(starts, token_index)
             let token_end_offset = token_end(ends, token_index)
-            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset,
-                token_end_offset, "import") and not (token_index > 1 and token_kind(kinds,
-                token_index - 2) == TOKEN_IDENTIFIER and source_equals(source, token_start(starts,
-                token_index - 2), token_end(ends, token_index - 2), "from")):
-                let line_end_index = token_index
-                while token_kind(kinds, line_end_index) not in [TOKEN_NEWLINE, TOKEN_EOF]:
-                    line_end_index = line_end_index + 1
-                let line_end_offset = token_end_offset
-                if token_kind(kinds, line_end_index) == TOKEN_NEWLINE:
-                    line_end_offset = token_start(starts, line_end_index)
-                rewritten_source = mask_source_range(rewritten_source, token_start_offset, line_end_offset)
-            if token_kind(kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source, token_start_offset,
-                token_end_offset, module_name):
-                let dot_index = token_index + 1
-                if token_kind(kinds, dot_index) == TOKEN_DOT:
-                    let dot_end_offset = token_end(ends, dot_index)
-                    rewritten_source = mask_source_range(rewritten_source, token_start_offset, dot_end_offset)
+            let is_identifier = token_kind(kinds, token_index) == TOKEN_IDENTIFIER
+            let is_import = is_identifier and source_equals(source, token_start_offset, token_end_offset, "import")
+            if is_import and not is_from_import_token(source, kinds, starts, ends, token_index):
+                let statement_end = import_statement_end(kinds, starts, ends, token_index)
+                rewritten_source = mask_source_range(rewritten_source, token_start_offset, statement_end)
+            let module_end_index = -1
+            if is_identifier:
+                module_end_index = module_name_match_end(source, kinds, starts, ends, token_index, module_name)
+            if module_end_index >= 0 and token_kind(kinds, module_end_index + 1) == TOKEN_DOT:
+                let dot_end_offset = token_end(ends, module_end_index + 1)
+                rewritten_source = mask_source_range(rewritten_source, token_start_offset, dot_end_offset)
             token_index = token_index + 1
         module_start = module_end + 1
     return rewritten_source
@@ -158,8 +234,9 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
                 token_start(import_starts, token_index), token_end(import_ends, token_index), "from"):
                 let module_index = token_index + 1
                 if token_kind(import_kinds, module_index) == TOKEN_IDENTIFIER:
-                    let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends,
-                        module_index)]
+                    let module_name = parse_module_name(
+                        scan_source, import_kinds, import_starts, import_ends, module_index
+                    )
                     if not module_is_loaded(loaded_modules, module_name):
                         imported_source = add_imported_module(imported_source, module_name, file_packages,
                             file_starts, file_ends, file_paths)
@@ -169,17 +246,13 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
             if (
                 token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and
                 scan_source[token_start(import_starts, token_index):token_end(import_ends, token_index)] == "import" and
-                not (
-                    token_index > 1 and
-                    token_kind(import_kinds, token_index - 2) == TOKEN_IDENTIFIER and
-                    scan_source[token_start(import_starts, token_index - 2):token_end(import_ends,
-                        token_index - 2)] == "from"
-                )
+                not is_from_import_token(scan_source, import_kinds, import_starts, import_ends, token_index)
             ):
                 let module_index = token_index + 1
                 if token_kind(import_kinds, module_index) == TOKEN_IDENTIFIER:
-                    let module_name = scan_source[token_start(import_starts, module_index):token_end(import_ends,
-                        module_index)]
+                    let module_name = parse_module_name(
+                        scan_source, import_kinds, import_starts, import_ends, module_index
+                    )
                     if not module_is_loaded(loaded_modules, module_name):
                         imported_source = add_imported_module(imported_source, module_name, file_packages,
                             file_starts, file_ends, file_paths)

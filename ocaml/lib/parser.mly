@@ -326,8 +326,14 @@ statement:
       { SImport (modules, None, { line = 0; column = 0 }) }
   | IMPORT modules = separated_list(DOT, IDENT) AS alias = IDENT
       { SImport (modules, Some alias, { line = 0; column = 0 }) }
-  | FROM module_name = IDENT IMPORT names = separated_list(COMMA, import_name)
-      { SFromImport (module_name, names, { line = 0; column = 0 }) }
+  | FROM module_path = separated_list(DOT, IDENT) IMPORT names = import_names
+      { SFromImport (module_path, names, { line = 0; column = 0 }) }
+
+import_names:
+  | names = separated_list(COMMA, import_name) { names }
+  | LPAREN RPAREN { [] }
+  | LPAREN names = separated_nonempty_list(COMMA, import_name) RPAREN { names }
+  | LPAREN names = separated_nonempty_list(COMMA, import_name) COMMA RPAREN { names }
 
 import_name:
   | name = IDENT { (name, None) }

@@ -2,15 +2,67 @@
 # 节点索引 = 池中 kind 字段的下标;池首 dummy 节点(kind=0),真实节点 >= 1,0 表示"无节点"
 # 子节点区间 [child_start, child_end) 可走查:从 child_start 循环 ast_next_node 直到 child_end
 
-from compiler_lex import parse_integer, TOKEN_EOF, TOKEN_INTEGER, TOKEN_IDENTIFIER, TOKEN_LET, TOKEN_PRINT, TOKEN_PLUS, TOKEN_MINUS
-from compiler_lex import token_kind, token_start, token_end, parse_rune_literal, skip_source_newlines, is_body_line, line_indent
-from compiler_lex import TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_OPEN_PAREN, TOKEN_CLOSE_PAREN, TOKEN_ASSIGN, TOKEN_NEWLINE
-from compiler_lex import TOKEN_DEF, TOKEN_RETURN, TOKEN_COLON, TOKEN_COMMA, TOKEN_ARROW, TOKEN_LESS, TOKEN_IF
-from compiler_lex import TOKEN_ELIF, TOKEN_ELSE, TOKEN_WHILE, TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT, TOKEN_STRING
-from compiler_lex import TOKEN_OPEN_BRACKET, TOKEN_CLOSE_BRACKET, TOKEN_EQUAL, TOKEN_NOT_EQUAL, TOKEN_LESS_EQUAL
-from compiler_lex import TOKEN_GREATER_EQUAL, TOKEN_GREATER, TOKEN_AND, TOKEN_OR, TOKEN_MODULO, TOKEN_TRUE, TOKEN_FALSE
-from compiler_lex import TOKEN_FOR, TOKEN_IN, TOKEN_OPEN_BRACE, TOKEN_CLOSE_BRACE, TOKEN_DOT, TOKEN_QUESTION
-from compiler_lex import TOKEN_FLOAT, TOKEN_NOT, TOKEN_CONS, TOKEN_RUNE, TOKEN_BREAK, TOKEN_EPRINT
+from compiler_lex import (
+    parse_integer,
+    TOKEN_EOF,
+    TOKEN_INTEGER,
+    TOKEN_IDENTIFIER,
+    TOKEN_LET,
+    TOKEN_PRINT,
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    token_kind,
+    token_start,
+    token_end,
+    parse_rune_literal,
+    skip_source_newlines,
+    is_body_line,
+    line_indent,
+    TOKEN_MULTIPLY,
+    TOKEN_DIVIDE,
+    TOKEN_OPEN_PAREN,
+    TOKEN_CLOSE_PAREN,
+    TOKEN_ASSIGN,
+    TOKEN_NEWLINE,
+    TOKEN_DEF,
+    TOKEN_RETURN,
+    TOKEN_COLON,
+    TOKEN_COMMA,
+    TOKEN_ARROW,
+    TOKEN_LESS,
+    TOKEN_IF,
+    TOKEN_ELIF,
+    TOKEN_ELSE,
+    TOKEN_WHILE,
+    TOKEN_SWITCH,
+    TOKEN_CASE,
+    TOKEN_DEFAULT,
+    TOKEN_STRING,
+    TOKEN_OPEN_BRACKET,
+    TOKEN_CLOSE_BRACKET,
+    TOKEN_EQUAL,
+    TOKEN_NOT_EQUAL,
+    TOKEN_LESS_EQUAL,
+    TOKEN_GREATER_EQUAL,
+    TOKEN_GREATER,
+    TOKEN_AND,
+    TOKEN_OR,
+    TOKEN_MODULO,
+    TOKEN_TRUE,
+    TOKEN_FALSE,
+    TOKEN_FOR,
+    TOKEN_IN,
+    TOKEN_OPEN_BRACE,
+    TOKEN_CLOSE_BRACE,
+    TOKEN_DOT,
+    TOKEN_QUESTION,
+    TOKEN_FLOAT,
+    TOKEN_NOT,
+    TOKEN_CONS,
+    TOKEN_RUNE,
+    TOKEN_BREAK,
+    TOKEN_EPRINT
+)
 
 # kind 编号按类别分组,组内连续,组间留空便于未来插入:
 # 表达式 1-31
