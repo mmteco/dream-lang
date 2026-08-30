@@ -8,6 +8,7 @@ from compiler_operator import (
 )
 from compiler_lex import (
     find_struct_declaration_index,
+    find_type_declaration_index,
     source_type_is_enum,
     is_identifier_start,
     is_identifier_continue,
@@ -1524,7 +1525,7 @@ def hir_annotation_struct_declaration(source: str, annotation_start: int, annota
         range_end = range_end - 1
     if range_end <= range_start:
         return -1
-    return find_struct_declaration_index(source, range_start, range_end)
+    return find_type_declaration_index(source, range_start, range_end)
 
 def hir_struct_field_type_declaration(source: str, declaration_index: int, name_start: int, name_end: int) -> int:
     let field_index = 0

@@ -64,7 +64,8 @@ let rec expr_vars acc = function
       let acc = expr_vars acc element in
       let acc = expr_vars acc iterable in
       (match condition with Some c -> expr_vars acc c | None -> acc)
-  | EEnumVariant (_, _, args, _) -> List.fold_left expr_vars acc args
+  | EEnumVariant (receiver, _, args, _) ->
+      List.fold_left expr_vars (StringSet.add receiver acc) args
   | EStructLiteral (_, fields, _) ->
       List.fold_left (fun a (_, e) -> expr_vars a e) acc fields
   | EStructAccess (obj, _, _) -> expr_vars acc obj

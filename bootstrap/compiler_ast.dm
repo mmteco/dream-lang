@@ -62,7 +62,27 @@ from compiler_lex import (
     TOKEN_RUNE,
     TOKEN_BREAK,
     TOKEN_EPRINT,
-    TOKEN_CONTINUE
+    TOKEN_CONTINUE,
+    TOKEN_PLUS_ASSIGN,
+    TOKEN_MINUS_ASSIGN,
+    TOKEN_MULTIPLY_ASSIGN,
+    TOKEN_DIVIDE_ASSIGN,
+    TOKEN_MODULO_ASSIGN,
+    TOKEN_FLOORDIVIDE,
+    TOKEN_POWER,
+    TOKEN_AMP,
+    TOKEN_CARET,
+    TOKEN_TILDE,
+    TOKEN_SHL,
+    TOKEN_SHR,
+    TOKEN_POWER_ASSIGN,
+    TOKEN_AMP_ASSIGN,
+    TOKEN_PIPE_ASSIGN,
+    TOKEN_CARET_ASSIGN,
+    TOKEN_SHL_ASSIGN,
+    TOKEN_SHR_ASSIGN,
+    TOKEN_PIPE,
+    TOKEN_FLOORDIVIDE_ASSIGN
 )
 
 # kind 编号按类别分组,组内连续,组间留空便于未来插入:
@@ -195,6 +215,7 @@ const EXPR_BINDING_AND: int = 20
 const EXPR_BINDING_COMPARE: int = 30
 const EXPR_BINDING_ADD: int = 40
 const EXPR_BINDING_MULTIPLY: int = 50
+const EXPR_BINDING_POWER: int = 60
 
 def ast_kind_name(kind: int) -> str:
     switch kind:
@@ -739,8 +760,11 @@ def ast_infix_binding_power(operator: int) -> (int, int):
         return (EXPR_BINDING_COMPARE, EXPR_BINDING_COMPARE + 1)
     if operator in [TOKEN_PLUS, TOKEN_MINUS]:
         return (EXPR_BINDING_ADD, EXPR_BINDING_ADD + 1)
-    if operator in [TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_MODULO]:
+    if operator in [TOKEN_MULTIPLY, TOKEN_DIVIDE, TOKEN_MODULO, TOKEN_FLOORDIVIDE, TOKEN_AMP, TOKEN_CARET, TOKEN_PIPE,
+        TOKEN_SHL, TOKEN_SHR]:
         return (EXPR_BINDING_MULTIPLY, EXPR_BINDING_MULTIPLY + 1)
+    if operator == TOKEN_POWER:
+        return (EXPR_BINDING_POWER, EXPR_BINDING_POWER)
     return (EXPR_BINDING_NONE, EXPR_BINDING_NONE)
 
 def ast_append_binary_node(ast: list[int], operator: int, left_node: int, right_node: int) -> int:
@@ -910,6 +934,30 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
         let next_kind = token_kind(kinds, next_index)
         if next_kind == TOKEN_ASSIGN:
             return ast_parse_assign_statement(context, index, ast)
+        if next_kind == TOKEN_PLUS_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_PLUS)
+        if next_kind == TOKEN_MINUS_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_MINUS)
+        if next_kind == TOKEN_MULTIPLY_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_MULTIPLY)
+        if next_kind == TOKEN_DIVIDE_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_DIVIDE)
+        if next_kind == TOKEN_MODULO_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_MODULO)
+        if next_kind == TOKEN_FLOORDIVIDE_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_FLOORDIVIDE)
+        if next_kind == TOKEN_POWER_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_POWER)
+        if next_kind == TOKEN_AMP_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_AMP)
+        if next_kind == TOKEN_PIPE_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_PIPE)
+        if next_kind == TOKEN_CARET_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_CARET)
+        if next_kind == TOKEN_SHL_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_SHL)
+        if next_kind == TOKEN_SHR_ASSIGN:
+            return ast_parse_compound_assign_statement(context, index, ast, TOKEN_SHR)
         if next_kind == TOKEN_DOT and token_kind(kinds, ast_advance_index(index,
             2)) == TOKEN_IDENTIFIER and token_kind(kinds, ast_advance_index(index, 3)) == TOKEN_OPEN_BRACKET:
             let assign_probe_index = ast_advance_index(index, 4)
@@ -1090,6 +1138,26 @@ def ast_parse_assign_statement(context: ParseContext, index: int, ast: list[int]
     ast_set_arg(ast, node, 4, value_node)
     ast_set_arg(ast, node, 5, len(ast))
     return (value_next_index, node)
+
+def ast_parse_compound_assign_statement(context: ParseContext, index: int, ast: list[int], operator: int) -> (int, int):
+    let starts = context.starts
+    let ends = context.ends
+    let name_start = token_start(starts, index)
+    let name_end = token_end(ends, index)
+    let value_index = ast_advance_index(index, 2)
+    let (value_next_index, value_node) = ast_parse_expression(context, value_index, ast)
+    if value_node == 0:
+        return (index, 0)
+    let left_node = ast_append_node(ast, AST_EXPR_VAR, name_start, name_end, 0)
+    let binary_node = ast_append_binary_node(ast, operator, left_node, value_node)
+    let assign_node = ast_append_node(ast, AST_STMT_ASSIGN, name_start, name_end, ARGS_STMT_ASSIGN)
+    ast_set_arg(ast, assign_node, 0, name_start)
+    ast_set_arg(ast, assign_node, 1, name_end)
+    ast_set_arg(ast, assign_node, 2, 0)
+    ast_set_arg(ast, assign_node, 3, 0)
+    ast_set_arg(ast, assign_node, 4, binary_node)
+    ast_set_arg(ast, assign_node, 5, len(ast))
+    return (value_next_index, assign_node)
 
 def ast_parse_attribute_assign_statement(context: ParseContext, index: int, ast: list[int]) -> (int, int):
     let kinds = context.kinds

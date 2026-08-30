@@ -87,21 +87,43 @@ and called_names_statement statement =
         (StringSet.union (called_names_expr index) (called_names_expr value))
   | Ast.SFieldAssign (object_expr, _, value, _) ->
       StringSet.union (called_names_expr object_expr) (called_names_expr value)
-  | Ast.SImpl _ | Ast.SImport _ | Ast.SFromImport _ | Ast.SStruct _
-  | Ast.SInterface _ | Ast.SEnum _ -> StringSet.empty
+  | Ast.SStruct struct_info -> called_names_struct_members struct_info.Ast.struct_members
+  | Ast.SImpl (impl_info, _) -> called_names_impl_members impl_info.Ast.impl_members
+  | Ast.SImport _ | Ast.SFromImport _ | Ast.SInterface _ | Ast.SEnum _ -> StringSet.empty
 
 and called_names_statements statements =
   List.fold_left (fun names statement ->
     StringSet.union names (called_names_statement statement)
   ) StringSet.empty statements
 
-and called_names_definition definition =
-  let body_names = called_names_statements definition.Ast.def_body in
+and called_names_parameters parameters =
   List.fold_left (fun names (_, _, default_value) ->
     match default_value with
     | Some expression -> StringSet.union names (called_names_expr expression)
     | None -> names
-  ) body_names definition.Ast.def_params
+  ) StringSet.empty parameters
+
+and called_names_struct_members members =
+  List.fold_left (fun names member ->
+    match member with
+    | Ast.SMethod (_, _, parameters, _, body, _) ->
+        let names = StringSet.union names (called_names_parameters parameters) in
+        StringSet.union names (called_names_statements body)
+    | Ast.SField _ -> names
+  ) StringSet.empty members
+
+and called_names_impl_members members =
+  List.fold_left (fun names member ->
+    match member with
+    | Ast.ImplMethod (_, _, parameters, _, body, _) ->
+        let names = StringSet.union names (called_names_parameters parameters) in
+        StringSet.union names (called_names_statements body)
+    | Ast.ImplAssocType _ | Ast.ImplAssocConst _ -> names
+  ) StringSet.empty members
+
+and called_names_definition definition =
+  let body_names = called_names_statements definition.Ast.def_body in
+  StringSet.union body_names (called_names_parameters definition.Ast.def_params)
 
 let dependency_closed_names module_program selected_names =
   let module_definitions = Hashtbl.create 32 in
@@ -121,6 +143,25 @@ let dependency_closed_names module_program selected_names =
               changed := true
             end
           ) (called_names_definition definition)
+      | Ast.SImpl (impl_info, _)
+        when (match impl_info.Ast.impl_target with
+              | Ast.TVar name | Ast.TStruct (name, _) -> StringSet.mem name !needed
+              | _ -> false) ->
+          StringSet.iter (fun dependency_name ->
+            if Hashtbl.mem module_definitions dependency_name &&
+               not (StringSet.mem dependency_name !needed) then begin
+              needed := StringSet.add dependency_name !needed;
+              changed := true
+            end
+          ) (called_names_impl_members impl_info.Ast.impl_members)
+      | Ast.SStruct struct_info when StringSet.mem struct_info.Ast.struct_name !needed ->
+          StringSet.iter (fun dependency_name ->
+            if Hashtbl.mem module_definitions dependency_name &&
+               not (StringSet.mem dependency_name !needed) then begin
+              needed := StringSet.add dependency_name !needed;
+              changed := true
+            end
+          ) (called_names_struct_members struct_info.Ast.struct_members)
       | _ -> ()) module_program
   done;
   !needed

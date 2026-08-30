@@ -1,5 +1,7 @@
 # JSON 值、解析和序列化
 
+from ops import Display
+
 enum Json:
     Null
     Bool(bool)
@@ -8,6 +10,19 @@ enum Json:
     Array(list[Json])
     Object(list[Json])
     Error(str)
+
+interface JsonValue:
+    def get(self, key: str) -> Json
+    def at(self, index: int) -> Json
+    def size(self) -> int
+    def put(self, key: str, value: Json) -> Json
+    def is_error(self) -> bool
+    def error(self) -> str
+    def is_null(self) -> bool
+    def as_str(self) -> str
+    def as_num(self) -> str
+    def as_bool(self) -> bool
+    def dump(self) -> str
 
 let JSON_SOURCE = ""
 let JSON_INDEX = 0
@@ -22,8 +37,8 @@ def json_skip_space():
     let length = len(JSON_SOURCE)
     while JSON_INDEX < length:
         let current = JSON_SOURCE[JSON_INDEX]
-        if current == ' ' or current == '\n' or current == '\r' or current == '\t':
-            JSON_INDEX = JSON_INDEX + 1
+        if current in [' ', '\n', '\r', '\t']:
+            JSON_INDEX += 1
         else:
             return
 
@@ -54,14 +69,14 @@ def json_read_unicode_escape() -> str:
             json_error("invalid unicode escape")
             return ""
         codepoint = codepoint * 16 + digit
-        JSON_INDEX = JSON_INDEX + 1
-        digit_index = digit_index + 1
+        JSON_INDEX += 1
+        digit_index += 1
 
     if codepoint >= 0xD800 and codepoint <= 0xDBFF:
         if JSON_INDEX + 5 >= length or JSON_SOURCE[JSON_INDEX] != '\\' or JSON_SOURCE[JSON_INDEX + 1] != 'u':
             json_error("missing unicode surrogate pair")
             return ""
-        JSON_INDEX = JSON_INDEX + 2
+        JSON_INDEX += 2
         let low = 0
         let low_index = 0
         while low_index < 4:
@@ -73,8 +88,8 @@ def json_read_unicode_escape() -> str:
                 json_error("invalid unicode surrogate pair")
                 return ""
             low = low * 16 + digit
-            JSON_INDEX = JSON_INDEX + 1
-            low_index = low_index + 1
+            JSON_INDEX += 1
+            low_index += 1
         if low < 0xDC00 or low > 0xDFFF:
             json_error("invalid unicode surrogate pair")
             return ""
@@ -88,18 +103,18 @@ def json_read_unicode_escape() -> str:
 def json_parse_string() -> str:
     let result = ""
     let length = len(JSON_SOURCE)
-    JSON_INDEX = JSON_INDEX + 1
+    JSON_INDEX += 1
     while JSON_INDEX < length:
         let current = JSON_SOURCE[JSON_INDEX]
         if current == '"':
-            JSON_INDEX = JSON_INDEX + 1
+            JSON_INDEX += 1
             return result
         if ord(current) < 32:
             json_error("control character in string")
             return ""
         if current != '\\':
-            result = result + JSON_SOURCE[JSON_INDEX:JSON_INDEX + 1]
-            JSON_INDEX = JSON_INDEX + 1
+            result += JSON_SOURCE[JSON_INDEX:JSON_INDEX + 1]
+            JSON_INDEX += 1
             continue
 
         if JSON_INDEX + 1 >= length:
@@ -107,35 +122,35 @@ def json_parse_string() -> str:
             return ""
         let escaped = JSON_SOURCE[JSON_INDEX + 1]
         if escaped == '"':
-            result = result + "\""
-            JSON_INDEX = JSON_INDEX + 2
+            result += "\""
+            JSON_INDEX += 2
         elif escaped == '\\':
-            result = result + "\\"
-            JSON_INDEX = JSON_INDEX + 2
+            result += "\\"
+            JSON_INDEX += 2
         elif escaped == '/':
-            result = result + "/"
-            JSON_INDEX = JSON_INDEX + 2
+            result += "/"
+            JSON_INDEX += 2
         elif escaped == 'b':
-            result = result + "\b"
-            JSON_INDEX = JSON_INDEX + 2
+            result += "\b"
+            JSON_INDEX += 2
         elif escaped == 'f':
-            result = result + "\f"
-            JSON_INDEX = JSON_INDEX + 2
+            result += "\f"
+            JSON_INDEX += 2
         elif escaped == 'n':
-            result = result + "\n"
-            JSON_INDEX = JSON_INDEX + 2
+            result += "\n"
+            JSON_INDEX += 2
         elif escaped == 'r':
-            result = result + "\r"
-            JSON_INDEX = JSON_INDEX + 2
+            result += "\r"
+            JSON_INDEX += 2
         elif escaped == 't':
-            result = result + "\t"
-            JSON_INDEX = JSON_INDEX + 2
+            result += "\t"
+            JSON_INDEX += 2
         elif escaped == 'u':
-            JSON_INDEX = JSON_INDEX + 2
+            JSON_INDEX += 2
             let unicode_text = json_read_unicode_escape()
             if JSON_INDEX < 0:
                 return ""
-            result = result + unicode_text
+            result += unicode_text
         else:
             json_error("invalid string escape")
             return ""
@@ -146,36 +161,36 @@ def json_parse_number() -> Json:
     let start = JSON_INDEX
     let length = len(JSON_SOURCE)
     if JSON_SOURCE[JSON_INDEX] == '-':
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
     if JSON_INDEX >= length:
         return json_error("invalid number")
 
     if JSON_SOURCE[JSON_INDEX] == '0':
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
         if JSON_INDEX < length and json_is_digit(JSON_SOURCE[JSON_INDEX]):
             return json_error("leading zero in number")
     else:
         let integer_start = JSON_INDEX
         while JSON_INDEX < length and json_is_digit(JSON_SOURCE[JSON_INDEX]):
-            JSON_INDEX = JSON_INDEX + 1
+            JSON_INDEX += 1
         if JSON_INDEX == integer_start:
             return json_error("invalid number")
 
     if JSON_INDEX < length and JSON_SOURCE[JSON_INDEX] == '.':
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
         let fraction_start = JSON_INDEX
         while JSON_INDEX < length and json_is_digit(JSON_SOURCE[JSON_INDEX]):
-            JSON_INDEX = JSON_INDEX + 1
+            JSON_INDEX += 1
         if JSON_INDEX == fraction_start:
             return json_error("invalid number fraction")
 
-    if JSON_INDEX < length and (JSON_SOURCE[JSON_INDEX] == 'e' or JSON_SOURCE[JSON_INDEX] == 'E'):
-        JSON_INDEX = JSON_INDEX + 1
-        if JSON_INDEX < length and (JSON_SOURCE[JSON_INDEX] == '+' or JSON_SOURCE[JSON_INDEX] == '-'):
-            JSON_INDEX = JSON_INDEX + 1
+        if JSON_INDEX < length and JSON_SOURCE[JSON_INDEX] in ['e', 'E']:
+            JSON_INDEX += 1
+        if JSON_INDEX < length and JSON_SOURCE[JSON_INDEX] in ['+', '-']:
+            JSON_INDEX += 1
         let exponent_start = JSON_INDEX
         while JSON_INDEX < length and json_is_digit(JSON_SOURCE[JSON_INDEX]):
-            JSON_INDEX = JSON_INDEX + 1
+            JSON_INDEX += 1
         if JSON_INDEX == exponent_start:
             return json_error("invalid number exponent")
     return Json.Number(JSON_SOURCE[start:JSON_INDEX])
@@ -199,23 +214,23 @@ def json_parse_value() -> Json:
     if current == '-' or json_is_digit(current):
         return json_parse_number()
     if JSON_INDEX + 4 <= length and JSON_SOURCE[JSON_INDEX:JSON_INDEX + 4] == "true":
-        JSON_INDEX = JSON_INDEX + 4
+        JSON_INDEX += 4
         return Json.Bool(true)
     if JSON_INDEX + 5 <= length and JSON_SOURCE[JSON_INDEX:JSON_INDEX + 5] == "false":
-        JSON_INDEX = JSON_INDEX + 5
+        JSON_INDEX += 5
         return Json.Bool(false)
     if JSON_INDEX + 4 <= length and JSON_SOURCE[JSON_INDEX:JSON_INDEX + 4] == "null":
-        JSON_INDEX = JSON_INDEX + 4
+        JSON_INDEX += 4
         return Json.Null
     return json_error("unexpected JSON value")
 
 def json_parse_array() -> Json:
-    JSON_INDEX = JSON_INDEX + 1
+    JSON_INDEX += 1
     json_skip_space()
     let values: list[Json] = []
     let length = len(JSON_SOURCE)
     if JSON_INDEX < length and JSON_SOURCE[JSON_INDEX] == ']':
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
         return Json.Array(values)
 
     while JSON_INDEX < length:
@@ -227,23 +242,23 @@ def json_parse_array() -> Json:
         if JSON_INDEX >= length:
             return json_error("unterminated array")
         if JSON_SOURCE[JSON_INDEX] == ']':
-            JSON_INDEX = JSON_INDEX + 1
+            JSON_INDEX += 1
             return Json.Array(values)
         if JSON_SOURCE[JSON_INDEX] != ',':
             return json_error("expected comma in array")
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
         json_skip_space()
         if JSON_INDEX >= length or JSON_SOURCE[JSON_INDEX] == ']':
             return json_error("trailing comma in array")
     return json_error("unterminated array")
 
 def json_parse_object() -> Json:
-    JSON_INDEX = JSON_INDEX + 1
+    JSON_INDEX += 1
     json_skip_space()
     let entries: list[Json] = []
     let length = len(JSON_SOURCE)
     if JSON_INDEX < length and JSON_SOURCE[JSON_INDEX] == '}':
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
         return Json.Object(entries)
 
     while JSON_INDEX < length:
@@ -255,7 +270,7 @@ def json_parse_object() -> Json:
         json_skip_space()
         if JSON_INDEX >= length or JSON_SOURCE[JSON_INDEX] != ':':
             return json_error("expected colon in object")
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
         let value = json_parse_value()
         if JSON_INDEX < 0:
             return Json.Error(JSON_ERROR)
@@ -265,11 +280,11 @@ def json_parse_object() -> Json:
         if JSON_INDEX >= length:
             return json_error("unterminated object")
         if JSON_SOURCE[JSON_INDEX] == '}':
-            JSON_INDEX = JSON_INDEX + 1
+            JSON_INDEX += 1
             return Json.Object(entries)
         if JSON_SOURCE[JSON_INDEX] != ',':
             return json_error("expected comma in object")
-        JSON_INDEX = JSON_INDEX + 1
+        JSON_INDEX += 1
         json_skip_space()
         if JSON_INDEX >= length or JSON_SOURCE[JSON_INDEX] == '}':
             return json_error("trailing comma in object")
@@ -291,32 +306,32 @@ def loads(source: str) -> Json:
         return Json.Error("trailing JSON data")
     return value
 
-def is_error(value: Json) -> bool:
+def json_is_error(value: Json) -> bool:
     return match value:
         Json.Error(_): true
         _: false
 
-def error(value: Json) -> str:
+def json_error_message(value: Json) -> str:
     return match value:
         Json.Error(message): message
         _: ""
 
-def is_null(value: Json) -> bool:
+def json_is_null(value: Json) -> bool:
     return match value:
         Json.Null: true
         _: false
 
-def as_string(value: Json) -> str:
+def json_as_str(value: Json) -> str:
     return match value:
         Json.String(text): text
         _: ""
 
-def as_number(value: Json) -> str:
+def json_as_num(value: Json) -> str:
     return match value:
         Json.Number(number): number
         _: ""
 
-def as_bool(value: Json) -> bool:
+def json_as_bool(value: Json) -> bool:
     return match value:
         Json.Bool(flag): flag
         _: false
@@ -325,31 +340,15 @@ def json_object_get(entries: list[Json], key: str) -> Json:
     let result = Json.Null
     let index = 0
     while index + 1 < len(entries):
-        if as_string(entries[index]) == key:
+        if json_as_str(entries[index]) == key:
             result = entries[index + 1]
-        index = index + 2
+        index += 2
     return result
-
-def field(value: Json, key: str) -> Json:
-    return match value:
-        Json.Object(entries): json_object_get(entries, key)
-        _: Json.Null
 
 def json_array_at(values: list[Json], index: int) -> Json:
     if index < 0 or index >= len(values):
         return Json.Null
     return values[index]
-
-def at(value: Json, index: int) -> Json:
-    return match value:
-        Json.Array(values): json_array_at(values, index)
-        _: Json.Null
-
-def size(value: Json) -> int:
-    return match value:
-        Json.Array(values): len(values)
-        Json.Object(entries): len(entries) / 2
-        _: 0
 
 def empty_array() -> Json:
     let values: list[Json] = []
@@ -363,19 +362,13 @@ def json_object_put_entries(entries: list[Json], key: str, item: Json) -> list[J
     let result: list[Json] = []
     let index = 0
     while index + 1 < len(entries):
-        if as_string(entries[index]) != key:
+        if json_as_str(entries[index]) != key:
             append(result, entries[index])
             append(result, entries[index + 1])
-        index = index + 2
+        index += 2
     append(result, Json.String(key))
     append(result, item)
     return result
-
-# 返回更新后的对象；同名键按 Python 字典语义覆盖旧值。
-def put(value: Json, key: str, item: Json) -> Json:
-    return match value:
-        Json.Object(entries): Json.Object(json_object_put_entries(entries, key, item))
-        _: Json.Error("object expected")
 
 def json_escape_hex_digit(value: int) -> str:
     return match value:
@@ -404,24 +397,24 @@ def json_escape(value: str) -> str:
         let current = value[index]
         let code = ord(current)
         if current == '"':
-            result = result + "\\\""
+            result += "\\\""
         elif current == '\\':
-            result = result + "\\\\"
+            result += "\\\\"
         elif code == 8:
-            result = result + "\\b"
+            result += "\\b"
         elif code == 12:
-            result = result + "\\f"
+            result += "\\f"
         elif current == '\n':
-            result = result + "\\n"
+            result += "\\n"
         elif current == '\r':
-            result = result + "\\r"
+            result += "\\r"
         elif current == '\t':
-            result = result + "\\t"
+            result += "\\t"
         elif code < 32:
-            result = result + "\\u00" + json_escape_hex_digit(code / 16) + json_escape_hex_digit(code % 16)
+            result += "\\u00" + json_escape_hex_digit(code / 16) + json_escape_hex_digit(code % 16)
         else:
-            result = result + value[index:index + 1]
-        index = index + 1
+            result += value[index:index + 1]
+        index += 1
     return result
 
 def json_dumps_array(values: list[Json]) -> str:
@@ -429,9 +422,9 @@ def json_dumps_array(values: list[Json]) -> str:
     let index = 0
     while index < len(values):
         if index > 0:
-            result = result + ","
-        result = result + json_dumps(values[index])
-        index = index + 1
+            result += ","
+        result += json_dumps(values[index])
+        index += 1
     return result + "]"
 
 def json_dumps_object(entries: list[Json]) -> str:
@@ -439,10 +432,10 @@ def json_dumps_object(entries: list[Json]) -> str:
     let index = 0
     while index + 1 < len(entries):
         if index > 0:
-            result = result + ","
-        result = result + "\"" + json_escape(as_string(entries[index])) + "\":"
-        result = result + json_dumps(entries[index + 1])
-        index = index + 2
+            result += ","
+        result += "\"" + json_escape(json_as_str(entries[index])) + "\":"
+        result += json_dumps(entries[index + 1])
+        index += 2
     return result + "}"
 
 def json_dumps(value: Json) -> str:
@@ -458,3 +451,57 @@ def json_dumps(value: Json) -> str:
 # 将 Json 值序列化为紧凑 JSON 文本。
 def dumps(value: Json) -> str:
     return json_dumps(value)
+
+impl JsonValue for Json:
+    def get(self, key: str) -> Json:
+        return match self:
+            Json.Object(entries): json_object_get(entries, key)
+            _: Json.Null
+
+    def at(self, index: int) -> Json:
+        return match self:
+            Json.Array(values): json_array_at(values, index)
+            _: Json.Null
+
+    def size(self) -> int:
+        return match self:
+            Json.Array(values): len(values)
+            Json.Object(entries): len(entries) / 2
+            _: 0
+
+    def put(self, key: str, value: Json) -> Json:
+        return match self:
+            Json.Object(entries): Json.Object(json_object_put_entries(entries, key, value))
+            _: Json.Error("object expected")
+
+    def is_error(self) -> bool:
+        return json_is_error(self)
+
+    def error(self) -> str:
+        return json_error_message(self)
+
+    def is_null(self) -> bool:
+        return json_is_null(self)
+
+    def as_str(self) -> str:
+        return json_as_str(self)
+
+    def as_num(self) -> str:
+        return json_as_num(self)
+
+    def as_bool(self) -> bool:
+        return json_as_bool(self)
+
+    def dump(self) -> str:
+        return json_dumps(self)
+
+impl Display for Json:
+    def to_string(self) -> str:
+        return match self:
+            Json.Null: "null"
+            Json.Bool(flag): if flag: "true" else: "false"
+            Json.Number(number): number
+            Json.String(text): text
+            Json.Array(values): json_dumps_array(values)
+            Json.Object(entries): json_dumps_object(entries)
+            Json.Error(message): message

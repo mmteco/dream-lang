@@ -374,6 +374,38 @@ let binop_to_method_name = function
   | Gte -> "gte"
   | And | Or | In -> failwith "logical and membership operators cannot be overloaded"
 
+(* 二元运算符的右值反射接口，语义对应 Python 的 __rxxx__。*)
+let right_binop_to_interface_name = function
+  | Add -> Some "RAdd"
+  | Sub -> Some "RSub"
+  | Mul -> Some "RMul"
+  | Div -> Some "RDiv"
+  | FloorDiv -> Some "RFloorDiv"
+  | Mod -> Some "RMod"
+  | Pow -> Some "RPow"
+  | BitAnd -> Some "RBitAnd"
+  | BitOr -> Some "RBitOr"
+  | BitXor -> Some "RBitXor"
+  | Shl -> Some "RShl"
+  | Shr -> Some "RShr"
+  | Eq | Neq | Lt | Gt | Lte | Gte | And | Or | In -> None
+
+let right_binop_to_method_name = function
+  | Add -> "radd"
+  | Sub -> "rsub"
+  | Mul -> "rmul"
+  | Div -> "rdiv"
+  | FloorDiv -> "rfloordiv"
+  | Mod -> "rmod"
+  | Pow -> "rpow"
+  | BitAnd -> "rbitand"
+  | BitOr -> "rbitor"
+  | BitXor -> "rbitxor"
+  | Shl -> "rshl"
+  | Shr -> "rshr"
+  | Eq | Neq | Lt | Gt | Lte | Gte | And | Or | In ->
+      failwith "logical, comparison and membership operators have no right overload"
+
 (* 一元运算符到接口名的映射 *)
 let unop_to_interface_name = function
   | Neg -> Some "Neg"
@@ -389,17 +421,18 @@ let unop_to_method_name = function
   | Not -> "not_op"
 
 (* 查找二元运算符的接口实现 *)
-let find_binop_impl left_ty binop _right_ty env =
-  (* TODO: 未来可以验证右操作数类型是否与接口参数匹配 *)
+let find_binop_impl left_ty binop right_ty env =
   match binop_to_interface_name binop with
   | None -> None  (* 不可重载的运算符 *)
   | Some interface_name ->
-      match StringMap.find_opt interface_name env.impls with
-      | None -> None
-      | Some impls ->
-          List.find_opt (fun impl ->
-            is_compatible impl.impl_target_type left_ty
-          ) impls
+      find_impl_for_method left_ty interface_name (binop_to_method_name binop) [right_ty] env
+
+(* 查找右值反射运算实现，右值方法接收左操作数。*)
+let find_right_binop_impl left_ty binop right_ty env =
+  match right_binop_to_interface_name binop with
+  | None -> None
+  | Some interface_name ->
+      find_impl_for_method right_ty interface_name (right_binop_to_method_name binop) [left_ty] env
 
 (* 查找一元运算符的接口实现 *)
 let find_unop_impl operand_ty unop env =

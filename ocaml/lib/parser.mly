@@ -81,6 +81,11 @@
   (* VSCode 使用 0-based 行号，所以减 1 *)
   let make_position (pos : Lexing.position) =
     { line = pos.pos_lnum - 1; column = pos.pos_cnum - pos.pos_bol }
+
+  let compound_assign name operation value pos =
+    let position = make_position pos in
+    let left = EVar (name, position) in
+    SAssign (name, EBinOp (left, operation, value, position), position)
 %}
 
 %token <int> INT
@@ -98,7 +103,8 @@
 %token AMP CARET TILDE SHL SHR
 %token EQ NEQ LT GT LTE GTE
 %token AND OR NOT
-%token ASSIGN
+%token ASSIGN PLUS_ASSIGN MINUS_ASSIGN TIMES_ASSIGN DIV_ASSIGN FLOORDIV_ASSIGN MOD_ASSIGN POW_ASSIGN
+%token AMP_ASSIGN PIPE_ASSIGN CARET_ASSIGN SHL_ASSIGN SHR_ASSIGN
 %token <string * string> FIELD_ASSIGN
 %token ARROW PIPE UNDERSCORE
 %token LPAREN RPAREN LBRACKET RBRACKET LBRACE RBRACE
@@ -121,8 +127,8 @@
 %right UMINUS UPLUS TILDE  (* 一元负号/正号/按位取反 *)
 %right POW  (* 幂运算右结合 *)
 %left AS
-%left DOT
 %left LPAREN LBRACKET
+%left DOT
 
 %start <Ast.program> program
 
@@ -179,6 +185,30 @@ statement:
       { SIndexAssign (arr, idx, value, get_expr_pos arr) }
   | name = IDENT ASSIGN value = expr
       { SAssign (name, value, make_position $startpos(name)) }
+  | name = IDENT PLUS_ASSIGN value = expr
+      { compound_assign name Add value $startpos(name) }
+  | name = IDENT MINUS_ASSIGN value = expr
+      { compound_assign name Sub value $startpos(name) }
+  | name = IDENT TIMES_ASSIGN value = expr
+      { compound_assign name Mul value $startpos(name) }
+  | name = IDENT DIV_ASSIGN value = expr
+      { compound_assign name Div value $startpos(name) }
+  | name = IDENT FLOORDIV_ASSIGN value = expr
+      { compound_assign name FloorDiv value $startpos(name) }
+  | name = IDENT MOD_ASSIGN value = expr
+      { compound_assign name Mod value $startpos(name) }
+  | name = IDENT POW_ASSIGN value = expr
+      { compound_assign name Pow value $startpos(name) }
+  | name = IDENT AMP_ASSIGN value = expr
+      { compound_assign name BitAnd value $startpos(name) }
+  | name = IDENT PIPE_ASSIGN value = expr
+      { compound_assign name BitOr value $startpos(name) }
+  | name = IDENT CARET_ASSIGN value = expr
+      { compound_assign name BitXor value $startpos(name) }
+  | name = IDENT SHL_ASSIGN value = expr
+      { compound_assign name Shl value $startpos(name) }
+  | name = IDENT SHR_ASSIGN value = expr
+      { compound_assign name Shr value $startpos(name) }
   | DEF name = IDENT LPAREN params = separated_list(COMMA, param) RPAREN COLON newline_sep INDENT body = statement_list DEDENT
       { SDef {
           def_name = name;

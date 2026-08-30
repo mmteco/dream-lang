@@ -60,6 +60,13 @@ from compiler_operator import (
     IR_OPERATOR_MUL,
     IR_OPERATOR_DIV,
     IR_OPERATOR_MOD,
+    IR_OPERATOR_FLOORDIV,
+    IR_OPERATOR_POW,
+    IR_OPERATOR_BITAND,
+    IR_OPERATOR_BITOR,
+    IR_OPERATOR_BITXOR,
+    IR_OPERATOR_SHL,
+    IR_OPERATOR_SHR,
     IR_OPERATOR_LT,
     IR_OPERATOR_GT,
     IR_OPERATOR_LE,
@@ -1599,6 +1606,30 @@ def llvm_emit_binary(program: LirProgram, offset: int, output: Buffer, result_na
     if operand_type not in [LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64]:
         llvm_emit_dynamic_binary(program, offset, output, result_name, result_type)
         return
+    if operator == IR_OPERATOR_FLOORDIV or operator == IR_OPERATOR_POW:
+        let function_name = "int_floordiv"
+        if operator == IR_OPERATOR_POW:
+            function_name = "int_pow"
+        if operand_type == LIR_TYPE_F64:
+            function_name = "float_floordiv"
+            if operator == IR_OPERATOR_POW:
+                function_name = "float_pow"
+        append(output, "  ")
+        append(output, result_name)
+        append(output, " = call ")
+        append(output, llvm_lir_type(operand_type))
+        append(output, " @")
+        append(output, function_name)
+        append(output, "(")
+        append(output, llvm_lir_type(operand_type))
+        append(output, " ")
+        llvm_emit_operand(program, offset, 1, operand_type, output)
+        append(output, ", ")
+        append(output, llvm_lir_type(operand_type))
+        append(output, " ")
+        llvm_emit_operand(program, offset, 2, operand_type, output)
+        append(output, ")\n")
+        return
     if operator == IR_OPERATOR_SUB:
         instruction = "sub"
     elif operator == IR_OPERATOR_MUL:
@@ -1629,6 +1660,16 @@ def llvm_emit_binary(program: LirProgram, offset: int, output: Buffer, result_na
         instruction = "and"
     elif operator == IR_OPERATOR_OR:
         instruction = "or"
+    elif operator == IR_OPERATOR_BITAND:
+        instruction = "and"
+    elif operator == IR_OPERATOR_BITOR:
+        instruction = "or"
+    elif operator == IR_OPERATOR_BITXOR:
+        instruction = "xor"
+    elif operator == IR_OPERATOR_SHL:
+        instruction = "shl"
+    elif operator == IR_OPERATOR_SHR:
+        instruction = "ashr"
     if operand_type == LIR_TYPE_F64:
         if operator == IR_OPERATOR_LT:
             instruction = "fcmp olt"

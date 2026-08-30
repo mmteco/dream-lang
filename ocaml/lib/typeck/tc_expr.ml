@@ -44,6 +44,13 @@ let find_method_type env struct_name method_name struct_def =
   | Some method_type -> Some method_type
   | None -> Env.find_impl_method_for_type (TyStruct (struct_name, [])) method_name env
 
+let find_enum_method_type env enum_name method_name =
+  match Env.find_impl_method_for_type (TyEnum (enum_name, [])) method_name env with
+  | Some (TyFunc (self_type :: parameter_types, return_type))
+    when is_compatible self_type (TyEnum (enum_name, [])) ->
+      Some (TyFunc (parameter_types, return_type))
+  | _ -> None
+
 let find_interface_method_type env interface_name interface_params method_name =
   match Env.find_interface interface_name env with
   | None -> None
@@ -251,19 +258,50 @@ let rec infer_expr env = function
                      report_error err;
                      (TyUnknown, s3))
             | None ->
-                (* 没有找到接口实现，报告错误 *)
-                let err = make_error (TypeError "Operator not supported") pos
-                  (Printf.sprintf "Operator %s not supported for types %s and %s"
-                    (match op with
-                     | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | FloorDiv -> "//"
-                     | Mod -> "%" | Pow -> "**"
-                     | BitAnd -> "&" | BitOr -> "|" | BitXor -> "^" | Shl -> "<<" | Shr -> ">>"
-                     | Eq -> "==" | Neq -> "!=" | Lt -> "<" | Gt -> ">"
-                     | Lte -> "<=" | Gte -> ">=" | And -> "and" | Or -> "or"
-                     | In -> "in")
-                    (ty_to_string t1') (ty_to_string t2')) in
-                report_error err;
-                (TyUnknown, s3)))
+                (match Env.find_right_binop_impl t1' op t2' env with
+                 | Some impl_def ->
+                     let method_name = Env.right_binop_to_method_name op in
+                     (match Env.get_operator_method_type impl_def method_name with
+                      | Some (TyFunc (param_types, ret_type)) ->
+                          (match param_types with
+                           | [self_ty; other_ty] ->
+                               (try
+                                  let s4 = unify t2' self_ty in
+                                  let s5 = unify (apply_subst s4 t1')
+                                    (apply_subst s4 other_ty) in
+                                  let final_subst = compose_subst s5 (compose_subst s4 s3) in
+                                  (apply_subst final_subst ret_type, final_subst)
+                                with Failure msg ->
+                                  let err = make_error (TypeError msg) pos
+                                    (Printf.sprintf "Right operator method type mismatch: %s" msg) in
+                                  report_error err;
+                                  (TyUnknown, s3))
+                           | _ ->
+                               let err = make_error (TypeError "Invalid right operator method signature") pos
+                                 "Right operator method must have exactly two parameters" in
+                               report_error err;
+                               (TyUnknown, s3))
+                      | _ ->
+                          let err = make_error (TypeError "Method not found") pos
+                            (Printf.sprintf "Right operator method '%s' not found in implementation" method_name) in
+                          report_error err;
+                          (TyUnknown, s3))
+                 | None when op = Add && t1' = TyStr
+                    && Env.find_impl_for_method t2' "Display" "to_string" [] env <> None ->
+                     (TyStr, s3)
+                 | None ->
+                     let err = make_error (TypeError "Operator not supported") pos
+                       (Printf.sprintf "Operator %s not supported for types %s and %s"
+                         (match op with
+                          | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | FloorDiv -> "//"
+                          | Mod -> "%" | Pow -> "**"
+                          | BitAnd -> "&" | BitOr -> "|" | BitXor -> "^" | Shl -> "<<" | Shr -> ">>"
+                          | Eq -> "==" | Neq -> "!=" | Lt -> "<" | Gt -> ">"
+                          | Lte -> "<=" | Gte -> ">=" | And -> "and" | Or -> "or"
+                          | In -> "in")
+                         (ty_to_string t1') (ty_to_string t2')) in
+                     report_error err;
+                     (TyUnknown, s3))))
 
   | EUnOp (op, e, pos) ->
       let (t, s) = infer_expr env e in
@@ -696,6 +734,19 @@ let rec infer_expr env = function
                     interface_name attr) in
                 report_error err;
                 (TyUnknown, obj_subst))
+       | TyEnum (enum_name, _) ->
+           (match find_enum_method_type env enum_name attr with
+            | Some method_type -> (method_type, obj_subst)
+            | None when Env.find_impl_method_for_type (TyEnum (enum_name, [])) attr env <> None ->
+                let err = make_error (TypeError "Invalid enum method") pos
+                  (Printf.sprintf "Enum '%s' method '%s' has no self parameter" enum_name attr) in
+                report_error err;
+                (TyUnknown, obj_subst)
+            | None ->
+                let err = make_error (TypeError "Unknown enum method") pos
+                  (Printf.sprintf "Enum '%s' has no method '%s'" enum_name attr) in
+                report_error err;
+                (TyUnknown, obj_subst))
        | _ ->
            let err = make_error (TypeError "Attributes not implemented") pos
              "Attribute access not yet implemented for this type" in
@@ -961,6 +1012,14 @@ let rec infer_expr env = function
                           report_error err;
                           TyUnknown, empty_subst))
             | None -> TyUnknown, empty_subst)
+       | Some (TyEnum (type_name, _)) ->
+           (match find_enum_method_type env type_name variant_name with
+            | Some (TyFunc ([], return_type)) -> return_type, empty_subst
+            | Some method_type -> method_type, empty_subst
+            | None ->
+                (match enum_name, variant_name with
+                 | "Option", "None" -> TyOption (fresh_type_var ()), empty_subst
+                 | _ -> TyEnum (enum_name, []), empty_subst))
        | Some TyStr ->
            (match string_method_type variant_name with
             | Some (TyFunc ([], return_type)) -> return_type, empty_subst
@@ -1009,6 +1068,34 @@ let rec infer_expr env = function
                           TyUnknown, combined_subst)
                  | _ -> TyUnknown, combined_subst)
             | None -> TyUnknown, combined_subst)
+       | Some (TyEnum (type_name, _)) ->
+           (match find_enum_method_type env type_name variant_name with
+            | Some (TyFunc (expected_argument_types, return_type))
+              when List.length expected_argument_types = List.length resolved_arg_types ->
+                List.iter2 (fun expected actual ->
+                  try ignore (unify expected actual)
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) _pos
+                      "Enum method argument type mismatch" in
+                    report_error err
+                ) expected_argument_types resolved_arg_types;
+                return_type, combined_subst
+            | Some (TyFunc (expected_argument_types, _)) ->
+                let err = make_error (TypeError "Argument count mismatch") _pos
+                  (Printf.sprintf "Enum method '%s' expects %d arguments but got %d"
+                    variant_name (List.length expected_argument_types)
+                    (List.length resolved_arg_types)) in
+                report_error err;
+                TyUnknown, combined_subst
+            | Some _ -> TyUnknown, combined_subst
+            | None ->
+                (match enum_name, variant_name, resolved_arg_types with
+                 | "Option", "Some", [value_type] -> TyOption value_type, combined_subst
+                 | "Result", "Ok", [value_type] ->
+                     TyResult (value_type, fresh_type_var ()), combined_subst
+                 | "Result", "Err", [value_type] ->
+                     TyResult (fresh_type_var (), value_type), combined_subst
+                 | _ -> TyEnum (enum_name, []), combined_subst))
        | Some (TyInterface (interface_name, interface_params)) ->
            (match find_interface_method_type env interface_name interface_params variant_name with
             | Some (TyFunc (expected_argument_types, return_type))

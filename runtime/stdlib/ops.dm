@@ -3,23 +3,44 @@
 interface Add[T]:
     def add(self, other: T) -> Self
 
+interface RAdd[T, U]:
+    def radd(self, other: T) -> U
+
 interface Sub[T]:
     def sub(self, other: T) -> Self
+
+interface RSub[T, U]:
+    def rsub(self, other: T) -> U
 
 interface Mul[T]:
     def mul(self, other: T) -> Self
 
+interface RMul[T, U]:
+    def rmul(self, other: T) -> U
+
 interface Div[T]:
     def div(self, other: T) -> Self
+
+interface RDiv[T, U]:
+    def rdiv(self, other: T) -> U
 
 interface FloorDiv[T]:
     def floordiv(self, other: T) -> Self
 
+interface RFloorDiv[T, U]:
+    def rfloordiv(self, other: T) -> U
+
 interface Mod[T]:
     def mod(self, other: T) -> Self
 
+interface RMod[T, U]:
+    def rmod(self, other: T) -> U
+
 interface Pow[T]:
     def pow(self, other: T) -> Self
+
+interface RPow[T, U]:
+    def rpow(self, other: T) -> U
 
 interface Eq[T]:
     def eq(self, other: T) -> bool
@@ -50,11 +71,20 @@ interface Not:
 interface BitAnd[T]:
     def bitand(self, other: T) -> Self
 
+interface RBitAnd[T, U]:
+    def rbitand(self, other: T) -> U
+
 interface BitOr[T]:
     def bitor(self, other: T) -> Self
 
+interface RBitOr[T, U]:
+    def rbitor(self, other: T) -> U
+
 interface BitXor[T]:
     def bitxor(self, other: T) -> Self
+
+interface RBitXor[T, U]:
+    def rbitxor(self, other: T) -> U
 
 interface BitNot:
     def bitnot(self) -> Self
@@ -62,8 +92,14 @@ interface BitNot:
 interface Shl[T, U]:
     def shl(self, n: U) -> Self
 
+interface RShl[T, U]:
+    def rshl(self, other: T) -> U
+
 interface Shr[T, U]:
     def shr(self, n: U) -> Self
+
+interface RShr[T, U]:
+    def rshr(self, other: T) -> U
 
 interface Index[K, V]:
     def index(self, key: K) -> V

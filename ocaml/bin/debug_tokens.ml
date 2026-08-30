@@ -40,6 +40,18 @@ let tok_to_string = function
   | Parser.LBRACE -> "LBRACE"
   | Parser.RBRACE -> "RBRACE"
   | Parser.ASSIGN -> "ASSIGN"
+  | Parser.PLUS_ASSIGN -> "PLUS_ASSIGN"
+  | Parser.MINUS_ASSIGN -> "MINUS_ASSIGN"
+  | Parser.TIMES_ASSIGN -> "TIMES_ASSIGN"
+  | Parser.DIV_ASSIGN -> "DIV_ASSIGN"
+  | Parser.FLOORDIV_ASSIGN -> "FLOORDIV_ASSIGN"
+  | Parser.MOD_ASSIGN -> "MOD_ASSIGN"
+  | Parser.POW_ASSIGN -> "POW_ASSIGN"
+  | Parser.AMP_ASSIGN -> "AMP_ASSIGN"
+  | Parser.PIPE_ASSIGN -> "PIPE_ASSIGN"
+  | Parser.CARET_ASSIGN -> "CARET_ASSIGN"
+  | Parser.SHL_ASSIGN -> "SHL_ASSIGN"
+  | Parser.SHR_ASSIGN -> "SHR_ASSIGN"
   | Parser.FIELD_ASSIGN (object_name, field_name) ->
       Printf.sprintf "FIELD_ASSIGN(%s.%s)" object_name field_name
   | Parser.LT -> "LT"

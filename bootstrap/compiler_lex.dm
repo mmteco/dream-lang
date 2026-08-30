@@ -51,6 +51,26 @@ const TOKEN_BREAK: int = 49
 const TOKEN_EPRINT: int = 50
 const TOKEN_IN: int = 51
 const TOKEN_CONTINUE: int = 52
+const TOKEN_PLUS_ASSIGN: int = 53
+const TOKEN_MINUS_ASSIGN: int = 54
+const TOKEN_MULTIPLY_ASSIGN: int = 55
+const TOKEN_DIVIDE_ASSIGN: int = 56
+const TOKEN_MODULO_ASSIGN: int = 57
+const TOKEN_FLOORDIVIDE: int = 58
+const TOKEN_POWER: int = 59
+const TOKEN_AMP: int = 60
+const TOKEN_CARET: int = 61
+const TOKEN_TILDE: int = 62
+const TOKEN_SHL: int = 63
+const TOKEN_SHR: int = 64
+const TOKEN_POWER_ASSIGN: int = 65
+const TOKEN_AMP_ASSIGN: int = 66
+const TOKEN_PIPE_ASSIGN: int = 67
+const TOKEN_CARET_ASSIGN: int = 68
+const TOKEN_SHL_ASSIGN: int = 69
+const TOKEN_SHR_ASSIGN: int = 70
+const TOKEN_PIPE: int = 71
+const TOKEN_FLOORDIVIDE_ASSIGN: int = 72
 
 struct ParseContext:
     src: str
@@ -140,6 +160,10 @@ const ASCII_GREATER: int = 62
 const ASCII_BANG: int = 33
 const ASCII_PERCENT: int = 37
 const ASCII_QUESTION: int = 63
+const ASCII_AMP: int = 38
+const ASCII_CARET: int = 94
+const ASCII_TILDE: int = 126
+const ASCII_PIPE: int = 124
 
 const PACKAGE_STDLIB: int = 0
 const PACKAGE_BOOTSTRAP: int = 1
@@ -726,24 +750,75 @@ def lex(tokens: TokenStream) -> int:
         if not handled:
             switch code:
                 case ASCII_PLUS:
-                    append_token(kinds, starts, ends, TOKEN_PLUS, index, index + 1)
-                    index = index + 1
+                    let is_plus_assign = false
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        is_plus_assign = true
+                    if is_plus_assign:
+                        append_token(kinds, starts, ends, TOKEN_PLUS_ASSIGN, index, index + 2)
+                        index = index + 2
+                    if not is_plus_assign:
+                        append_token(kinds, starts, ends, TOKEN_PLUS, index, index + 1)
+                        index = index + 1
                 case ASCII_MINUS:
                     let is_arrow = false
+                    let is_minus_assign = false
                     if index + 1 < source_length and source[index + 1] == '>':
                         is_arrow = true
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        is_minus_assign = true
                     if is_arrow:
                         append_token(kinds, starts, ends, TOKEN_ARROW, index, index + 2)
                         index = index + 2
-                    if not is_arrow:
+                    if is_minus_assign:
+                        append_token(kinds, starts, ends, TOKEN_MINUS_ASSIGN, index, index + 2)
+                        index = index + 2
+                    if not is_arrow and not is_minus_assign:
                         append_token(kinds, starts, ends, TOKEN_MINUS, index, index + 1)
                         index = index + 1
                 case ASCII_STAR:
-                    append_token(kinds, starts, ends, TOKEN_MULTIPLY, index, index + 1)
-                    index = index + 1
+                    let is_multiply_assign = false
+                    let is_power = false
+                    let is_power_assign = false
+                    if index + 1 < source_length and source[index + 1] == '*':
+                        is_power = true
+                        if index + 2 < source_length and source[index + 2] == '=':
+                            is_power_assign = true
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        is_multiply_assign = true
+                    if is_power_assign:
+                        append_token(kinds, starts, ends, TOKEN_POWER_ASSIGN, index, index + 3)
+                        index = index + 3
+                    elif is_power:
+                        append_token(kinds, starts, ends, TOKEN_POWER, index, index + 2)
+                        index = index + 2
+                    elif is_multiply_assign:
+                        append_token(kinds, starts, ends, TOKEN_MULTIPLY_ASSIGN, index, index + 2)
+                        index = index + 2
+                    else:
+                        append_token(kinds, starts, ends, TOKEN_MULTIPLY, index, index + 1)
+                        index = index + 1
                 case ASCII_SLASH:
-                    append_token(kinds, starts, ends, TOKEN_DIVIDE, index, index + 1)
-                    index = index + 1
+                    let is_divide_assign = false
+                    let is_floor_divide = false
+                    let is_floor_divide_assign = false
+                    if index + 1 < source_length and source[index + 1] == '/':
+                        is_floor_divide = true
+                        if index + 2 < source_length and source[index + 2] == '=':
+                            is_floor_divide_assign = true
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        is_divide_assign = true
+                    if is_floor_divide_assign:
+                        append_token(kinds, starts, ends, TOKEN_FLOORDIVIDE_ASSIGN, index, index + 3)
+                        index = index + 3
+                    elif is_floor_divide:
+                        append_token(kinds, starts, ends, TOKEN_FLOORDIVIDE, index, index + 2)
+                        index = index + 2
+                    elif is_divide_assign:
+                        append_token(kinds, starts, ends, TOKEN_DIVIDE_ASSIGN, index, index + 2)
+                        index = index + 2
+                    else:
+                        append_token(kinds, starts, ends, TOKEN_DIVIDE, index, index + 1)
+                        index = index + 1
                 case ASCII_OPEN_PAREN:
                     append_token(kinds, starts, ends, TOKEN_OPEN_PAREN, index, index + 1)
                     bracket_depth = bracket_depth + 1
@@ -799,22 +874,46 @@ def lex(tokens: TokenStream) -> int:
                     index = index + 1
                 case ASCII_LESS:
                     let is_less_equal = false
+                    let is_shift_left = false
+                    let is_shift_left_assign = false
+                    if index + 1 < source_length and source[index + 1] == '<':
+                        is_shift_left = true
+                        if index + 2 < source_length and source[index + 2] == '=':
+                            is_shift_left_assign = true
                     if index + 1 < source_length and source[index + 1] == '=':
                         is_less_equal = true
-                    if is_less_equal:
+                    if is_shift_left_assign:
+                        append_token(kinds, starts, ends, TOKEN_SHL_ASSIGN, index, index + 3)
+                        index = index + 3
+                    elif is_shift_left:
+                        append_token(kinds, starts, ends, TOKEN_SHL, index, index + 2)
+                        index = index + 2
+                    elif is_less_equal:
                         append_token(kinds, starts, ends, TOKEN_LESS_EQUAL, index, index + 2)
                         index = index + 2
-                    if not is_less_equal:
+                    else:
                         append_token(kinds, starts, ends, TOKEN_LESS, index, index + 1)
                         index = index + 1
                 case ASCII_GREATER:
                     let is_greater_equal = false
+                    let is_shift_right = false
+                    let is_shift_right_assign = false
+                    if index + 1 < source_length and source[index + 1] == '>':
+                        is_shift_right = true
+                        if index + 2 < source_length and source[index + 2] == '=':
+                            is_shift_right_assign = true
                     if index + 1 < source_length and source[index + 1] == '=':
                         is_greater_equal = true
-                    if is_greater_equal:
+                    if is_shift_right_assign:
+                        append_token(kinds, starts, ends, TOKEN_SHR_ASSIGN, index, index + 3)
+                        index = index + 3
+                    elif is_shift_right:
+                        append_token(kinds, starts, ends, TOKEN_SHR, index, index + 2)
+                        index = index + 2
+                    elif is_greater_equal:
                         append_token(kinds, starts, ends, TOKEN_GREATER_EQUAL, index, index + 2)
                         index = index + 2
-                    if not is_greater_equal:
+                    else:
                         append_token(kinds, starts, ends, TOKEN_GREATER, index, index + 1)
                         index = index + 1
                 case ASCII_BANG:
@@ -827,7 +926,37 @@ def lex(tokens: TokenStream) -> int:
                     if not is_not_equal:
                         index = index + 1
                 case ASCII_PERCENT:
-                    append_token(kinds, starts, ends, TOKEN_MODULO, index, index + 1)
+                    let is_modulo_assign = false
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        is_modulo_assign = true
+                        append_token(kinds, starts, ends, TOKEN_MODULO_ASSIGN, index, index + 2)
+                        index = index + 2
+                    if not is_modulo_assign:
+                        append_token(kinds, starts, ends, TOKEN_MODULO, index, index + 1)
+                        index = index + 1
+                case ASCII_AMP:
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        append_token(kinds, starts, ends, TOKEN_AMP_ASSIGN, index, index + 2)
+                        index = index + 2
+                    else:
+                        append_token(kinds, starts, ends, TOKEN_AMP, index, index + 1)
+                        index = index + 1
+                case ASCII_CARET:
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        append_token(kinds, starts, ends, TOKEN_CARET_ASSIGN, index, index + 2)
+                        index = index + 2
+                    else:
+                        append_token(kinds, starts, ends, TOKEN_CARET, index, index + 1)
+                        index = index + 1
+                case ASCII_PIPE:
+                    if index + 1 < source_length and source[index + 1] == '=':
+                        append_token(kinds, starts, ends, TOKEN_PIPE_ASSIGN, index, index + 2)
+                        index = index + 2
+                    else:
+                        append_token(kinds, starts, ends, TOKEN_PIPE, index, index + 1)
+                        index = index + 1
+                case ASCII_TILDE:
+                    append_token(kinds, starts, ends, TOKEN_TILDE, index, index + 1)
                     index = index + 1
                 case ASCII_QUESTION:
                     append_token(kinds, starts, ends, TOKEN_QUESTION, index, index + 1)
@@ -934,7 +1063,7 @@ def enclosing_self_struct_declaration(tokens: TokenStream, func_name_start: int)
                     let target_keyword = source[token_start(starts, target_keyword_index):token_end(ends,
                         target_keyword_index)]
                     if target_keyword == "for" and token_kind(kinds, target_keyword_index + 1) == TOKEN_IDENTIFIER:
-                        return find_struct_declaration_index(source, token_start(starts, target_keyword_index + 1),
+                        return find_type_declaration_index(source, token_start(starts, target_keyword_index + 1),
                             token_end(ends, target_keyword_index + 1))
                     target_keyword_index = target_keyword_index + 1
                 return -1
@@ -1489,7 +1618,7 @@ def struct_field_type_declaration(tokens: TokenStream, type_index: int) -> int:
         type_end = type_end - 1
     if type_end <= type_start:
         return -1
-    return find_struct_declaration_index(source, type_start, type_end)
+    return find_type_declaration_index(source, type_start, type_end)
 
 def collect_struct_fields(tokens: TokenStream):
     let source = tokens.src
@@ -1540,6 +1669,18 @@ def find_struct_declaration_index(source: str, name_start: int, name_end: int) -
             STRUCT_DECLARATION_ENDS[declaration_index], name_start, name_end):
             return declaration_index
         declaration_index = declaration_index + 1
+    return -1
+
+def find_type_declaration_index(source: str, name_start: int, name_end: int) -> int:
+    let struct_index = find_struct_declaration_index(source, name_start, name_end)
+    if struct_index >= 0:
+        return struct_index
+    let enum_index = 0
+    while enum_index < len(ENUM_DECLARATION_STARTS):
+        if source_ranges_equal(source, ENUM_DECLARATION_STARTS[enum_index], ENUM_DECLARATION_ENDS[enum_index],
+            name_start, name_end):
+            return len(STRUCT_DECLARATION_STARTS) + enum_index
+        enum_index = enum_index + 1
     return -1
 
 def source_type_is_struct(tokens: TokenStream, type_start: int, type_end: int) -> bool:

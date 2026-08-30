@@ -2082,8 +2082,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
             enum_construct_tag < 0
         ):
             lambda_direct = -1
-            if named_ref_slot >= 0 and named_ref_slot < len(state.func_ref_targets):
-                lambda_direct = state.func_ref_targets[named_ref_slot]
+            if named_ref_slot >= 0 and named_ref_slot < len(state.named_ref_targets):
+                lambda_direct = state.named_ref_targets[named_ref_slot]
             if lambda_direct < 0:
                 let callee_symbol_value = mir_find_symbol_value(state, callee_name_start, callee_name_end)
                 if callee_symbol_value >= 0:
@@ -2473,6 +2473,26 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
             mir_state_append_instruction(state, MIR_OP_CALL, MIR_TYPE_I32, len_value, len_start, 2)
             append(child_kinds, MIR_OPERAND_VALUE)
             append(child_values, len_value)
+    if opcode == HIR_OP_BINARY and len(child_values) >= 3:
+        let operator = mir_int_list_get(child_values, 0)
+        let left_value = mir_int_list_get(child_values, 1)
+        let right_value = mir_int_list_get(child_values, 2)
+        if operator == IR_OPERATOR_ADD and mir_state_value_type(state, left_value) == MIR_TYPE_STR:
+            let right_node_offset = hir_value_offset(payload_start + 2)
+            if hir.values[right_node_offset] == HIR_VALUE_NODE:
+                let right_node_id = hir.values[right_node_offset + 1]
+                let right_declaration = mir_state_struct_declaration(state, right_value)
+                if right_declaration < 0:
+                    right_declaration = mir_hir_node_struct_declaration(hir, right_node_id)
+                let display_function = mir_find_struct_method(state, right_declaration, "to_string")
+                if display_function >= 0:
+                    let display_value = mir_int_list_get(state.next_value, 0)
+                    mir_int_list_set(state.next_value, 0, display_value + 1)
+                    let display_start = mir_value_count(state.values)
+                    mir_append_operand(state.values, MIR_OPERAND_SYMBOL, display_function)
+                    mir_append_operand(state.values, MIR_OPERAND_VALUE, right_value)
+                    mir_state_append_instruction(state, MIR_OP_CALL, MIR_TYPE_STR, display_value, display_start, 2)
+                    mir_int_list_set(child_values, 2, display_value)
     let operand_start = mir_value_count(state.values)
     let child_index = 0
     while child_index < len(child_kinds):
@@ -3449,7 +3469,7 @@ def named_return_slot_for_target(state: MirLowerState, target_fn: int) -> int:
     # 按目标函数索引查 named_ref_return_types 的槽位；未命中 -1
     let index = 0
     while index < len(state.named_ref_return_types):
-        if state.func_ref_targets[index] == target_fn:
+        if state.named_ref_targets[index] == target_fn:
             return index
         index = index + 1
     return -1

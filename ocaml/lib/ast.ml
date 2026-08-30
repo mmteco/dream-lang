@@ -70,6 +70,18 @@ type token =
   | OR
   | NOT
   | ASSIGN
+  | PLUS_ASSIGN
+  | MINUS_ASSIGN
+  | TIMES_ASSIGN
+  | DIV_ASSIGN
+  | FLOORDIV_ASSIGN
+  | MOD_ASSIGN
+  | POW_ASSIGN
+  | AMP_ASSIGN
+  | PIPE_ASSIGN
+  | CARET_ASSIGN
+  | SHL_ASSIGN
+  | SHR_ASSIGN
   | FIELD_ASSIGN of string * string
   | ARROW
   | PIPE

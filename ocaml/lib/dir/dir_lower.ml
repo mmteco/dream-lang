@@ -82,6 +82,7 @@ let rec lower_method_call context function_builder environment object_value meth
     arguments position =
   let struct_name = match object_value.ty with
     | Struct (name, _) -> name
+    | Enum (name, _) -> name
     | _ -> fail_at position "method call requires a struct value"
   in
   let method_key = struct_name ^ "." ^ method_name in
@@ -504,11 +505,57 @@ and lower_expr context function_builder environment expression =
   | EBinOp (left_expression, operation, right_expression, position) ->
       let left = lower_expr context function_builder environment left_expression in
       let right = lower_expr context function_builder environment right_expression in
+      let reflected_method_name = match operation with
+        | Add -> "radd"
+        | Sub -> "rsub"
+        | Mul -> "rmul"
+        | Div -> "rdiv"
+        | FloorDiv -> "rfloordiv"
+        | Mod -> "rmod"
+        | Pow -> "rpow"
+        | BitAnd -> "rbitand"
+        | BitOr -> "rbitor"
+        | BitXor -> "rbitxor"
+        | Shl -> "rshl"
+        | Shr -> "rshr"
+        | _ -> ""
+      in
+      let has_reflected_method = match right.ty with
+        | Struct (name, _) | Enum (name, _) ->
+            Hashtbl.mem context.method_signatures (name ^ "." ^ reflected_method_name)
+        | Interface (_, methods) ->
+            List.exists (fun (name, _, _) -> name = reflected_method_name) methods
+        | _ -> false
+      in
+      let lower_reflected () = match right.ty with
+        | Interface _ ->
+            lower_interface_call context function_builder environment right
+              reflected_method_name [left_expression] position
+        | Struct _ | Enum _ ->
+            lower_method_call context function_builder environment right
+              reflected_method_name [left_expression] position
+        | _ -> fail_at position "right operator requires an overloadable value"
+      in
       (match operation with
        | Add | Sub | Mul | Div | FloorDiv | Mod | Pow
        | BitAnd | BitOr | BitXor | Shl | Shr ->
            (match left.ty with
+            | _ when has_reflected_method &&
+                not (match left.ty with
+                     | Struct (name, _) | Enum (name, _) ->
+                         Hashtbl.mem context.method_signatures
+                           (name ^ "." ^ Env.binop_to_method_name operation)
+                     | _ -> false) ->
+                lower_reflected ()
             | Str when operation = Add ->
+                let right = match right.ty with
+                  | Str -> right
+                  | Interface _ ->
+                      lower_interface_call context function_builder environment right "to_string" [] position
+                  | Struct _ | Enum _ ->
+                      lower_method_call context function_builder environment right "to_string" [] position
+                  | _ -> fail_at position "string concatenation requires a string or Display value"
+                in
                 let value = fresh_value function_builder in
                 emit function_builder (Call (Some value, Str, "string_concat",
                   [Str; Str], [left.operand; right.operand]));
@@ -539,22 +586,8 @@ and lower_expr context function_builder environment expression =
                      emit function_builder (Binop (value, left.ty,
                        binop_of_ast position operation, left.operand, right.operand));
                      { operand = Value value; ty = left.ty })
-            | Struct _ ->
-                let method_name = match operation with
-                  | Add -> "add"
-                  | Sub -> "sub"
-                  | Mul -> "mul"
-                  | Div -> "div"
-                  | FloorDiv -> "floordiv"
-                  | Mod -> "mod"
-                  | Pow -> "pow"
-                  | BitAnd -> "bitand"
-                  | BitOr -> "bitor"
-                  | BitXor -> "bitxor"
-                  | Shl -> "shl"
-                  | Shr -> "shr"
-                  | _ -> assert false
-                in
+            | Struct _ | Enum _ ->
+                let method_name = Env.binop_to_method_name operation in
                 lower_method_call context function_builder environment left method_name
                   [right_expression] position
             | _ -> fail_at position "arithmetic operand must be numeric")
@@ -1069,6 +1102,9 @@ and lower_expr context function_builder environment expression =
        | Struct _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
+       | Enum _ ->
+           lower_method_call context function_builder environment object_value method_name
+             arguments position
        | Str ->
            lower_string_method context function_builder environment object_value
              method_name arguments position
@@ -1252,6 +1288,8 @@ and lower_expr context function_builder environment expression =
     when (match variable_type context environment variable_name with
           | Some (Struct (struct_name, _)) ->
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
+          | Some (Enum (enum_name, _)) ->
+              Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
           | Some (Interface _) -> true
           | Some Str -> true
           | Some Bytes -> true
@@ -1262,6 +1300,9 @@ and lower_expr context function_builder environment expression =
            lower_interface_call context function_builder environment object_value
              method_name arguments position
        | Struct _ ->
+           lower_method_call context function_builder environment object_value method_name
+             arguments position
+       | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
        | Str ->
@@ -1301,6 +1342,9 @@ and lower_expr context function_builder environment expression =
                      emit function_builder (StructGet (value, field_type,
                        object_value.operand, field_index));
                      { operand = Value value; ty = field_type })
+            | Enum _ ->
+                lower_method_call context function_builder environment object_value
+                  field_name [] position
             | Interface _ ->
                 lower_interface_call context function_builder environment object_value
                   field_name [] position
@@ -1361,6 +1405,8 @@ and lower_expr context function_builder environment expression =
     when (match Hashtbl.find_opt environment variable_name with
           | Some { ty = Struct (struct_name, _); _ } ->
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
+          | Some { ty = Enum (enum_name, _); _ } ->
+              Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
           | Some { ty = Interface (_, _); _ } -> true
           | Some { ty = Str; _ } -> true
           | Some { ty = Bytes; _ } -> true
@@ -1371,6 +1417,9 @@ and lower_expr context function_builder environment expression =
            lower_interface_call context function_builder environment object_value
              method_name arguments position
        | Struct _ ->
+           lower_method_call context function_builder environment object_value method_name
+             arguments position
+       | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
        | Str ->
@@ -1384,6 +1433,8 @@ and lower_expr context function_builder environment expression =
     when (match variable_type context environment variable_name with
           | Some (Struct (struct_name, _)) ->
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
+          | Some (Enum (enum_name, _)) ->
+              Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
           | Some (Interface _) -> true
           | Some Str -> true
           | Some Bytes -> true
@@ -1394,6 +1445,9 @@ and lower_expr context function_builder environment expression =
            lower_interface_call context function_builder environment object_value
              method_name arguments position
        | Struct _ ->
+           lower_method_call context function_builder environment object_value method_name
+             arguments position
+       | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
        | Str ->

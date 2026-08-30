@@ -137,6 +137,22 @@ def main():
     print(ord(rune_value))
     print(ord('中'))
 
+    # 复合赋值
+    let compound = 10
+    compound += 5
+    compound -= 2
+    compound *= 3
+    compound /= 2
+    compound %= 4
+    compound //= 2
+    compound **= 2
+    compound &= 7
+    compound |= 8
+    compound ^= 3
+    compound <<= 1
+    compound >>= 2
+    print(compound)
+
     # 常量与类型注解
     print(BASE)
     print(DOUBLE_BASE)

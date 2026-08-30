@@ -225,6 +225,22 @@ def main():
     print('A')
     print(b'B')
 
+    # 复合赋值
+    let compound = 10
+    compound += 5
+    compound -= 2
+    compound *= 3
+    compound /= 2
+    compound %= 4
+    compound //= 2
+    compound **= 2
+    compound &= 7
+    compound |= 8
+    compound ^= 3
+    compound <<= 1
+    compound >>= 2
+    print(compound)
+
     let break_sum = 0
     let break_i = 0
     while break_i < 10:

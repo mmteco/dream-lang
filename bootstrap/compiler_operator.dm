@@ -4,6 +4,13 @@ from compiler_lex import (
     TOKEN_MULTIPLY,
     TOKEN_DIVIDE,
     TOKEN_MODULO,
+    TOKEN_FLOORDIVIDE,
+    TOKEN_POWER,
+    TOKEN_AMP,
+    TOKEN_PIPE,
+    TOKEN_CARET,
+    TOKEN_SHL,
+    TOKEN_SHR,
     TOKEN_LESS,
     TOKEN_GREATER,
     TOKEN_LESS_EQUAL,
@@ -34,6 +41,13 @@ const IR_OPERATOR_NOT: int = 14
 const IR_OPERATOR_POS: int = 15
 const IR_OPERATOR_NEG: int = 16
 const IR_OPERATOR_IN: int = 17
+const IR_OPERATOR_FLOORDIV: int = 18
+const IR_OPERATOR_POW: int = 19
+const IR_OPERATOR_BITAND: int = 20
+const IR_OPERATOR_BITOR: int = 21
+const IR_OPERATOR_BITXOR: int = 22
+const IR_OPERATOR_SHL: int = 23
+const IR_OPERATOR_SHR: int = 24
 
 def ir_binary_operator_from_token(token: int) -> int:
     switch token:
@@ -47,6 +61,20 @@ def ir_binary_operator_from_token(token: int) -> int:
             return IR_OPERATOR_DIV
         case TOKEN_MODULO:
             return IR_OPERATOR_MOD
+        case TOKEN_FLOORDIVIDE:
+            return IR_OPERATOR_FLOORDIV
+        case TOKEN_POWER:
+            return IR_OPERATOR_POW
+        case TOKEN_AMP:
+            return IR_OPERATOR_BITAND
+        case TOKEN_PIPE:
+            return IR_OPERATOR_BITOR
+        case TOKEN_CARET:
+            return IR_OPERATOR_BITXOR
+        case TOKEN_SHL:
+            return IR_OPERATOR_SHL
+        case TOKEN_SHR:
+            return IR_OPERATOR_SHR
         case TOKEN_LESS:
             return IR_OPERATOR_LT
         case TOKEN_GREATER:

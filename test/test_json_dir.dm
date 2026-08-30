@@ -1,16 +1,17 @@
 # dream-test: dir
 
-from json import Json, loads, dumps, empty_object, put, field, at, as_string, as_number, is_error, error
+from json import Json, loads, dumps, empty_object
 
 def main():
     let document = loads("{\"name\":\"Dream\",\"items\":[1,true,null,{\"ok\":false}],\"unicode\":\"\\u4f60\\u597d\"}")
     print(dumps(document))
-    print(as_string(field(document, "name")))
-    print(as_number(at(field(document, "items"), 0)))
+    print(document.get("name").as_str())
+    print(document.get("items").at(0).as_num())
+    print("name=" + document.get("name"))
 
-    let generated = put(put(empty_object(), "seed", Json.Null), "answer", Json.Number("42"))
-    print(dumps(generated))
+    let generated = empty_object().put("seed", Json.Null).put("answer", Json.Number("42"))
+    print(generated.dump())
 
     let invalid = loads("[1,]")
-    print(is_error(invalid))
-    print(error(invalid))
+    print(invalid.is_error())
+    print(invalid.error())

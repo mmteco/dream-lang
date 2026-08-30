@@ -195,6 +195,78 @@ rule token = parse
       let end_pos = make_lexing_pos () in
       (ARROW, start_pos, end_pos)
     }
+  | "+=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (PLUS_ASSIGN, start_pos, end_pos)
+    }
+  | "-=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (MINUS_ASSIGN, start_pos, end_pos)
+    }
+  | "**=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (POW_ASSIGN, start_pos, end_pos)
+    }
+  | "*=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (TIMES_ASSIGN, start_pos, end_pos)
+    }
+  | "//=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (FLOORDIV_ASSIGN, start_pos, end_pos)
+    }
+  | "/=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (DIV_ASSIGN, start_pos, end_pos)
+    }
+  | "%=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (MOD_ASSIGN, start_pos, end_pos)
+    }
+  | "<<=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (SHL_ASSIGN, start_pos, end_pos)
+    }
+  | ">>=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (SHR_ASSIGN, start_pos, end_pos)
+    }
+  | "&=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (AMP_ASSIGN, start_pos, end_pos)
+    }
+  | "^=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (CARET_ASSIGN, start_pos, end_pos)
+    }
+  | "|=" {
+      let start_pos = make_lexing_pos () in
+      update_pos lexbuf;
+      let end_pos = make_lexing_pos () in
+      (PIPE_ASSIGN, start_pos, end_pos)
+    }
   | '+' {
       let start_pos = make_lexing_pos () in
       update_pos lexbuf;
