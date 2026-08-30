@@ -499,10 +499,10 @@ and lower_statement context function_builder environment statement =
            expect_type position key_type lowered_index.ty "dict assignment key";
            expect_type position value_type lowered_value.ty "dict assignment value";
            let setter_name = match key_type, value_type with
-             | Dir.I32, Dir.I32 -> "dict_set_int_int"
-             | Dir.I32, Dir.Str -> "dict_set_int_str"
-             | Dir.Str, Dir.I32 -> "dict_set_str_int"
-             | Dir.Str, Dir.Str -> "dict_set_str_str"
+             | Dir.I32, Dir.I32 -> "__c_dict_set_int_int"
+             | Dir.I32, Dir.Str -> "__c_dict_set_int_str"
+             | Dir.Str, Dir.I32 -> "__c_dict_set_str_int"
+             | Dir.Str, Dir.Str -> "__c_dict_set_str_str"
              | _ -> fail_at position "DIR dict supports only int and str keys/values"
            in
            emit function_builder (Dir.Call (None, Dir.Unit, setter_name,

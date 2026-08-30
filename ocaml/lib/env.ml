@@ -317,7 +317,7 @@ let c_runtime_functions_table =
     ("__c_range_equals_cstr", TyFunc ([TyStr; TyInt; TyInt; TyStr], TyBool));
 
     (* bytes 操作 *)
-    ("__c_bytes_length", TyFunc ([TyBytes], TyInt));
+    ("__c_bytes_len", TyFunc ([TyBytes], TyInt));
     ("__c_bytes_get", TyFunc ([TyBytes; TyInt], TyByte));
     ("__c_bytes_slice", TyFunc ([TyBytes; TyInt; TyInt], TyBytes));
     ("__c_bytes_from_array", TyFunc ([TyList TyByte], TyBytes));
@@ -469,7 +469,7 @@ let builtin_env =
   let env = add_binding "dict_values" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyVar "V"))) env in
   let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
   let env = add_binding "join" (TyFunc ([TyList TyStr; TyStr], TyStr)) env in
-  let env = add_binding "string_concat" (TyFunc ([TyStr; TyStr], TyStr)) env in
+  let env = add_binding "__c_str_concat" (TyFunc ([TyStr; TyStr], TyStr)) env in
   let env = add_binding "chr" (TyFunc ([TyInt], TyRune)) env in
   let env = add_binding "ord" (TyFunc ([TyRune], TyInt)) env in
   let env = add_binding "array" (TyFunc ([TyList (TyVar "T")], TyList (TyVar "T"))) env in

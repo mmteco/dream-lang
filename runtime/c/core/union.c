@@ -8,7 +8,7 @@
 // Union 创建函数（使用 GC 内存分配）
 // ============================================================================
 
-union_t* union_create_int(int32_t value) {
+union_t* __c_union_create_int(int32_t value) {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_INT;
@@ -17,7 +17,7 @@ union_t* union_create_int(int32_t value) {
     return u;
 }
 
-union_t* union_create_float(double value) {
+union_t* __c_union_create_float(double value) {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_FLOAT;
@@ -26,7 +26,7 @@ union_t* union_create_float(double value) {
     return u;
 }
 
-union_t* union_create_string(const char* value) {
+union_t* __c_union_create_str(const char* value) {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_STRING;
@@ -41,7 +41,7 @@ union_t* union_create_string(const char* value) {
     return u;
 }
 
-union_t* union_create_bool(bool value) {
+union_t* __c_union_create_bool(bool value) {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_BOOL;
@@ -50,7 +50,7 @@ union_t* union_create_bool(bool value) {
     return u;
 }
 
-union_t* union_create_bytes(void* bytes_array) {
+union_t* __c_union_create_bytes(void* bytes_array) {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_BYTES;
@@ -59,7 +59,7 @@ union_t* union_create_bytes(void* bytes_array) {
     return u;
 }
 
-union_t* union_create_none() {
+union_t* __c_union_create_none() {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_NONE;
@@ -67,7 +67,7 @@ union_t* union_create_none() {
     return u;
 }
 
-union_t* union_create_struct(void* ptr, const char* type_name) {
+union_t* __c_union_create_struct(void* ptr, const char* type_name) {
     union_t* u = (union_t*)gc_alloc(sizeof(union_t), OBJ_UNION);
     if (!u) return NULL;
     u->tag = UNION_STRUCT;
@@ -84,31 +84,31 @@ union_t* union_create_struct(void* ptr, const char* type_name) {
 // Union 类型检查
 // ============================================================================
 
-bool union_is_int(union_t* u) {
+bool __c_union_is_int(union_t* u) {
     return u != NULL && u->tag == UNION_INT;
 }
 
-bool union_is_float(union_t* u) {
+bool __c_union_is_float(union_t* u) {
     return u != NULL && u->tag == UNION_FLOAT;
 }
 
-bool union_is_string(union_t* u) {
+bool __c_union_is_str(union_t* u) {
     return u != NULL && u->tag == UNION_STRING;
 }
 
-bool union_is_bool(union_t* u) {
+bool __c_union_is_bool(union_t* u) {
     return u != NULL && u->tag == UNION_BOOL;
 }
 
-bool union_is_bytes(union_t* u) {
+bool __c_union_is_bytes(union_t* u) {
     return u != NULL && u->tag == UNION_BYTES;
 }
 
-bool union_is_none(union_t* u) {
+bool __c_union_is_none(union_t* u) {
     return u != NULL && u->tag == UNION_NONE;
 }
 
-bool union_is_struct(union_t* u, const char* type_name) {
+bool __c_union_is_struct(union_t* u, const char* type_name) {
     if (u == NULL || u->tag != UNION_STRUCT || u->type_name == NULL || type_name == NULL) {
         return false;
     }
@@ -119,49 +119,49 @@ bool union_is_struct(union_t* u, const char* type_name) {
 // Union 值提取
 // ============================================================================
 
-int32_t union_get_int(union_t* u) {
-    if (union_is_int(u)) {
+int32_t __c_union_get_int(union_t* u) {
+    if (__c_union_is_int(u)) {
         return u->value.as_int;
     }
     return 0;  // 默认值
 }
 
-double union_get_float(union_t* u) {
-    if (union_is_float(u)) {
+double __c_union_get_float(union_t* u) {
+    if (__c_union_is_float(u)) {
         return u->value.as_float;
     }
     return 0.0;  // 默认值
 }
 
-char* union_get_string(union_t* u) {
-    if (union_is_string(u)) {
+char* __c_union_get_str(union_t* u) {
+    if (__c_union_is_str(u)) {
         return u->value.as_string;
     }
     return "";  // 默认值
 }
 
-bool union_get_bool(union_t* u) {
-    if (union_is_bool(u)) {
+bool __c_union_get_bool(union_t* u) {
+    if (__c_union_is_bool(u)) {
         return u->value.as_bool;
     }
     return false;  // 默认值
 }
 
-void* union_get_bytes(union_t* u) {
-    if (union_is_bytes(u)) {
+void* __c_union_get_bytes(union_t* u) {
+    if (__c_union_is_bytes(u)) {
         return u->value.as_bytes;
     }
     return NULL;  // 默认值
 }
 
-void* union_get_struct(union_t* u) {
+void* __c_union_get_struct(union_t* u) {
     if (u != NULL && u->tag == UNION_STRUCT) {
         return u->value.as_ptr;
     }
     return NULL;  // 默认值
 }
 
-const char* union_get_struct_type(union_t* u) {
+const char* __c_union_get_struct_type(union_t* u) {
     if (u != NULL && u->tag == UNION_STRUCT) {
         return u->type_name;
     }
@@ -172,32 +172,32 @@ const char* union_get_struct_type(union_t* u) {
 // Union 值提取（安全版本）
 // ============================================================================
 
-bool union_try_get_int(union_t* u, int32_t* out) {
-    if (out != NULL && union_is_int(u)) {
+bool __c_union_try_get_int(union_t* u, int32_t* out) {
+    if (out != NULL && __c_union_is_int(u)) {
         *out = u->value.as_int;
         return true;
     }
     return false;
 }
 
-bool union_try_get_float(union_t* u, double* out) {
-    if (out != NULL && union_is_float(u)) {
+bool __c_union_try_get_float(union_t* u, double* out) {
+    if (out != NULL && __c_union_is_float(u)) {
         *out = u->value.as_float;
         return true;
     }
     return false;
 }
 
-bool union_try_get_string(union_t* u, char** out) {
-    if (out != NULL && union_is_string(u)) {
+bool __c_union_try_get_str(union_t* u, char** out) {
+    if (out != NULL && __c_union_is_str(u)) {
         *out = u->value.as_string;
         return true;
     }
     return false;
 }
 
-bool union_try_get_bool(union_t* u, bool* out) {
-    if (out != NULL && union_is_bool(u)) {
+bool __c_union_try_get_bool(union_t* u, bool* out) {
+    if (out != NULL && __c_union_is_bool(u)) {
         *out = u->value.as_bool;
         return true;
     }
@@ -208,42 +208,42 @@ bool union_try_get_bool(union_t* u, bool* out) {
 // Union 内存管理（GC 集成）
 // ============================================================================
 
-void union_retain(union_t* u) {
+void __c_union_retain(union_t* u) {
     if (u == NULL) return;
     gc_retain(u);
 }
 
-void union_release(union_t* u) {
+void __c_union_release(union_t* u) {
     if (u == NULL) return;
     // 字符串内存会在 gc_release 的对象清理阶段自动释放
     gc_release(u);
 }
 
-void union_free(union_t* u) {
+void __c_union_free(union_t* u) {
     // union_free 是 union_release 的别名，为了向后兼容
-    union_release(u);
+    __c_union_release(u);
 }
 
-union_t* union_clone(union_t* u) {
+union_t* __c_union_clone(union_t* u) {
     if (u == NULL) return NULL;
 
     switch (u->tag) {
         case UNION_INT:
-            return union_create_int(u->value.as_int);
+            return __c_union_create_int(u->value.as_int);
         case UNION_FLOAT:
-            return union_create_float(u->value.as_float);
+            return __c_union_create_float(u->value.as_float);
         case UNION_STRING:
-            return union_create_string(u->value.as_string);
+            return __c_union_create_str(u->value.as_string);
         case UNION_BOOL:
-            return union_create_bool(u->value.as_bool);
+            return __c_union_create_bool(u->value.as_bool);
         case UNION_BYTES:
             // bytes需要深拷贝，暂时返回同一个指针
-            return union_create_bytes(u->value.as_bytes);
+            return __c_union_create_bytes(u->value.as_bytes);
         case UNION_STRUCT:
             // struct 浅拷贝指针
-            return union_create_struct(u->value.as_ptr, u->type_name);
+            return __c_union_create_struct(u->value.as_ptr, u->type_name);
         case UNION_NONE:
-            return union_create_none();
+            return __c_union_create_none();
         default:
             return NULL;
     }
@@ -253,7 +253,7 @@ union_t* union_clone(union_t* u) {
 // Union 调试
 // ============================================================================
 
-void union_print(union_t* u) {
+void __c_union_print(union_t* u) {
     if (u == NULL) {
         printf("NULL");
         return;
@@ -287,7 +287,7 @@ void union_print(union_t* u) {
     }
 }
 
-const char* union_type_name(union_t* u) {
+const char* __c_union_type_name(union_t* u) {
     if (u == NULL) return "null";
 
     switch (u->tag) {
@@ -303,7 +303,7 @@ const char* union_type_name(union_t* u) {
 }
 
 // 打印 union 的实际值（不带类型信息）
-void union_print_value(union_t* u) {
+void __c_union_print_value(union_t* u) {
     if (u == NULL) {
         printf("(null)\n");
         return;

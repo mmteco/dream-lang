@@ -390,12 +390,12 @@ void* gc_alloc(size_t size, ObjectType type) {
 // 接口值对象装箱（引用计数管理，由编译器在函数返回前释放未逃逸对象）
 // ============================================================================
 
-void* dream_interface_alloc(int64_t size) {
+void* __c_interface_alloc(int64_t size) {
     if (size < 0) return NULL;
     return gc_alloc((size_t)size, OBJ_INTERFACE);
 }
 
-void dream_interface_release(void* object) {
+void __c_interface_release(void* object) {
     gc_release(object);
 }
 

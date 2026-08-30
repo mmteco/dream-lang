@@ -97,30 +97,30 @@ static char* string_case_map(const char* str, int is_upper) {
 }
 
 /**
- * string_length: 返回 rune 数量（不是字节数）
+ * __c_str_len: 返回 rune 数量（不是字节数）
  *
  * 示例:
  *   "Hello" -> 5
  *   "Hello世界" -> 7 (5个ASCII + 2个中文)
  */
-int string_length(const char* str) {
+int __c_str_len(const char* str) {
     if (str == NULL) return 0;
     return utf8_rune_count(str);
 }
 
 /**
- * string_char_at: 返回第 n 个 rune (Unicode codepoint)
+ * __c_str_char_at: 返回第 n 个 rune (Unicode codepoint)
  *
  * 示例:
  *   "Hello世界"[0] -> 'H' (U+0048)
  *   "Hello世界"[5] -> '世' (U+4E16)
  */
-uint32_t string_char_at(const char* str, int index) {
+uint32_t __c_str_char_at(const char* str, int index) {
     if (str == NULL || index < 0) return 0;
     return utf8_rune_at(str, index);
 }
 
-char* string_concat(const char* s1, const char* s2) {
+char* __c_str_concat(const char* s1, const char* s2) {
     if (s1 == NULL) s1 = "";
     if (s2 == NULL) s2 = "";
     size_t len1 = strlen(s1);
@@ -134,7 +134,7 @@ char* string_concat(const char* s1, const char* s2) {
 }
 
 /**
- * string_substring: 基于 rune 索引的切片
+ * __c_str_substring: 基于 rune 索引的切片
  *
  * 参数:
  *   str - UTF-8 字符串
@@ -145,7 +145,7 @@ char* string_concat(const char* s1, const char* s2) {
  *   "Hello世界".substring(0, 5) -> "Hello"
  *   "Hello世界".substring(5, 7) -> "世界"
  */
-char* string_substring(const char* str, int start, int end) {
+char* __c_str_substring(const char* str, int start, int end) {
     if (str == NULL || start < 0 || end < start) {
         return allocate_empty_string();
     }
@@ -168,28 +168,28 @@ char* string_substring(const char* str, int start, int end) {
     return result;
 }
 
-int string_find(const char* str, const char* sub) {
+int __c_str_find(const char* str, const char* sub) {
     if (str == NULL || sub == NULL) return -1;
     const char* pos = strstr(str, sub);
     if (pos == NULL) return -1;
     return utf8_rune_count_prefix(str, (size_t)(pos - str));
 }
 
-int string_compare(const char* s1, const char* s2) {
+int __c_str_compare(const char* s1, const char* s2) {
     if (s1 == NULL) s1 = "";
     if (s2 == NULL) s2 = "";
     return strcmp(s1, s2);
 }
 
-char* string_upper(const char* str) {
+char* __c_str_upper(const char* str) {
     return string_case_map(str, 1);
 }
 
-char* string_lower(const char* str) {
+char* __c_str_lower(const char* str) {
     return string_case_map(str, 0);
 }
 
-char* string_strip(const char* str) {
+char* __c_str_strip(const char* str) {
     if (str == NULL || *str == '\0') {
         return allocate_empty_string();
     }
@@ -212,13 +212,13 @@ char* string_strip(const char* str) {
     return result;
 }
 
-bool string_starts_with(const char* str, const char* prefix) {
+bool __c_str_starts_with(const char* str, const char* prefix) {
     if (str == NULL || prefix == NULL) return false;
     size_t len = strlen(prefix);
     return strncmp(str, prefix, len) == 0;
 }
 
-bool string_ends_with(const char* str, const char* suffix) {
+bool __c_str_ends_with(const char* str, const char* suffix) {
     if (str == NULL || suffix == NULL) return false;
     size_t str_len = strlen(str);
     size_t suffix_len = strlen(suffix);
@@ -226,7 +226,7 @@ bool string_ends_with(const char* str, const char* suffix) {
     return strcmp(str + str_len - suffix_len, suffix) == 0;
 }
 
-char* string_replace(const char* str, const char* old, const char* new_str) {
+char* __c_str_replace(const char* str, const char* old, const char* new_str) {
     if (str == NULL || old == NULL || new_str == NULL) return NULL;
     if (*old == '\0') {
         char* result = (char*)malloc(strlen(str) + 1);
@@ -291,22 +291,22 @@ char* string_replace(const char* str, const char* old, const char* new_str) {
     return result;
 }
 
-bool string_is_digit(char c) {
+bool __c_str_is_digit(char c) {
     return isdigit((unsigned char)c) != 0;
 }
 
-bool string_is_alpha(char c) {
+bool __c_str_is_alpha(char c) {
     return isalpha((unsigned char)c) != 0;
 }
 
-bool string_is_whitespace(char c) {
+bool __c_str_is_whitespace(char c) {
     return isspace((unsigned char)c) != 0;
 }
 
-dynarray_ptr* string_split(const char* str, const char* delimiter) {
+dynarray_ptr* __c_str_split(const char* str, const char* delimiter) {
     if (str == NULL || delimiter == NULL) return NULL;
 
-    dynarray_ptr* result = create_dynarray_ptr(10);
+    dynarray_ptr* result = __c_create_dynarray_ptr(10);
     if (result == NULL) return NULL;
 
     if (*delimiter == '\0') {
@@ -318,12 +318,12 @@ dynarray_ptr* string_split(const char* str, const char* delimiter) {
             size_t segment_length = (size_t)(byte_end - byte_start);
             char* single_char = (char*)gc_alloc(segment_length + 1, OBJ_STRING);
             if (single_char == NULL) {
-                free_dynarray_ptr(result);
+                __c_free_dynarray_ptr(result);
                 return NULL;
             }
             memcpy(single_char, str + byte_start, segment_length);
             single_char[segment_length] = '\0';
-            append_ptr(result, (intptr_t)single_char);
+            __c_append_ptr(result, (intptr_t)single_char);
         }
         return result;
     }
@@ -336,31 +336,31 @@ dynarray_ptr* string_split(const char* str, const char* delimiter) {
         size_t segment_length = (size_t)(next - current);
         char* segment = (char*)gc_alloc(segment_length + 1, OBJ_STRING);
         if (segment == NULL) {
-            free_dynarray_ptr(result);
+            __c_free_dynarray_ptr(result);
             return NULL;
         }
         memcpy(segment, current, segment_length);
         segment[segment_length] = '\0';
-        append_ptr(result, (intptr_t)segment);
+        __c_append_ptr(result, (intptr_t)segment);
         current = next + delimiter_length;
     }
 
     size_t remaining_length = strlen(current);
     char* last_segment = (char*)gc_alloc(remaining_length + 1, OBJ_STRING);
     if (last_segment == NULL) {
-        free_dynarray_ptr(result);
+        __c_free_dynarray_ptr(result);
         return NULL;
     }
     memcpy(last_segment, current, remaining_length + 1);
-    append_ptr(result, (intptr_t)last_segment);
+    __c_append_ptr(result, (intptr_t)last_segment);
 
     return result;
 }
 
-char* string_join(dynarray_ptr* arr, const char* separator) {
+char* __c_str_join(dynarray_ptr* arr, const char* separator) {
     if (arr == NULL || separator == NULL) return NULL;
 
-    int arr_len = len_dynarray_ptr(arr);
+    int arr_len = __c_len_dynarray_ptr(arr);
     if (arr_len == 0) {
         char* empty = (char*)gc_alloc(1, OBJ_STRING);
         if (empty == NULL) return NULL;
@@ -372,7 +372,7 @@ char* string_join(dynarray_ptr* arr, const char* separator) {
     size_t total_length = 0;
 
     for (int i = 0; i < arr_len; i++) {
-        const char* str = (const char*)get_dynarray_ptr(arr, i);
+        const char* str = (const char*)__c_get_dynarray_ptr(arr, i);
         if (str != NULL) {
             size_t string_length = strlen(str);
             if (total_length > SIZE_MAX - string_length) return NULL;
@@ -391,7 +391,7 @@ char* string_join(dynarray_ptr* arr, const char* separator) {
 
     size_t offset = 0;
     for (int i = 0; i < arr_len; i++) {
-        const char* str = (const char*)get_dynarray_ptr(arr, i);
+        const char* str = (const char*)__c_get_dynarray_ptr(arr, i);
         if (str != NULL) {
             size_t string_length = strlen(str);
             memcpy(result + offset, str, string_length);

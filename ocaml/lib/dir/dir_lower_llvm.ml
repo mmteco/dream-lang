@@ -207,7 +207,7 @@ let tuple_element_store buffer temp_name element_type element =
       (* 聚合类型装箱为堆对象，仅存指针 *)
       let box_name = temp_name ^ "_box" in
       let typed_name = temp_name ^ "_typed" in
-      Printf.bprintf buffer "  %s = call i8* @dream_closure_alloc(i64 %d)\n"
+      Printf.bprintf buffer "  %s = call i8* @__c_closure_alloc(i64 %d)\n"
         box_name (llvm_size element_type);
       Printf.bprintf buffer "  %s = bitcast i8* %s to %s*\n"
         typed_name box_name (llvm_ty element_type);
@@ -278,10 +278,10 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        let environment_type = llvm_env_value_ty capture_types in
        let environment = Printf.sprintf "%%dir_environment_%d" value in
        if capture_types = [] then
-         Printf.bprintf buffer "  %s = call %%dir_closure* @dream_closure_create(i8* bitcast (%s* @%s to i8*), i8* null)\n"
+         Printf.bprintf buffer "  %s = call %%dir_closure* @__c_closure_create(i8* bitcast (%s* @%s to i8*), i8* null)\n"
            (value_name value) (llvm_function_ty parameter_types return_type) name
        else begin
-         Printf.bprintf buffer "  %s = call i8* @dream_closure_alloc(i64 %d)\n"
+         Printf.bprintf buffer "  %s = call i8* @__c_closure_alloc(i64 %d)\n"
            environment (llvm_env_size capture_types);
          let typed_environment = environment ^ "_typed" in
          Printf.bprintf buffer "  %s = bitcast i8* %s to %s*\n"
@@ -293,7 +293,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
            Printf.bprintf buffer "  store %s %s, %s* %s\n"
              (llvm_ty capture_type) (operand capture) (llvm_ty capture_type) field_pointer
          ) (List.combine capture_types captures);
-         Printf.bprintf buffer "  %s = call %%dir_closure* @dream_closure_create(i8* bitcast (%s* @%s to i8*), i8* %s)\n"
+         Printf.bprintf buffer "  %s = call %%dir_closure* @__c_closure_create(i8* bitcast (%s* @%s to i8*), i8* %s)\n"
            (value_name value) (llvm_function_ty parameter_types return_type) name environment
        end
    | MakeClosure _ -> failwith "invalid DIR closure type"
@@ -311,7 +311,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        (* 聚合类型装箱为堆拷贝（引用计数管理，函数返回前由编译器释放） *)
        let typed_object = Printf.sprintf "%%dir_interface_box_typed_%d" value in
        let concrete_llvm_type = llvm_ty concrete_type in
-       Printf.bprintf buffer "  %s = call i8* @dream_interface_alloc(i64 %d)\n"
+       Printf.bprintf buffer "  %s = call i8* @__c_interface_alloc(i64 %d)\n"
          (value_name value) (llvm_size concrete_type);
        Printf.bprintf buffer "  %s = bitcast i8* %s to %s*\n"
          typed_object (value_name value) concrete_llvm_type;
@@ -352,10 +352,10 @@ let render_instruction string_literals value_types buffer _instruction_label ins
              | Some (Enum _) ->
                  Printf.bprintf buffer "  %%dir_release_raw_%d = bitcast %%enum_t* %s to i8*\n"
                    value (operand box_value);
-                 Printf.bprintf buffer "  call void @dream_interface_release(i8* %%dir_release_raw_%d)\n"
+                 Printf.bprintf buffer "  call void @__c_interface_release(i8* %%dir_release_raw_%d)\n"
                    value
              | _ ->
-                 Printf.bprintf buffer "  call void @dream_interface_release(i8* %s)\n"
+                 Printf.bprintf buffer "  call void @__c_interface_release(i8* %s)\n"
                    (operand box_value))
         | _ -> failwith "DIR interface_release requires an SSA box value")
    | MakeInterface _ -> failwith "invalid DIR interface type"
@@ -402,31 +402,31 @@ let render_instruction string_literals value_types buffer _instruction_label ins
               (llvm_ty result_type) typed_function call_arguments)
    | InterfaceCall _ -> failwith "invalid DIR interface call"
    | StringLength (value, string_value) ->
-       Printf.bprintf buffer "  %s = call i32 @string_length(i8* %s)\n"
+       Printf.bprintf buffer "  %s = call i32 @__c_str_len(i8* %s)\n"
          (value_name value) (operand string_value)
    | StringCompare (value, left, right) ->
-       Printf.bprintf buffer "  %s = call i32 @string_compare(i8* %s, i8* %s)\n"
+       Printf.bprintf buffer "  %s = call i32 @__c_str_compare(i8* %s, i8* %s)\n"
          (value_name value) (operand left) (operand right)
    | StringSlice (value, string_value, start, end_) ->
-       Printf.bprintf buffer "  %s = call i8* @string_substring(i8* %s, i32 %s, i32 %s)\n"
+       Printf.bprintf buffer "  %s = call i8* @__c_str_substring(i8* %s, i32 %s, i32 %s)\n"
          (value_name value) (operand string_value) (operand start) (operand end_)
    | ListLength (value, collection) ->
        (match operand_type value_types collection with
         | List I32 ->
-            Printf.bprintf buffer "  %s = call i32 @len_dynarray_i32(%%dynarray_i32* %s)\n"
+            Printf.bprintf buffer "  %s = call i32 @__c_len_dynarray_i32(%%dynarray_i32* %s)\n"
               (value_name value) (operand collection)
         | List _ ->
-            Printf.bprintf buffer "  %s = call i32 @len_dynarray_ptr(%%dynarray_ptr* %s)\n"
+            Printf.bprintf buffer "  %s = call i32 @__c_len_dynarray_ptr(%%dynarray_ptr* %s)\n"
               (value_name value) (operand collection)
         | _ -> failwith "DIR list_length requires a list collection")
    | ListGet (value, collection, index) ->
        (match operand_type value_types collection with
         | List I32 ->
-            Printf.bprintf buffer "  %s = call i32 @get_dynarray_i32(%%dynarray_i32* %s, i32 %s)\n"
+            Printf.bprintf buffer "  %s = call i32 @__c_get_dynarray_i32(%%dynarray_i32* %s, i32 %s)\n"
               (value_name value) (operand collection) (operand index)
         | List element_type ->
             let raw_name = Printf.sprintf "%%dir_list_raw_%d" value in
-            Printf.bprintf buffer "  %s = call i64 @get_dynarray_ptr(%%dynarray_ptr* %s, i32 %s)\n"
+            Printf.bprintf buffer "  %s = call i64 @__c_get_dynarray_ptr(%%dynarray_ptr* %s, i32 %s)\n"
               raw_name (operand collection) (operand index);
             tuple_element_load buffer (value_name value) element_type raw_name;
             Hashtbl.replace value_types value element_type
@@ -434,55 +434,55 @@ let render_instruction string_literals value_types buffer _instruction_label ins
    | ListCreate (value, element_type, values) ->
        (match element_type with
         | I32 ->
-            Printf.bprintf buffer "  %s = call %%dynarray_i32* @create_dynarray_i32(i32 %d)\n"
+            Printf.bprintf buffer "  %s = call %%dynarray_i32* @__c_create_dynarray_i32(i32 %d)\n"
               (value_name value) (List.length values);
             List.iter (fun item ->
-              Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+              Printf.bprintf buffer "  call void @__c_append_i32(%%dynarray_i32* %s, i32 %s)\n"
                 (value_name value) (operand item)
             ) values
         | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
-            Printf.bprintf buffer "  %s = call %%dynarray_ptr* @create_dynarray_ptr(i32 %d)\n"
+            Printf.bprintf buffer "  %s = call %%dynarray_ptr* @__c_create_dynarray_ptr(i32 %d)\n"
               (value_name value) (List.length values);
             List.iteri (fun index item ->
               let temp_name = Printf.sprintf "%%dir_list_elem_%d_%d" value index in
               tuple_element_store buffer temp_name element_type (operand item);
-              Printf.bprintf buffer "  call void @append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
+              Printf.bprintf buffer "  call void @__c_append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
                 (value_name value) temp_name
             ) values
         | _ -> failwith "DIR list_create supports only i32, str and tuple elements")
    | ListSlice (value, collection, start, end_) ->
        (match operand_type value_types collection with
         | List I32 ->
-            Printf.bprintf buffer "  %s = call %%dynarray_i32* @slice_dynarray_i32(%%dynarray_i32* %s, i32 %s, i32 %s)\n"
+            Printf.bprintf buffer "  %s = call %%dynarray_i32* @__c_slice_dynarray_i32(%%dynarray_i32* %s, i32 %s, i32 %s)\n"
               (value_name value) (operand collection) (operand start) (operand end_)
         | List element_type ->
-            Printf.bprintf buffer "  %s = call %%dynarray_ptr* @slice_dynarray_ptr(%%dynarray_ptr* %s, i32 %s, i32 %s)\n"
+            Printf.bprintf buffer "  %s = call %%dynarray_ptr* @__c_slice_dynarray_ptr(%%dynarray_ptr* %s, i32 %s, i32 %s)\n"
               (value_name value) (operand collection) (operand start) (operand end_);
             Hashtbl.replace value_types value (List element_type)
         | _ -> failwith "DIR list_slice requires a list collection")
    | ListConcat (value, left, right) ->
        (match operand_type value_types left, operand_type value_types right with
         | List I32, List I32 ->
-            Printf.bprintf buffer "  %s = call %%dynarray_i32* @concat_dynarray_i32(%%dynarray_i32* %s, %%dynarray_i32* %s)\n"
+            Printf.bprintf buffer "  %s = call %%dynarray_i32* @__c_concat_dynarray_i32(%%dynarray_i32* %s, %%dynarray_i32* %s)\n"
               (value_name value) (operand left) (operand right)
         | List element_type, List _ ->
-            Printf.bprintf buffer "  %s = call %%dynarray_ptr* @concat_dynarray_ptr(%%dynarray_ptr* %s, %%dynarray_ptr* %s)\n"
+            Printf.bprintf buffer "  %s = call %%dynarray_ptr* @__c_concat_dynarray_ptr(%%dynarray_ptr* %s, %%dynarray_ptr* %s)\n"
               (value_name value) (operand left) (operand right);
             Hashtbl.replace value_types value (List element_type)
         | _ -> failwith "DIR list_concat requires list collections of the same element type")
    | TupleCreate (value, element_types, values) ->
-       Printf.bprintf buffer "  %s = call %%dynarray_ptr* @create_dynarray_ptr(i32 %d)\n"
+       Printf.bprintf buffer "  %s = call %%dynarray_ptr* @__c_create_dynarray_ptr(i32 %d)\n"
          (value_name value) (List.length values);
        List.iteri (fun index item ->
          let temp_name = Printf.sprintf "%%dir_tuple_elem_%d_%d" value index in
          let element_type = List.nth element_types index in
          tuple_element_store buffer temp_name element_type (operand item);
-         Printf.bprintf buffer "  call void @append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
+         Printf.bprintf buffer "  call void @__c_append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
            (value_name value) temp_name
        ) values
    | TupleGet (value, element_type, tuple_value, index) ->
        let raw_name = Printf.sprintf "%%dir_tuple_raw_%d" value in
-       Printf.bprintf buffer "  %s = call i64 @get_dynarray_ptr(%%dynarray_ptr* %s, i32 %d)\n"
+       Printf.bprintf buffer "  %s = call i64 @__c_get_dynarray_ptr(%%dynarray_ptr* %s, i32 %d)\n"
          raw_name (operand tuple_value) index;
        tuple_element_load buffer (value_name value) element_type raw_name
    | StructCreate (value, name, fields, values) ->
@@ -512,10 +512,10 @@ let render_instruction string_literals value_types buffer _instruction_label ins
          (value_name value) (llvm_ty struct_type) (operand struct_value) index
    | EnumCreate (value, enum_type, tag, payload_type, payload) ->
        let create_name = match payload_type with
-         | I32 -> "enum_create_int"
-         | F64 -> "enum_create_float"
-         | Str -> "enum_create_string"
-         | Bool -> "enum_create_bool"
+         | I32 -> "__c_enum_create_int"
+         | F64 -> "__c_enum_create_float"
+         | Str -> "__c_enum_create_str"
+         | Bool -> "__c_enum_create_bool"
          | _ -> failwith "DIR enum payload type is not supported"
        in
        Printf.bprintf buffer "  %s = call %s @%s(i32 %d, %s %s)\n"
@@ -526,7 +526,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        let payload_name = Printf.sprintf "%%dir_enum_ptr_payload_%d" value in
        Printf.bprintf buffer "  %s = bitcast %s %s to i8*\n"
          payload_name (llvm_ty payload_type) (operand payload);
-       Printf.bprintf buffer "  %s = call %%enum_t* @enum_create_tuple_ptr(i32 %d, i8* %s)\n"
+       Printf.bprintf buffer "  %s = call %%enum_t* @__c_enum_create_tuple_ptr(i32 %d, i8* %s)\n"
          (value_name value) tag payload_name
    | EnumCreateMulti (value, _enum_type, tag, payload_types, payloads) ->
        let payload_type = llvm_env_value_ty payload_types in
@@ -542,21 +542,21 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        let payload_bytes = Printf.sprintf "%%dir_enum_payload_bytes_%d" value in
        Printf.bprintf buffer "  %s = bitcast %s* %s to i8*\n"
          payload_bytes payload_type payload_pointer;
-       Printf.bprintf buffer "  %s = call %%enum_t* @enum_create_tuple(i32 %d, i8* %s, i64 %d)\n"
+       Printf.bprintf buffer "  %s = call %%enum_t* @__c_enum_create_tuple(i32 %d, i8* %s, i64 %d)\n"
          (value_name value) tag payload_bytes (llvm_env_size payload_types)
    | EnumCreateSimple (value, _enum_type, tag) ->
        (* 总是创建 %enum_t* 堆对象，与无载荷 enum 的 i32 表示无关 *)
-       Printf.bprintf buffer "  %s = call %%enum_t* @enum_create_simple(i32 %d)\n"
+       Printf.bprintf buffer "  %s = call %%enum_t* @__c_enum_create_simple(i32 %d)\n"
          (value_name value) tag
    | EnumTag (value, enum_value) ->
-       Printf.bprintf buffer "  %s = call i32 @enum_get_tag(%%enum_t* %s)\n"
+       Printf.bprintf buffer "  %s = call i32 @__c_enum_get_tag(%%enum_t* %s)\n"
          (value_name value) (operand enum_value)
    | EnumGet (value, field_type, enum_value, _) ->
        let getter_name = match field_type with
-         | I32 -> "enum_get_int"
-         | F64 -> "enum_get_float"
-         | Str -> "enum_get_string"
-         | Bool -> "enum_get_bool"
+         | I32 -> "__c_enum_get_int"
+         | F64 -> "__c_enum_get_float"
+         | Str -> "__c_enum_get_str"
+         | Bool -> "__c_enum_get_bool"
          | _ -> failwith "DIR enum payload type is not supported"
        in
        Printf.bprintf buffer "  %s = call %s @%s(%%enum_t* %s)\n"
@@ -564,7 +564,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
    | EnumGetMulti (value, field_type, [_], enum_value, _, _)
      when is_pointer_payload field_type ->
        let data_pointer = Printf.sprintf "%%dir_enum_data_%d" value in
-       Printf.bprintf buffer "  %s = call i8* @enum_get_data(%%enum_t* %s)\n"
+       Printf.bprintf buffer "  %s = call i8* @__c_enum_get_data(%%enum_t* %s)\n"
          data_pointer (operand enum_value);
        Printf.bprintf buffer "  %s = bitcast i8* %s to %s\n"
          (value_name value) data_pointer (llvm_ty field_type)
@@ -573,7 +573,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        let data_pointer = Printf.sprintf "%%dir_enum_data_%d" value in
        let typed_data = Printf.sprintf "%%dir_enum_typed_data_%d" value in
        let field_pointer = Printf.sprintf "%%dir_enum_field_get_%d" value in
-       Printf.bprintf buffer "  %s = call i8* @enum_get_data(%%enum_t* %s)\n"
+       Printf.bprintf buffer "  %s = call i8* @__c_enum_get_data(%%enum_t* %s)\n"
          data_pointer (operand enum_value);
        Printf.bprintf buffer "  %s = bitcast i8* %s to %s*\n"
          typed_data data_pointer payload_type;
@@ -584,28 +584,28 @@ let render_instruction string_literals value_types buffer _instruction_label ins
    | ListAppend (collection, value, element_type) ->
        (match element_type with
         | I32 ->
-            Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+            Printf.bprintf buffer "  call void @__c_append_i32(%%dynarray_i32* %s, i32 %s)\n"
               (operand collection) (operand value)
         | F64 ->
-            Printf.bprintf buffer "  call void @append_f64(%%dynarray_i32* %s, double %s)\n"
+            Printf.bprintf buffer "  call void @__c_append_f64(%%dynarray_i32* %s, double %s)\n"
               (operand collection) (operand value)
         | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
             let elem_int_name = match value with
               | Value n -> Printf.sprintf "%%dir_append_elem_v%d" n
               | _ -> failwith "list append element must be a value" in
             tuple_element_store buffer elem_int_name element_type (operand value);
-            Printf.bprintf buffer "  call void @append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
+            Printf.bprintf buffer "  call void @__c_append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
               (operand collection) elem_int_name
         | Bool ->
             let zext_name = Printf.sprintf "%s.zext" (operand value) in
             Printf.bprintf buffer "  %s = zext i1 %s to i32\n" zext_name (operand value);
-            Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+            Printf.bprintf buffer "  call void @__c_append_i32(%%dynarray_i32* %s, i32 %s)\n"
               (operand collection) zext_name
         | _ ->
-            Printf.bprintf buffer "  call void @append_i32(%%dynarray_i32* %s, i32 %s)\n"
+            Printf.bprintf buffer "  call void @__c_append_i32(%%dynarray_i32* %s, i32 %s)\n"
               (operand collection) (operand value))
    | ListSet (collection, index, value) ->
-       Printf.bprintf buffer "  call void @set_dynarray_i32(%%dynarray_i32* %s, i32 %s, i32 %s)\n"
+       Printf.bprintf buffer "  call void @__c_set_dynarray_i32(%%dynarray_i32* %s, i32 %s, i32 %s)\n"
          (operand collection) (operand index) (operand value)
    | GlobalLoad (value, ty, name) ->
        Printf.bprintf buffer "  %s = load %s, %s* @%s\n"
@@ -692,7 +692,7 @@ let render_terminator string_literals value_types current_label return_type buff
                    let comparison_name = Printf.sprintf
                      "%%dir_switch_string_compare_%s_%d" current_label case_index in
                    Printf.bprintf buffer
-                     "  %s = call i32 @string_compare(i8* %s, i8* %s)\n"
+                     "  %s = call i32 @__c_str_compare(i8* %s, i8* %s)\n"
                      comparison_name (render_operand string_literals value)
                      (render_operand string_literals case_value);
                    Printf.bprintf buffer "  %s = icmp eq i32 %s, 0\n"
@@ -890,40 +890,40 @@ let render module_ =
     Printf.bprintf buffer "@%s = global %s zeroinitializer\n" name (llvm_ty ty)
   ) module_.globals;
   if module_.globals <> [] then Buffer.add_char buffer '\n';
-  Buffer.add_string buffer "declare %dynarray_i32* @create_dynarray_i32(i32)\n";
-  Buffer.add_string buffer "declare void @append_i32(%dynarray_i32*, i32)\n";
-  Buffer.add_string buffer "declare void @append_f64(%dynarray_i32*, double)\n";
-  Buffer.add_string buffer "declare void @set_dynarray_i32(%dynarray_i32*, i32, i32)\n";
-  Buffer.add_string buffer "declare i32 @len_dynarray_i32(%dynarray_i32*)\n";
-  Buffer.add_string buffer "declare i32 @get_dynarray_i32(%dynarray_i32*, i32)\n";
-  Buffer.add_string buffer "declare %dynarray_i32* @slice_dynarray_i32(%dynarray_i32*, i32, i32)\n";
-  Buffer.add_string buffer "declare %dynarray_i32* @concat_dynarray_i32(%dynarray_i32*, %dynarray_i32*)\n";
-  Buffer.add_string buffer "declare %dynarray_ptr* @create_dynarray_ptr(i32)\n";
-  Buffer.add_string buffer "declare void @append_ptr(%dynarray_ptr*, i64)\n";
-  Buffer.add_string buffer "declare i64 @get_dynarray_ptr(%dynarray_ptr*, i32)\n";
-  Buffer.add_string buffer "declare i32 @len_dynarray_ptr(%dynarray_ptr*)\n";
-  Buffer.add_string buffer "declare %dynarray_ptr* @slice_dynarray_ptr(%dynarray_ptr*, i32, i32)\n";
-  Buffer.add_string buffer "declare %dynarray_ptr* @concat_dynarray_ptr(%dynarray_ptr*, %dynarray_ptr*)\n\n";
-  Buffer.add_string buffer "declare i8* @string_substring(i8*, i32, i32)\n";
-  Buffer.add_string buffer "declare i32 @string_compare(i8*, i8*)\n";
+  Buffer.add_string buffer "declare %dynarray_i32* @__c_create_dynarray_i32(i32)\n";
+  Buffer.add_string buffer "declare void @__c_append_i32(%dynarray_i32*, i32)\n";
+  Buffer.add_string buffer "declare void @__c_append_f64(%dynarray_i32*, double)\n";
+  Buffer.add_string buffer "declare void @__c_set_dynarray_i32(%dynarray_i32*, i32, i32)\n";
+  Buffer.add_string buffer "declare i32 @__c_len_dynarray_i32(%dynarray_i32*)\n";
+  Buffer.add_string buffer "declare i32 @__c_get_dynarray_i32(%dynarray_i32*, i32)\n";
+  Buffer.add_string buffer "declare %dynarray_i32* @__c_slice_dynarray_i32(%dynarray_i32*, i32, i32)\n";
+  Buffer.add_string buffer "declare %dynarray_i32* @__c_concat_dynarray_i32(%dynarray_i32*, %dynarray_i32*)\n";
+  Buffer.add_string buffer "declare %dynarray_ptr* @__c_create_dynarray_ptr(i32)\n";
+  Buffer.add_string buffer "declare void @__c_append_ptr(%dynarray_ptr*, i64)\n";
+  Buffer.add_string buffer "declare i64 @__c_get_dynarray_ptr(%dynarray_ptr*, i32)\n";
+  Buffer.add_string buffer "declare i32 @__c_len_dynarray_ptr(%dynarray_ptr*)\n";
+  Buffer.add_string buffer "declare %dynarray_ptr* @__c_slice_dynarray_ptr(%dynarray_ptr*, i32, i32)\n";
+  Buffer.add_string buffer "declare %dynarray_ptr* @__c_concat_dynarray_ptr(%dynarray_ptr*, %dynarray_ptr*)\n\n";
+  Buffer.add_string buffer "declare i8* @__c_str_substring(i8*, i32, i32)\n";
+  Buffer.add_string buffer "declare i32 @__c_str_compare(i8*, i8*)\n";
   Buffer.add_string buffer "declare void @__c_process_set_args(i32, i8**)\n";
-  Buffer.add_string buffer "declare i8* @dream_closure_alloc(i64)\n";
-  Buffer.add_string buffer "declare i8* @dream_interface_alloc(i64)\n";
-  Buffer.add_string buffer "declare void @dream_interface_release(i8*)\n";
-  Buffer.add_string buffer "declare %dir_closure* @dream_closure_create(i8*, i8*)\n";
-  Buffer.add_string buffer "declare %enum_t* @enum_create_simple(i32)\n";
-  Buffer.add_string buffer "declare %enum_t* @enum_create_int(i32, i32)\n";
-  Buffer.add_string buffer "declare %enum_t* @enum_create_float(i32, double)\n";
-  Buffer.add_string buffer "declare %enum_t* @enum_create_string(i32, i8*)\n";
-  Buffer.add_string buffer "declare %enum_t* @enum_create_bool(i32, i1)\n";
-  Buffer.add_string buffer "declare i32 @enum_get_tag(%enum_t*)\n";
-  Buffer.add_string buffer "declare i32 @enum_get_int(%enum_t*)\n";
-  Buffer.add_string buffer "declare double @enum_get_float(%enum_t*)\n";
-  Buffer.add_string buffer "declare i8* @enum_get_string(%enum_t*)\n";
-  Buffer.add_string buffer "declare i1 @enum_get_bool(%enum_t*)\n";
-  Buffer.add_string buffer "declare %enum_t* @enum_create_tuple(i32, i8*, i64)\n";
-  Buffer.add_string buffer "declare %enum_t* @enum_create_tuple_ptr(i32, i8*)\n";
-  Buffer.add_string buffer "declare i8* @enum_get_data(%enum_t*)\n";
+  Buffer.add_string buffer "declare i8* @__c_closure_alloc(i64)\n";
+  Buffer.add_string buffer "declare i8* @__c_interface_alloc(i64)\n";
+  Buffer.add_string buffer "declare void @__c_interface_release(i8*)\n";
+  Buffer.add_string buffer "declare %dir_closure* @__c_closure_create(i8*, i8*)\n";
+  Buffer.add_string buffer "declare %enum_t* @__c_enum_create_simple(i32)\n";
+  Buffer.add_string buffer "declare %enum_t* @__c_enum_create_int(i32, i32)\n";
+  Buffer.add_string buffer "declare %enum_t* @__c_enum_create_float(i32, double)\n";
+  Buffer.add_string buffer "declare %enum_t* @__c_enum_create_str(i32, i8*)\n";
+  Buffer.add_string buffer "declare %enum_t* @__c_enum_create_bool(i32, i1)\n";
+  Buffer.add_string buffer "declare i32 @__c_enum_get_tag(%enum_t*)\n";
+  Buffer.add_string buffer "declare i32 @__c_enum_get_int(%enum_t*)\n";
+  Buffer.add_string buffer "declare double @__c_enum_get_float(%enum_t*)\n";
+  Buffer.add_string buffer "declare i8* @__c_enum_get_str(%enum_t*)\n";
+  Buffer.add_string buffer "declare i1 @__c_enum_get_bool(%enum_t*)\n";
+  Buffer.add_string buffer "declare %enum_t* @__c_enum_create_tuple(i32, i8*, i64)\n";
+  Buffer.add_string buffer "declare %enum_t* @__c_enum_create_tuple_ptr(i32, i8*)\n";
+  Buffer.add_string buffer "declare i8* @__c_enum_get_data(%enum_t*)\n";
   List.iter (fun artifact ->
     Buffer.add_string buffer (render_interface_artifact artifact)
   ) (interface_artifacts module_);

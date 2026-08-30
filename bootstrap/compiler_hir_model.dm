@@ -795,9 +795,9 @@ def hir_diag_report(program: HirProgram, context: HirDiagnosticContext, func_ind
     __c_eprint_text("warning: ")
     __c_eprint_text(hir_diag_file_path(context, file_index))
     __c_eprint_text(":")
-    __c_eprint_int(line[0])
+    __c_debug_eprint_int(line[0])
     __c_eprint_text(":")
-    __c_eprint_int(column[0])
+    __c_debug_eprint_int(column[0])
     __c_eprint_text(": unreachable code in function ")
     __c_eprint_text(hir_diag_func_name(context, func_index))
     __c_eprint_text("\n")
@@ -1087,7 +1087,7 @@ def hir_external_type_for_name(name: str) -> int:
     let string_names: list[str] = ["__c_process_arg", "__c_bytes_to_str"]
     if name == "ord":
         return HIR_TYPE_I32
-    if name == "string_split":
+    if name == "__c_str_split":
         return HIR_TYPE_LIST
     if name in byte_names:
         return HIR_TYPE_BYTES

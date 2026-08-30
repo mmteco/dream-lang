@@ -36,7 +36,7 @@ def from_int(value: int) -> str:
     return result
 
 def split(value: str, separator: str) -> list[str]:
-    return string_split(value, separator)
+    return __c_str_split(value, separator)
 
 def join(values: list[str], separator: str) -> str:
-    return string_join(values, separator)
+    return __c_str_join(values, separator)

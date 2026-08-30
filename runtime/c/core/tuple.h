@@ -28,6 +28,6 @@ void tuple_free(void* tuple);
 dynarray_ptr* dict_items(dict_t* dict);
 
 // 字典项转为编译器通用元组表示（元素为 dynarray_ptr 的 intptr_t 数组）
-dynarray_ptr* dict_items_tuples(dict_t* dict);
+dynarray_ptr* __c_dict_items_tuples(dict_t* dict);
 
 #endif

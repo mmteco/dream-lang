@@ -1140,10 +1140,10 @@ def mir_external_type(external_id: int) -> int:
 
 def mir_external_type_for_name(name: str, external_id: int) -> int:
     let dict_names: list[str] = [
-        "dream_dict_create_int_int",
-        "dream_dict_create_int_str",
-        "dream_dict_create_str_int",
-        "dream_dict_create_str_str",
+        "__c_dict_create_int_int",
+        "__c_dict_create_int_str",
+        "__c_dict_create_str_int",
+        "__c_dict_create_str_str",
     ]
     let bytes_names: list[str] = [
         "__c_file_read_bytes",
@@ -1154,15 +1154,15 @@ def mir_external_type_for_name(name: str, external_id: int) -> int:
     ]
     let string_names: list[str] = [
         "__c_bytes_to_str",
-        "string_concat",
-        "string_upper",
-        "string_lower",
-        "string_strip",
-        "string_join",
+        "__c_str_concat",
+        "__c_str_upper",
+        "__c_str_lower",
+        "__c_str_strip",
+        "__c_str_join",
     ]
-    if name == "string_split":
+    if name == "__c_str_split":
         return MIR_TYPE_LIST_PTR
-    if name == "dict_items_tuples":
+    if name == "__c_dict_items_tuples":
         return MIR_TYPE_LIST_PTR
     if name in dict_names:
         return MIR_TYPE_DICT
@@ -1692,7 +1692,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                 initializer_node = hir.values[initializer_offset + 1]
                 initializer = mir_lower_hir_node(hir, initializer_node, state)
         # ? 后缀：Result 解包（auxiliary_start 携带标志）。
-        # Ok：取 enum_get_int 载荷；Err：短路 RETURN 原 Result 盒（块级条件分支）
+        # Ok：取 __c_enum_get_int 载荷；Err：短路 RETURN 原 Result 盒（块级条件分支）
         if initializer >= 0 and hir.records[offset + 7] == 1:
             let question_tag = mir_int_list_get(state.next_value, 0)
             mir_int_list_set(state.next_value, 0, question_tag + 1)
@@ -1923,7 +1923,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
     if opcode == HIR_OP_LAMBDA:
         return mir_lower_hir_lambda(hir, node_id, state)
     if opcode == HIR_OP_ENUM and record_kind != HIR_RECORD_PATTERN:
-        # 无载荷枚举变体表达式（None）：enum_create_simple(tag)
+        # 无载荷枚举变体表达式（None）：__c_enum_create_simple(tag)
         # 变体名取 record 的 name 区间（表达式节点的 payload 不含变体名）
         let variant_name_start = hir.records[offset + 9]
         let variant_name_end = hir.records[offset + 10]
@@ -2121,7 +2121,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
             argument_values = merged_arguments
             # 接口分发：append(struct_target, v) → 对应 impl 方法。
             # 目标为带 Append 实现的结构体时，覆盖外部 runtime-append 路径，
-        # 否则 @append_pointer 会把值写进结构体盒子自身，破坏相邻堆内存。
+        # 否则 @__c_append_pointer 会把值写进结构体盒子自身，破坏相邻堆内存。
         # 分发结果写入全新变量，避免对既有绑定的重绑定丢失问题。
         let dispatched_function = -1
         if callee_name_text == "append" and enum_construct_tag < 0 and len(argument_values) >= 1:
@@ -3093,7 +3093,7 @@ def mir_expand_pattern(hir: HirProgram, pattern_id: int, subject: int, state: Mi
                 variant_payload_kind = 1
             enum_get_external = MIR_EXTERNAL_BASE + EXTERNAL_ID_ENUM_GET_TAG
         if variant_tag >= 0 and subject >= 0:
-            # tag 比较:enum_get_tag(subject) == tag
+            # tag 比较:__c_enum_get_tag(subject) == tag
             let tag_call = mir_int_list_get(state.next_value, 0)
             mir_int_list_set(state.next_value, 0, tag_call + 1)
             let tag_start = mir_value_count(state.values)
@@ -4647,7 +4647,7 @@ def mir_model_build_program(hir_records: list[int], hir_values: list[int], hir_s
 
 def mir_validation_error(record_id: int, reason: str) -> bool:
     __c_eprint_text("MIR validation failed record=")
-    __c_eprint_int(record_id)
+    __c_debug_eprint_int(record_id)
     __c_eprint_text(" reason=")
     __c_eprint_text(reason)
     __c_eprint_text("\n")
@@ -4871,22 +4871,22 @@ def mir_validate_model_program(program: MirProgram) -> bool:
                 return mir_validation_error(record_id, "unknown jump block")
             let parameter_count = mir_block_parameter_count(index, func_index, target_block)
             if operand_count != parameter_count + 1:
-                __c_eprint_int(record_id)
+                __c_debug_eprint_int(record_id)
                 __c_eprint_text(" fn=")
-                __c_eprint_int(func_index)
+                __c_debug_eprint_int(func_index)
                 __c_eprint_text(" opc=")
-                __c_eprint_int(operand_count)
+                __c_debug_eprint_int(operand_count)
                 __c_eprint_text(" tgt=")
-                __c_eprint_int(target_block)
+                __c_debug_eprint_int(target_block)
                 __c_eprint_text(" pc=")
-                __c_eprint_int(parameter_count)
+                __c_debug_eprint_int(parameter_count)
                 let debug_index = 0
                 while debug_index < operand_count:
                     let debug_offset = mir_value_offset(operand_start + debug_index)
                     __c_eprint_text(" v")
-                    __c_eprint_int(mir_int_list_get(values, debug_offset))
+                    __c_debug_eprint_int(mir_int_list_get(values, debug_offset))
                     __c_eprint_text(":")
-                    __c_eprint_int(mir_int_list_get(values, debug_offset + 1))
+                    __c_debug_eprint_int(mir_int_list_get(values, debug_offset + 1))
                     debug_index = debug_index + 1
                 __c_eprint_text("\n")
                 return mir_validation_error(record_id, "jump argument count")
@@ -4922,15 +4922,15 @@ def mir_validate_model_program(program: MirProgram) -> bool:
                     expected_argument_count = false_argument_count
                 if mir_block_parameter_count(index, func_index,
                     values[target_offset + 1]) != expected_argument_count:
-                    __c_eprint_int(record_id)
+                    __c_debug_eprint_int(record_id)
                     __c_eprint_text(" tgt=")
-                    __c_eprint_int(branch_target_index)
+                    __c_debug_eprint_int(branch_target_index)
                     __c_eprint_text(" blk=")
-                    __c_eprint_int(values[target_offset + 1])
+                    __c_debug_eprint_int(values[target_offset + 1])
                     __c_eprint_text(" exp=")
-                    __c_eprint_int(expected_argument_count)
+                    __c_debug_eprint_int(expected_argument_count)
                     __c_eprint_text(" got=")
-                    __c_eprint_int(mir_block_parameter_count(index, func_index, values[target_offset + 1]))
+                    __c_debug_eprint_int(mir_block_parameter_count(index, func_index, values[target_offset + 1]))
                     __c_eprint_text("\n")
                     return mir_validation_error(record_id, "branch arguments")
                 branch_target_index = branch_target_index + 1

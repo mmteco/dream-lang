@@ -625,19 +625,19 @@ def ast_validate_program(ast: list[int]) -> bool:
     while node < len(ast):
         if not ast_validate_node_children(ast, node):
             __c_eprint_text("AST validation failed node=")
-            __c_eprint_int(node)
+            __c_debug_eprint_int(node)
             __c_eprint_text(" kind=")
-            __c_eprint_int(ast_node_kind(ast, node))
+            __c_debug_eprint_int(ast_node_kind(ast, node))
             __c_eprint_text(" start=")
-            __c_eprint_int(ast_node_start(ast, node))
+            __c_debug_eprint_int(ast_node_start(ast, node))
             __c_eprint_text(" end=")
-            __c_eprint_int(ast_node_end(ast, node))
+            __c_debug_eprint_int(ast_node_end(ast, node))
             __c_eprint_text(" args=")
             let diagnostic_argument_index = 0
             while diagnostic_argument_index < ast_node_size(ast, node) - AST_HEADER_SIZE:
                 if diagnostic_argument_index > 0:
                     __c_eprint_text(",")
-                __c_eprint_int(ast_node_arg(ast, node, diagnostic_argument_index))
+                __c_debug_eprint_int(ast_node_arg(ast, node, diagnostic_argument_index))
                 diagnostic_argument_index = diagnostic_argument_index + 1
             __c_eprint_text("\n")
             return false

@@ -1,7 +1,7 @@
 # 路径操作标准库
 
 def is_abs(value: str) -> bool:
-    return string_starts_with(value, "/")
+    return __c_str_starts_with(value, "/")
 
 def last_separator(value: str) -> int:
     let result = -1

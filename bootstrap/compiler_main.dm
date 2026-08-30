@@ -386,7 +386,7 @@ def compiler_debug_checkpoint(label: str, previous_time: int) -> int:
     __c_eprint_text("[timing] ")
     __c_eprint_text(label)
     __c_eprint_text(" ")
-    __c_eprint_int(current_time - previous_time)
+    __c_debug_eprint_int(current_time - previous_time)
     __c_eprint_text("ms\n")
     return current_time
 

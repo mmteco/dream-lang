@@ -51,19 +51,19 @@ dict_t* dict_create(dict_key_type key_type, dict_val_type val_type, int initial_
     return dict;
 }
 
-dict_t* dream_dict_create_int_int(int initial_capacity) {
+dict_t* __c_dict_create_int_int(int initial_capacity) {
     return dict_create(DICT_KEY_INT, DICT_VAL_INT, initial_capacity);
 }
 
-dict_t* dream_dict_create_int_str(int initial_capacity) {
+dict_t* __c_dict_create_int_str(int initial_capacity) {
     return dict_create(DICT_KEY_INT, DICT_VAL_STRING, initial_capacity);
 }
 
-dict_t* dream_dict_create_str_int(int initial_capacity) {
+dict_t* __c_dict_create_str_int(int initial_capacity) {
     return dict_create(DICT_KEY_STRING, DICT_VAL_INT, initial_capacity);
 }
 
-dict_t* dream_dict_create_str_str(int initial_capacity) {
+dict_t* __c_dict_create_str_str(int initial_capacity) {
     return dict_create(DICT_KEY_STRING, DICT_VAL_STRING, initial_capacity);
 }
 
@@ -232,27 +232,27 @@ static void* dict_get_internal(dict_t* dict, void* key, bool* found) {
     return NULL;
 }
 
-void dict_set_int_int(dict_t* dict, int key, int value) {
+void __c_dict_set_int_int(dict_t* dict, int key, int value) {
     dict_set_internal(dict, (void*)(intptr_t)key, (void*)(intptr_t)value);
 }
 
-void dict_set_int_str(dict_t* dict, int key, const char* value) {
+void __c_dict_set_int_str(dict_t* dict, int key, const char* value) {
     dict_set_internal(dict, (void*)(intptr_t)key, (void*)value);
 }
 
-void dict_set_int_ptr(dict_t* dict, int key, void* value) {
+void __c_dict_set_int_ptr(dict_t* dict, int key, void* value) {
     dict_set_internal(dict, (void*)(intptr_t)key, value);
 }
 
-void dict_set_str_int(dict_t* dict, const char* key, int value) {
+void __c_dict_set_str_int(dict_t* dict, const char* key, int value) {
     dict_set_internal(dict, (void*)key, (void*)(intptr_t)value);
 }
 
-void dict_set_str_str(dict_t* dict, const char* key, const char* value) {
+void __c_dict_set_str_str(dict_t* dict, const char* key, const char* value) {
     dict_set_internal(dict, (void*)key, (void*)value);
 }
 
-void dict_set_str_ptr(dict_t* dict, const char* key, void* value) {
+void __c_dict_set_str_ptr(dict_t* dict, const char* key, void* value) {
     dict_set_internal(dict, (void*)key, value);
 }
 
@@ -288,35 +288,35 @@ char* dict_get_str_str(dict_t* dict, const char* key, bool* found) {
     return *result_found ? (char*)value : NULL;
 }
 
-int dream_dict_get_int_int(dict_t* dict, int key) {
+int __c_dict_get_int_int(dict_t* dict, int key) {
     return dict_get_int_int(dict, key, NULL);
 }
 
-char* dream_dict_get_int_str(dict_t* dict, int key) {
+char* __c_dict_get_int_str(dict_t* dict, int key) {
     return dict_get_int_str(dict, key, NULL);
 }
 
-int dream_dict_get_str_int(dict_t* dict, const char* key) {
+int __c_dict_get_str_int(dict_t* dict, const char* key) {
     return dict_get_str_int(dict, key, NULL);
 }
 
-char* dream_dict_get_str_str(dict_t* dict, const char* key) {
+char* __c_dict_get_str_str(dict_t* dict, const char* key) {
     return dict_get_str_str(dict, key, NULL);
 }
 
-int dream_dict_size_int_int(dict_t* dict) {
+int __c_dict_size_int_int(dict_t* dict) {
     return dict_size(dict);
 }
 
-int dream_dict_size_int_str(dict_t* dict) {
+int __c_dict_size_int_str(dict_t* dict) {
     return dict_size(dict);
 }
 
-int dream_dict_size_str_int(dict_t* dict) {
+int __c_dict_size_str_int(dict_t* dict) {
     return dict_size(dict);
 }
 
-int dream_dict_size_str_str(dict_t* dict) {
+int __c_dict_size_str_str(dict_t* dict) {
     return dict_size(dict);
 }
 

@@ -77,7 +77,7 @@ void tuple_free(void* ptr) {
 dynarray_ptr* dict_items(dict_t* dict) {
     if (dict == NULL) return NULL;
 
-    dynarray_ptr* items = create_dynarray_ptr(dict->size);
+    dynarray_ptr* items = __c_create_dynarray_ptr(dict->size);
     if (items == NULL) return NULL;
 
     for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
@@ -88,10 +88,10 @@ dynarray_ptr* dict_items(dict_t* dict) {
 
             tuple2_ptr* pair = (tuple2_ptr*)create_tuple2_ptr(key, value);
             if (pair == NULL) {
-                free_dynarray_ptr(items);
+                __c_free_dynarray_ptr(items);
                 return NULL;
             }
-            append_ptr(items, (intptr_t)pair);
+            __c_append_ptr(items, (intptr_t)pair);
             entry = entry->next;
         }
     }
@@ -100,23 +100,23 @@ dynarray_ptr* dict_items(dict_t* dict) {
 }
 
 // 与 dict_items 相同，但元素为通用元组表示（dynarray_ptr 的 intptr_t 数组），供编译器 list[tuple] 使用
-dynarray_ptr* dict_items_tuples(dict_t* dict) {
+dynarray_ptr* __c_dict_items_tuples(dict_t* dict) {
     if (dict == NULL) return NULL;
 
-    dynarray_ptr* items = create_dynarray_ptr(dict->size);
+    dynarray_ptr* items = __c_create_dynarray_ptr(dict->size);
     if (items == NULL) return NULL;
 
     for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
         dict_entry_t* entry = dict->buckets[bucket_index];
         while (entry != NULL) {
-            dynarray_ptr* pair = create_dynarray_ptr(2);
+            dynarray_ptr* pair = __c_create_dynarray_ptr(2);
             if (pair == NULL) {
-                free_dynarray_ptr(items);
+                __c_free_dynarray_ptr(items);
                 return NULL;
             }
-            append_ptr(pair, (intptr_t)entry->key);
-            append_ptr(pair, (intptr_t)entry->value);
-            append_ptr(items, (intptr_t)pair);
+            __c_append_ptr(pair, (intptr_t)entry->key);
+            __c_append_ptr(pair, (intptr_t)entry->value);
+            __c_append_ptr(items, (intptr_t)pair);
             entry = entry->next;
         }
     }

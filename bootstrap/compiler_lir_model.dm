@@ -91,7 +91,7 @@ def lir_debug_checkpoint(label: str, previous_time: int) -> int:
     __c_eprint_text("[timing] lir-")
     __c_eprint_text(label)
     __c_eprint_text(" ")
-    __c_eprint_int(current_time - previous_time)
+    __c_debug_eprint_int(current_time - previous_time)
     __c_eprint_text("ms\n")
     return current_time
 
@@ -722,7 +722,7 @@ def lir_infer_block_parameter_types(program: LirProgram):
 
 def lir_validation_error(record_id: int, reason: str) -> bool:
     __c_eprint_text("LIR validation failed record=")
-    __c_eprint_int(record_id)
+    __c_debug_eprint_int(record_id)
     __c_eprint_text(" reason=")
     __c_eprint_text(reason)
     __c_eprint_text("\n")

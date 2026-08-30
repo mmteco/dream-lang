@@ -160,16 +160,16 @@ and lower_string_method context function_builder environment object_value method
     | _ -> fail_at position (method_name ^ " expects one argument")
   in
   match method_name with
-  | "length" -> unary_str_call "string_length" I32
-  | "upper" -> unary_str_call "string_upper" Str
-  | "lower" -> unary_str_call "string_lower" Str
-  | "strip" -> unary_str_call "string_strip" Str
-  | "find" -> binary_str_call "string_find" I32
-  | "startswith" -> binary_str_call "string_starts_with" Bool
-  | "endswith" -> binary_str_call "string_ends_with" Bool
-  | "isdigit" -> char_test_call "string_is_digit"
-  | "isalpha" -> char_test_call "string_is_alpha"
-  | "isspace" -> char_test_call "string_is_whitespace"
+  | "length" -> unary_str_call "__c_str_len" I32
+  | "upper" -> unary_str_call "__c_str_upper" Str
+  | "lower" -> unary_str_call "__c_str_lower" Str
+  | "strip" -> unary_str_call "__c_str_strip" Str
+  | "find" -> binary_str_call "__c_str_find" I32
+  | "startswith" -> binary_str_call "__c_str_starts_with" Bool
+  | "endswith" -> binary_str_call "__c_str_ends_with" Bool
+  | "isdigit" -> char_test_call "__c_str_is_digit"
+  | "isalpha" -> char_test_call "__c_str_is_alpha"
+  | "isspace" -> char_test_call "__c_str_is_whitespace"
   | "encode" -> unary_str_call "__c_str_to_bytes" Bytes
   | "replace" ->
       (match lowered_arguments with
@@ -177,7 +177,7 @@ and lower_string_method context function_builder environment object_value method
            expect_type position Str old_text.ty "replace old";
            expect_type position Str new_text.ty "replace new";
            let value = fresh_value function_builder in
-           emit function_builder (Call (Some value, Str, "string_replace",
+           emit function_builder (Call (Some value, Str, "__c_str_replace",
              [Str; Str; Str],
              [object_value.operand; old_text.operand; new_text.operand]));
            { operand = Value value; ty = Str }
@@ -187,7 +187,7 @@ and lower_string_method context function_builder environment object_value method
        | [separator] ->
            expect_type position Str separator.ty "split separator";
            let value = fresh_value function_builder in
-           emit function_builder (Call (Some value, List Str, "string_split",
+           emit function_builder (Call (Some value, List Str, "__c_str_split",
              [Str; Str], [object_value.operand; separator.operand]));
            { operand = Value value; ty = List Str }
        | _ -> fail_at position "split expects one argument")
@@ -196,7 +196,7 @@ and lower_string_method context function_builder environment object_value method
        | [items] ->
            expect_type position (List Str) items.ty "join items";
            let value = fresh_value function_builder in
-           emit function_builder (Call (Some value, Str, "string_join",
+           emit function_builder (Call (Some value, Str, "__c_str_join",
              [List Str; Str], [items.operand; object_value.operand]));
            { operand = Value value; ty = Str }
        | _ -> fail_at position "join expects one argument")
@@ -209,7 +209,7 @@ and lower_bytes_method context function_builder environment object_value method_
   match method_name, lowered_arguments with
   | "length", [] ->
       let value = fresh_value function_builder in
-      emit function_builder (Call (Some value, I32, "__c_bytes_length",
+      emit function_builder (Call (Some value, I32, "__c_bytes_len",
         [Bytes], [object_value.operand]));
       { operand = Value value; ty = I32 }
   | "get", [index] ->
@@ -280,11 +280,11 @@ and coerce_value context function_builder position expected_type value =
             (Dir.ty_to_string actual_type) (Dir.ty_to_string expected_type));
         let union_value = fresh_value function_builder in
         let create_name, argument_types = match actual_type with
-          | I32 -> "union_create_int", [I32]
-          | F64 -> "union_create_float", [F64]
-          | Str -> "union_create_string", [Str]
-          | Bool -> "union_create_bool", [Bool]
-          | Bytes -> "union_create_bytes", [Bytes]
+          | I32 -> "__c_union_create_int", [I32]
+          | F64 -> "__c_union_create_float", [F64]
+          | Str -> "__c_union_create_str", [Str]
+          | Bool -> "__c_union_create_bool", [Bool]
+          | Bytes -> "__c_union_create_bytes", [Bytes]
           | _ -> fail_at position (Printf.sprintf
               "union boxing supports int, float, str, bool and bytes, got %s"
               (Dir.ty_to_string actual_type))
@@ -391,7 +391,7 @@ and lower_bytes_contains function_builder collection needle position =
   let condition_index = fresh_value function_builder in
   set_block_params function_builder condition_label [(condition_index, I32)];
   let length = fresh_value function_builder in
-  emit function_builder (Call (Some length, I32, "__c_bytes_length",
+  emit function_builder (Call (Some length, I32, "__c_bytes_len",
     [Bytes], [collection.operand]));
   let has_more = fresh_value function_builder in
   emit function_builder (Compare (has_more, Lt, Value condition_index, Value length));
@@ -557,7 +557,7 @@ and lower_expr context function_builder environment expression =
                   | _ -> fail_at position "string concatenation requires a string or Display value"
                 in
                 let value = fresh_value function_builder in
-                emit function_builder (Call (Some value, Str, "string_concat",
+                emit function_builder (Call (Some value, Str, "__c_str_concat",
                   [Str; Str], [left.operand; right.operand]));
                 { operand = Value value; ty = Str }
             | List I32 when operation = Add ->
@@ -569,14 +569,14 @@ and lower_expr context function_builder environment expression =
                 (match operation with
                  | FloorDiv ->
                      let function_name = if Dir.equal_ty left.ty F64
-                       then "float_floordiv" else "int_floordiv" in
+                       then "__c_float_floordiv" else "__c_int_floordiv" in
                      let value = fresh_value function_builder in
                      emit function_builder (Call (Some value, left.ty, function_name,
                        [left.ty; left.ty], [left.operand; right.operand]));
                      { operand = Value value; ty = left.ty }
                  | Pow ->
                      let function_name = if Dir.equal_ty left.ty F64
-                       then "float_pow" else "int_pow" in
+                       then "__c_float_pow" else "__c_int_pow" in
                      let value = fresh_value function_builder in
                      emit function_builder (Call (Some value, left.ty, function_name,
                        [left.ty; left.ty], [left.operand; right.operand]));
@@ -601,7 +601,7 @@ and lower_expr context function_builder environment expression =
            (match left.ty, right.ty with
             | Str, Str ->
                 let value = fresh_value function_builder in
-                emit function_builder (Call (Some value, I32, "string_find",
+                emit function_builder (Call (Some value, I32, "__c_str_find",
                   [Str; Str], [right.operand; left.operand]));
                 let result = fresh_value function_builder in
                 emit function_builder (Compare (result, Ge, Value value, Int 0));
@@ -728,16 +728,16 @@ and lower_expr context function_builder environment expression =
            { operand = Value value; ty = I32 }
        | Bytes ->
            let value = fresh_value function_builder in
-           emit function_builder (Call (Some value, I32, "__c_bytes_length",
+           emit function_builder (Call (Some value, I32, "__c_bytes_len",
              [Bytes], [lowered_argument.operand]));
            { operand = Value value; ty = I32 }
        | Dict (_, _) ->
            let value = fresh_value function_builder in
            let size_name = match lowered_argument.ty with
-             | Dict (I32, I32) -> "dream_dict_size_int_int"
-             | Dict (I32, Str) -> "dream_dict_size_int_str"
-             | Dict (Str, I32) -> "dream_dict_size_str_int"
-             | Dict (Str, Str) -> "dream_dict_size_str_str"
+             | Dict (I32, I32) -> "__c_dict_size_int_int"
+             | Dict (I32, Str) -> "__c_dict_size_int_str"
+             | Dict (Str, I32) -> "__c_dict_size_str_int"
+             | Dict (Str, Str) -> "__c_dict_size_str_str"
              | _ -> fail_at position "DIR dict supports only int and str keys/values"
            in
            emit function_builder (Call (Some value, I32, size_name,
@@ -753,7 +753,7 @@ and lower_expr context function_builder environment expression =
       in
       let element_type = Tuple [key_type; value_type] in
       let value = fresh_value function_builder in
-      emit function_builder (Call (Some value, List element_type, "dict_items_tuples",
+      emit function_builder (Call (Some value, List element_type, "__c_dict_items_tuples",
         [lowered_argument.ty], [lowered_argument.operand]));
       { operand = Value value; ty = List element_type }
   | ECall (EVar ("append", _), [collection; item], position) ->
@@ -894,11 +894,11 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, I32, "__c_file_write_bytes",
         [Str; Bytes], [lowered_path.operand; bytes_operand]));
       { operand = Value value; ty = I32 }
-  | ECall (EVar ("__c_bytes_length", _), [bytes], position) ->
+  | ECall (EVar ("__c_bytes_len", _), [bytes], position) ->
       let lowered_bytes = lower_expr context function_builder environment bytes in
-      expect_type position Bytes lowered_bytes.ty "__c_bytes_length bytes";
+      expect_type position Bytes lowered_bytes.ty "__c_bytes_len bytes";
       let value = fresh_value function_builder in
-      emit function_builder (Call (Some value, I32, "__c_bytes_length",
+      emit function_builder (Call (Some value, I32, "__c_bytes_len",
         [Bytes], [lowered_bytes.operand]));
       { operand = Value value; ty = I32 }
   | ECall (EVar ("__c_bytes_get", _), [bytes; index], position) ->
@@ -1052,15 +1052,15 @@ and lower_expr context function_builder environment expression =
         (lower_expr context function_builder environment) arguments in
       let actual_name, signature =
         if name = "print" || name = "eprint" then
-          let prefix = if name = "eprint" then "dream_eprint" else "dream_print" in
+          let prefix = if name = "eprint" then "__c_eprint" else "__c_print" in
           match lowered_arguments with
           | [argument] ->
               let print_name = match argument.ty with
                 | I32 -> prefix ^ "_int"
                 | F64 -> prefix ^ "_float"
                 | Bool -> prefix ^ "_bool"
-                | Str -> prefix ^ "_string"
-                | Union _ when name = "print" -> "union_print_value"
+                | Str -> prefix ^ "_str"
+                | Union _ when name = "print" -> "__c_union_print_value"
                 | _ -> fail_at position (name ^ " supports int, float, bool and str in DIR subset")
               in
               (print_name, { parameter_types = [argument.ty]; return_type = Unit })
@@ -1168,10 +1168,10 @@ and lower_expr context function_builder environment expression =
            let lowered_index = lower_expr context function_builder environment index in
            expect_type position key_type lowered_index.ty "dict index expression";
            let getter_name = match key_type, value_type with
-             | I32, I32 -> "dream_dict_get_int_int"
-             | I32, Str -> "dream_dict_get_int_str"
-             | Str, I32 -> "dream_dict_get_str_int"
-             | Str, Str -> "dream_dict_get_str_str"
+             | I32, I32 -> "__c_dict_get_int_int"
+             | I32, Str -> "__c_dict_get_int_str"
+             | Str, I32 -> "__c_dict_get_str_int"
+             | Str, Str -> "__c_dict_get_str_str"
              | _ -> fail_at position "DIR dict supports only int and str keys/values"
            in
            let value = fresh_value function_builder in
@@ -1213,7 +1213,7 @@ and lower_expr context function_builder environment expression =
              | Str ->
                  emit function_builder (StringLength (value, lowered_collection.operand))
              | Bytes ->
-                 emit function_builder (Call (Some value, I32, "__c_bytes_length",
+                 emit function_builder (Call (Some value, I32, "__c_bytes_len",
                    [Bytes], [lowered_collection.operand]))
              | _ -> fail_at position "slice collection must be a string, bytes or list<i32>");
             Value value
@@ -1252,20 +1252,20 @@ and lower_expr context function_builder environment expression =
       in
       let dict_type = Dict (key_type, value_type) in
       let create_name = match key_type, value_type with
-        | I32, I32 -> "dream_dict_create_int_int"
-        | I32, Str -> "dream_dict_create_int_str"
-        | Str, I32 -> "dream_dict_create_str_int"
-        | Str, Str -> "dream_dict_create_str_str"
+        | I32, I32 -> "__c_dict_create_int_int"
+        | I32, Str -> "__c_dict_create_int_str"
+        | Str, I32 -> "__c_dict_create_str_int"
+        | Str, Str -> "__c_dict_create_str_str"
         | _ -> fail_at position "DIR dict supports only int and str keys/values"
       in
       let dictionary = fresh_value function_builder in
       emit function_builder (Call (Some dictionary, dict_type, create_name,
         [I32], [Int 8]));
       let setter_name = match key_type, value_type with
-        | I32, I32 -> "dict_set_int_int"
-        | I32, Str -> "dict_set_int_str"
-        | Str, I32 -> "dict_set_str_int"
-        | Str, Str -> "dict_set_str_str"
+        | I32, I32 -> "__c_dict_set_int_int"
+        | I32, Str -> "__c_dict_set_int_str"
+        | Str, I32 -> "__c_dict_set_str_int"
+        | Str, Str -> "__c_dict_set_str_str"
         | _ -> fail_at position "DIR dict supports only int and str keys/values"
       in
       List.iter (fun (key, value) ->
@@ -1915,7 +1915,7 @@ and lower_match_expression context function_builder environment scrutinee cases 
     (match pattern with
      | PInt value ->
          (match lowered_scrutinee.ty with
-          | Union _ -> union_test "union_is_int" "union_get_int" I32 (Int value)
+          | Union _ -> union_test "__c_union_is_int" "__c_union_get_int" I32 (Int value)
           | actual_type ->
               if not (Dir.equal_ty actual_type I32) then
                 fail_at position "integer pattern requires an integer match scrutinee";
@@ -1926,7 +1926,7 @@ and lower_match_expression context function_builder environment scrutinee cases 
                 (pattern_target, []), (next_label index, []))))
      | PFloat value ->
          (match lowered_scrutinee.ty with
-          | Union _ -> union_test "union_is_float" "union_get_float" F64 (Float value)
+          | Union _ -> union_test "__c_union_is_float" "__c_union_get_float" F64 (Float value)
           | actual_type ->
               if not (Dir.equal_ty actual_type F64) then
                 fail_at position "float pattern requires a float match scrutinee";
@@ -1937,7 +1937,7 @@ and lower_match_expression context function_builder environment scrutinee cases 
                 (pattern_target, []), (next_label index, []))))
      | PBool value ->
          (match lowered_scrutinee.ty with
-          | Union _ -> union_test "union_is_bool" "union_get_bool" Bool (Bool value)
+          | Union _ -> union_test "__c_union_is_bool" "__c_union_get_bool" Bool (Bool value)
           | actual_type ->
               if not (Dir.equal_ty actual_type Bool) then
                 fail_at position "boolean pattern requires a boolean match scrutinee";
@@ -1977,11 +1977,11 @@ and lower_match_expression context function_builder environment scrutinee cases 
           | _ ->
               (* match type of：按类型名分发，只做 is 检查 *)
               let is_name = match value with
-                | "int" -> "union_is_int"
-                | "float" -> "union_is_float"
-                | "str" -> "union_is_string"
-                | "bool" -> "union_is_bool"
-                | "bytes" -> "union_is_bytes"
+                | "int" -> "__c_union_is_int"
+                | "float" -> "__c_union_is_float"
+                | "str" -> "__c_union_is_str"
+                | "bool" -> "__c_union_is_bool"
+                | "bytes" -> "__c_union_is_bytes"
                 | _ -> fail_at position ("unknown type name " ^ value)
               in
               let matches = fresh_value function_builder in
@@ -1992,7 +1992,7 @@ and lower_match_expression context function_builder environment scrutinee cases 
      | PString value ->
          (match lowered_scrutinee.ty with
           | Union _ ->
-              union_test "union_is_string" "union_get_string" Str (String value)
+              union_test "__c_union_is_str" "__c_union_get_str" Str (String value)
           | actual_type ->
               if not (Dir.equal_ty actual_type Str) then
                 fail_at position "string pattern requires a string match scrutinee";
@@ -2182,11 +2182,11 @@ and lower_match_expression context function_builder environment scrutinee cases 
       | PString type_name, ETypeOf (EVar (variable_name, _), _),
         (Union _ | I32 | F64 | Str | Bool | Bytes) ->
           let get_name, member_type = match type_name with
-            | "int" -> "union_get_int", I32
-            | "float" -> "union_get_float", F64
-            | "str" -> "union_get_string", Str
-            | "bool" -> "union_get_bool", Bool
-            | "bytes" -> "union_get_bytes", Bytes
+            | "int" -> "__c_union_get_int", I32
+            | "float" -> "__c_union_get_float", F64
+            | "str" -> "__c_union_get_str", Str
+            | "bool" -> "__c_union_get_bool", Bool
+            | "bytes" -> "__c_union_get_bytes", Bytes
             | _ -> fail_at position ("unknown type name " ^ type_name)
           in
           let narrowed_value = fresh_value function_builder in
@@ -2336,56 +2336,56 @@ let lower_function context constant_bindings def_info =
   finish_function function_builder parameters
 
 let runtime_externs = [
-  { name = "dream_print_int"; parameters = [I32]; return_type = Unit };
-  { name = "dream_print_float"; parameters = [F64]; return_type = Unit };
-  { name = "dream_print_bool"; parameters = [Bool]; return_type = Unit };
-  { name = "dream_print_string"; parameters = [Str]; return_type = Unit };
-  { name = "dream_eprint_int"; parameters = [I32]; return_type = Unit };
-  { name = "dream_eprint_float"; parameters = [F64]; return_type = Unit };
-  { name = "dream_eprint_bool"; parameters = [Bool]; return_type = Unit };
-  { name = "dream_eprint_string"; parameters = [Str]; return_type = Unit };
-  { name = "string_concat"; parameters = [Str; Str]; return_type = Str };
-  { name = "string_length"; parameters = [Str]; return_type = I32 };
-  { name = "string_find"; parameters = [Str; Str]; return_type = I32 };
-  { name = "string_upper"; parameters = [Str]; return_type = Str };
-  { name = "string_lower"; parameters = [Str]; return_type = Str };
-  { name = "string_strip"; parameters = [Str]; return_type = Str };
-  { name = "string_split"; parameters = [Str; Str]; return_type = List Str };
-  { name = "string_join"; parameters = [List Str; Str]; return_type = Str };
-  { name = "dict_items_tuples"; parameters = [Dict (I32, I32)]; return_type = List (Tuple [I32; I32]) };
-  { name = "string_starts_with"; parameters = [Str; Str]; return_type = Bool };
-  { name = "string_ends_with"; parameters = [Str; Str]; return_type = Bool };
-  { name = "string_replace"; parameters = [Str; Str; Str]; return_type = Str };
-  { name = "int_floordiv"; parameters = [I32; I32]; return_type = I32 };
-  { name = "float_floordiv"; parameters = [F64; F64]; return_type = F64 };
-  { name = "int_pow"; parameters = [I32; I32]; return_type = I32 };
-  { name = "float_pow"; parameters = [F64; F64]; return_type = F64 };
-  { name = "string_is_digit"; parameters = [I32]; return_type = Bool };
-  { name = "string_is_alpha"; parameters = [I32]; return_type = Bool };
+  { name = "__c_print_int"; parameters = [I32]; return_type = Unit };
+  { name = "__c_print_float"; parameters = [F64]; return_type = Unit };
+  { name = "__c_print_bool"; parameters = [Bool]; return_type = Unit };
+  { name = "__c_print_str"; parameters = [Str]; return_type = Unit };
+  { name = "__c_eprint_int"; parameters = [I32]; return_type = Unit };
+  { name = "__c_eprint_float"; parameters = [F64]; return_type = Unit };
+  { name = "__c_eprint_bool"; parameters = [Bool]; return_type = Unit };
+  { name = "__c_eprint_str"; parameters = [Str]; return_type = Unit };
+  { name = "__c_str_concat"; parameters = [Str; Str]; return_type = Str };
+  { name = "__c_str_len"; parameters = [Str]; return_type = I32 };
+  { name = "__c_str_find"; parameters = [Str; Str]; return_type = I32 };
+  { name = "__c_str_upper"; parameters = [Str]; return_type = Str };
+  { name = "__c_str_lower"; parameters = [Str]; return_type = Str };
+  { name = "__c_str_strip"; parameters = [Str]; return_type = Str };
+  { name = "__c_str_split"; parameters = [Str; Str]; return_type = List Str };
+  { name = "__c_str_join"; parameters = [List Str; Str]; return_type = Str };
+  { name = "__c_dict_items_tuples"; parameters = [Dict (I32, I32)]; return_type = List (Tuple [I32; I32]) };
+  { name = "__c_str_starts_with"; parameters = [Str; Str]; return_type = Bool };
+  { name = "__c_str_ends_with"; parameters = [Str; Str]; return_type = Bool };
+  { name = "__c_str_replace"; parameters = [Str; Str; Str]; return_type = Str };
+  { name = "__c_int_floordiv"; parameters = [I32; I32]; return_type = I32 };
+  { name = "__c_float_floordiv"; parameters = [F64; F64]; return_type = F64 };
+  { name = "__c_int_pow"; parameters = [I32; I32]; return_type = I32 };
+  { name = "__c_float_pow"; parameters = [F64; F64]; return_type = F64 };
+  { name = "__c_str_is_digit"; parameters = [I32]; return_type = Bool };
+  { name = "__c_str_is_alpha"; parameters = [I32]; return_type = Bool };
   { name = "__c_time_ms"; parameters = []; return_type = I32 };
   { name = "__c_debug_on"; parameters = []; return_type = Bool };
   { name = "__c_eprint_text"; parameters = [Str]; return_type = Unit };
-  { name = "__c_eprint_int"; parameters = [I32]; return_type = Unit };
+  { name = "__c_debug_eprint_int"; parameters = [I32]; return_type = Unit };
   { name = "__c_range_equal"; parameters = [Str; I32; I32; I32; I32]; return_type = Bool };
   { name = "__c_fnv_hash_range"; parameters = [Str; I32; I32]; return_type = I32 };
   { name = "__c_range_equals_cstr"; parameters = [Str; I32; I32; Str]; return_type = Bool };
-  { name = "string_is_whitespace"; parameters = [I32]; return_type = Bool };
-  { name = "union_create_int"; parameters = [I32]; return_type = Union [I32] };
-  { name = "union_create_float"; parameters = [F64]; return_type = Union [F64] };
-  { name = "union_create_string"; parameters = [Str]; return_type = Union [Str] };
-  { name = "union_create_bool"; parameters = [Bool]; return_type = Union [Bool] };
-  { name = "union_create_bytes"; parameters = [Bytes]; return_type = Union [Bytes] };
-  { name = "union_is_int"; parameters = [Union [I32]]; return_type = Bool };
-  { name = "union_is_float"; parameters = [Union [F64]]; return_type = Bool };
-  { name = "union_is_string"; parameters = [Union [Str]]; return_type = Bool };
-  { name = "union_is_bool"; parameters = [Union [Bool]]; return_type = Bool };
-  { name = "union_is_bytes"; parameters = [Union [Bytes]]; return_type = Bool };
-  { name = "union_get_int"; parameters = [Union [I32]]; return_type = I32 };
-  { name = "union_get_float"; parameters = [Union [F64]]; return_type = F64 };
-  { name = "union_get_string"; parameters = [Union [Str]]; return_type = Str };
-  { name = "union_get_bool"; parameters = [Union [Bool]]; return_type = Bool };
-  { name = "union_get_bytes"; parameters = [Union [Bytes]]; return_type = Bytes };
-  { name = "union_print_value"; parameters = [Union [I32; F64; Str; Bool; Bytes]]; return_type = Unit };
+  { name = "__c_str_is_whitespace"; parameters = [I32]; return_type = Bool };
+  { name = "__c_union_create_int"; parameters = [I32]; return_type = Union [I32] };
+  { name = "__c_union_create_float"; parameters = [F64]; return_type = Union [F64] };
+  { name = "__c_union_create_str"; parameters = [Str]; return_type = Union [Str] };
+  { name = "__c_union_create_bool"; parameters = [Bool]; return_type = Union [Bool] };
+  { name = "__c_union_create_bytes"; parameters = [Bytes]; return_type = Union [Bytes] };
+  { name = "__c_union_is_int"; parameters = [Union [I32]]; return_type = Bool };
+  { name = "__c_union_is_float"; parameters = [Union [F64]]; return_type = Bool };
+  { name = "__c_union_is_str"; parameters = [Union [Str]]; return_type = Bool };
+  { name = "__c_union_is_bool"; parameters = [Union [Bool]]; return_type = Bool };
+  { name = "__c_union_is_bytes"; parameters = [Union [Bytes]]; return_type = Bool };
+  { name = "__c_union_get_int"; parameters = [Union [I32]]; return_type = I32 };
+  { name = "__c_union_get_float"; parameters = [Union [F64]]; return_type = F64 };
+  { name = "__c_union_get_str"; parameters = [Union [Str]]; return_type = Str };
+  { name = "__c_union_get_bool"; parameters = [Union [Bool]]; return_type = Bool };
+  { name = "__c_union_get_bytes"; parameters = [Union [Bytes]]; return_type = Bytes };
+  { name = "__c_union_print_value"; parameters = [Union [I32; F64; Str; Bool; Bytes]]; return_type = Unit };
   { name = "__c_process_arg_count"; parameters = []; return_type = I32 };
   { name = "__c_process_arg"; parameters = [I32]; return_type = Str };
   { name = "__c_env"; parameters = [Str]; return_type = Str };
@@ -2409,28 +2409,28 @@ let runtime_externs = [
   { name = "__c_file_mkdir"; parameters = [Str]; return_type = Bool };
   { name = "__c_file_rename"; parameters = [Str; Str]; return_type = Bool };
   { name = "__c_file_size"; parameters = [Str]; return_type = I32 };
-  { name = "__c_bytes_length"; parameters = [Bytes]; return_type = I32 };
+  { name = "__c_bytes_len"; parameters = [Bytes]; return_type = I32 };
   { name = "__c_bytes_get"; parameters = [Bytes; I32]; return_type = I32 };
   { name = "__c_bytes_slice"; parameters = [Bytes; I32; I32]; return_type = Bytes };
   { name = "__c_bytes_from_array"; parameters = [List I32]; return_type = Bytes };
   { name = "__c_str_to_bytes"; parameters = [Str]; return_type = Bytes };
   { name = "__c_bytes_to_str"; parameters = [Bytes]; return_type = Str };
-  { name = "dict_set_int_int"; parameters = [Dict (I32, I32); I32; I32]; return_type = Unit };
-  { name = "dict_set_int_str"; parameters = [Dict (I32, Str); I32; Str]; return_type = Unit };
-  { name = "dict_set_str_int"; parameters = [Dict (Str, I32); Str; I32]; return_type = Unit };
-  { name = "dict_set_str_str"; parameters = [Dict (Str, Str); Str; Str]; return_type = Unit };
-  { name = "dream_dict_create_int_int"; parameters = [I32]; return_type = Dict (I32, I32) };
-  { name = "dream_dict_create_int_str"; parameters = [I32]; return_type = Dict (I32, Str) };
-  { name = "dream_dict_create_str_int"; parameters = [I32]; return_type = Dict (Str, I32) };
-  { name = "dream_dict_create_str_str"; parameters = [I32]; return_type = Dict (Str, Str) };
-  { name = "dream_dict_get_int_int"; parameters = [Dict (I32, I32); I32]; return_type = I32 };
-  { name = "dream_dict_get_int_str"; parameters = [Dict (I32, Str); I32]; return_type = Str };
-  { name = "dream_dict_get_str_int"; parameters = [Dict (Str, I32); Str]; return_type = I32 };
-  { name = "dream_dict_get_str_str"; parameters = [Dict (Str, Str); Str]; return_type = Str };
-  { name = "dream_dict_size_int_int"; parameters = [Dict (I32, I32)]; return_type = I32 };
-  { name = "dream_dict_size_int_str"; parameters = [Dict (I32, Str)]; return_type = I32 };
-  { name = "dream_dict_size_str_int"; parameters = [Dict (Str, I32)]; return_type = I32 };
-  { name = "dream_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
+  { name = "__c_dict_set_int_int"; parameters = [Dict (I32, I32); I32; I32]; return_type = Unit };
+  { name = "__c_dict_set_int_str"; parameters = [Dict (I32, Str); I32; Str]; return_type = Unit };
+  { name = "__c_dict_set_str_int"; parameters = [Dict (Str, I32); Str; I32]; return_type = Unit };
+  { name = "__c_dict_set_str_str"; parameters = [Dict (Str, Str); Str; Str]; return_type = Unit };
+  { name = "__c_dict_create_int_int"; parameters = [I32]; return_type = Dict (I32, I32) };
+  { name = "__c_dict_create_int_str"; parameters = [I32]; return_type = Dict (I32, Str) };
+  { name = "__c_dict_create_str_int"; parameters = [I32]; return_type = Dict (Str, I32) };
+  { name = "__c_dict_create_str_str"; parameters = [I32]; return_type = Dict (Str, Str) };
+  { name = "__c_dict_get_int_int"; parameters = [Dict (I32, I32); I32]; return_type = I32 };
+  { name = "__c_dict_get_int_str"; parameters = [Dict (I32, Str); I32]; return_type = Str };
+  { name = "__c_dict_get_str_int"; parameters = [Dict (Str, I32); Str]; return_type = I32 };
+  { name = "__c_dict_get_str_str"; parameters = [Dict (Str, Str); Str]; return_type = Str };
+  { name = "__c_dict_size_int_int"; parameters = [Dict (I32, I32)]; return_type = I32 };
+  { name = "__c_dict_size_int_str"; parameters = [Dict (I32, Str)]; return_type = I32 };
+  { name = "__c_dict_size_str_int"; parameters = [Dict (Str, I32)]; return_type = I32 };
+  { name = "__c_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
   { name = "__c_utf8_rune_count"; parameters = [Str]; return_type = I32 };
   { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
   { name = "__c_utf8_encode_rune"; parameters = [I32]; return_type = Bytes };

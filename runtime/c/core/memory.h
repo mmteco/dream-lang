@@ -37,8 +37,8 @@ void* gc_alloc_shared(size_t size, ObjectType type);
 void* gc_alloc(size_t size, ObjectType type);
 
 // 接口值对象装箱与释放（编译器管理引用计数）
-void* dream_interface_alloc(int64_t size);
-void dream_interface_release(void* object);
+void* __c_interface_alloc(int64_t size);
+void __c_interface_release(void* object);
 
 // ============================================================================
 // 引用计数操作

@@ -51,33 +51,33 @@ def request_headers(headers: list[str], body: str) -> str:
     return result
 
 def parse_status(line: str) -> int:
-    let first_space = string_find(line, " ")
+    let first_space = __c_str_find(line, " ")
     if first_space < 0:
         return 0
     let remainder = line[first_space + 1:]
-    let second_space = string_find(remainder, " ")
+    let second_space = __c_str_find(remainder, " ")
     if second_space < 0:
         return decimal(remainder)
     return decimal(remainder[:second_space])
 
 def parse_headers(header_text: str) -> list[str]:
-    let lines = string_split(header_text, "\r\n")
+    let lines = __c_str_split(header_text, "\r\n")
     let result: list[str] = []
     let index = 1
     while index < len(lines):
         let line = lines[index]
-        let separator = string_find(line, ":")
+        let separator = __c_str_find(line, ":")
         if separator > 0:
             append(result, line[:separator])
-            append(result, string_strip(line[separator + 1:]))
+            append(result, __c_str_strip(line[separator + 1:]))
         index = index + 1
     return result
 
 def parse_response(raw: str) -> Response:
-    let header_end = string_find(raw, "\r\n\r\n")
+    let header_end = __c_str_find(raw, "\r\n\r\n")
     if header_end < 0:
         return response_error("malformed HTTP response")
-    let status_end = string_find(raw, "\r\n")
+    let status_end = __c_str_find(raw, "\r\n")
     if status_end < 0 or status_end > header_end:
         return response_error("missing HTTP status line")
     let status = parse_status(raw[:status_end])
@@ -88,7 +88,7 @@ def parse_response(raw: str) -> Response:
     return Response{status: status, headers: parse_headers(header_text), body: body, error: ""}
 
 def is_supported_url(value: str) -> bool:
-    let scheme_end = string_find(value, "://")
+    let scheme_end = __c_str_find(value, "://")
     if scheme_end < 0:
         return true
     let scheme = value[:scheme_end]

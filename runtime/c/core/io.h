@@ -4,17 +4,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// DIR/新 runtime 使用的稳定输出 ABI。
-void dream_print_int(int value);
-void dream_print_float(double value);
-void dream_print_bool(bool value);
-void dream_print_string(const char* str);
-void dream_print_rune(uint32_t rune);
+// Dream 调用的稳定 C 输出 ABI。
+void __c_print_int(int value);
+void __c_print_float(double value);
+void __c_print_bool(bool value);
+void __c_print_str(const char* str);
+void __c_print_rune(uint32_t rune);
 
-void dream_eprint_int(int value);
-void dream_eprint_float(double value);
-void dream_eprint_bool(bool value);
-void dream_eprint_string(const char* str);
-void dream_eprint_rune(uint32_t rune);
+void __c_eprint_int(int value);
+void __c_eprint_float(double value);
+void __c_eprint_bool(bool value);
+void __c_eprint_str(const char* str);
+void __c_eprint_rune(uint32_t rune);
 
 #endif

@@ -15,11 +15,11 @@
  */
 
 /**
- * __c_bytes_length: 获取 bytes 长度
+ * __c_bytes_len: 获取 bytes 长度
  * Dream 签名: bytes -> int
  * LLVM 签名: { i32, i32, i8* }* -> i32
  */
-int32_t __c_bytes_length(dynarray_i32* bytes_arr) {
+int32_t __c_bytes_len(dynarray_i32* bytes_arr) {
     if (bytes_arr == NULL) return 0;
     return bytes_arr->length;
 }
@@ -43,7 +43,7 @@ int32_t __c_bytes_get(dynarray_i32* bytes_arr, int32_t index) {
  * LLVM 签名: ({ i32, i32, i8* }*, i32, i32) -> { i32, i32, i8* }*
  */
 dynarray_i32* __c_bytes_slice(dynarray_i32* bytes_arr, int32_t start, int32_t end) {
-    if (bytes_arr == NULL) return create_dynarray_i32(0);
+    if (bytes_arr == NULL) return __c_create_dynarray_i32(0);
     if (start < 0) start = 0;
     if (end < 0) end = 0;
     if (start > bytes_arr->length) start = bytes_arr->length;
@@ -51,7 +51,7 @@ dynarray_i32* __c_bytes_slice(dynarray_i32* bytes_arr, int32_t start, int32_t en
     if (start > end) start = end;
 
     int32_t new_length = end - start;
-    dynarray_i32* result = create_dynarray_i32(new_length);
+    dynarray_i32* result = __c_create_dynarray_i32(new_length);
     if (result == NULL) return NULL;
 
     if (new_length > 0 && bytes_arr->data != NULL) {
@@ -73,14 +73,14 @@ dynarray_i32* __c_bytes_slice(dynarray_i32* bytes_arr, int32_t start, int32_t en
  */
 dynarray_i32* __c_bytes_from_array(dynarray_i32* byte_list) {
     if (byte_list == NULL) {
-        return create_dynarray_i32(0);
+        return __c_create_dynarray_i32(0);
     }
 
     // 创建新的 dynarray 并复制数据
-    dynarray_i32* result = create_dynarray_i32(byte_list->length);
+    dynarray_i32* result = __c_create_dynarray_i32(byte_list->length);
     if (result == NULL) return NULL;
     if (byte_list->length > 0 && byte_list->data == NULL) {
-        free_dynarray_i32(result);
+        __c_free_dynarray_i32(result);
         return NULL;
     }
     for (int32_t i = 0; i < byte_list->length; i++) {
@@ -98,13 +98,13 @@ dynarray_i32* __c_bytes_from_array(dynarray_i32* byte_list) {
  */
 dynarray_i32* __c_str_to_bytes(const char* str) {
     if (str == NULL) {
-        return create_dynarray_i32(0);
+        return __c_create_dynarray_i32(0);
     }
 
     size_t string_length = strlen(str);
     if (string_length > INT32_MAX) return NULL;
     int32_t length = (int32_t)string_length;
-    dynarray_i32* result = create_dynarray_i32(length);
+    dynarray_i32* result = __c_create_dynarray_i32(length);
     if (result == NULL) return NULL;
 
     for (int32_t i = 0; i < length; i++) {

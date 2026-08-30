@@ -224,9 +224,9 @@ struct GlobalTable:
     expression_indexes: list[int]
 
 def classify_package(file_path: str) -> int:
-    if string_starts_with(file_path, "runtime/stdlib/"):
+    if __c_str_starts_with(file_path, "runtime/stdlib/"):
         return PACKAGE_STDLIB
-    if string_starts_with(file_path, "bootstrap/"):
+    if __c_str_starts_with(file_path, "bootstrap/"):
         return PACKAGE_BOOTSTRAP
     return PACKAGE_USER
 

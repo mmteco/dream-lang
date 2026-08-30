@@ -35,7 +35,7 @@ def decode_rune(b: bytes, offset: int) -> (rune, int):
         lead_base = 0xF0
     else:
         return (0, 1)
-    if offset + length > __c_bytes_length(b):
+    if offset + length > __c_bytes_len(b):
         return (0, 1)
     let rune_value = first - lead_base
     let index = 1

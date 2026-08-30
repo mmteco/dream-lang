@@ -1,6 +1,6 @@
 #include <math.h>
 
-int int_floordiv(int left, int right) {
+int __c_int_floordiv(int left, int right) {
     int quotient = left / right;
     if ((left % right != 0) && ((left < 0) != (right < 0))) {
         quotient = quotient - 1;
@@ -8,11 +8,11 @@ int int_floordiv(int left, int right) {
     return quotient;
 }
 
-double float_floordiv(double left, double right) {
+double __c_float_floordiv(double left, double right) {
     return floor(left / right);
 }
 
-int int_pow(int base, int exponent) {
+int __c_int_pow(int base, int exponent) {
     int result = 1;
     while (exponent > 0) {
         result = result * base;
@@ -21,6 +21,6 @@ int int_pow(int base, int exponent) {
     return result;
 }
 
-double float_pow(double base, double exponent) {
+double __c_float_pow(double base, double exponent) {
     return pow(base, exponent);
 }

@@ -55,14 +55,14 @@ dynarray_i32* __c_utf8_encode_rune(int32_t rune) {
 
     if (bytes_written == 0) {
         // 无效 rune，返回空 bytes
-        return create_dynarray_i32(0);
+        return __c_create_dynarray_i32(0);
     }
 
     // 创建 dynarray 并复制数据
-    dynarray_i32* result = create_dynarray_i32(bytes_written);
+    dynarray_i32* result = __c_create_dynarray_i32(bytes_written);
     if (result == NULL) return NULL;
     for (int i = 0; i < bytes_written; i++) {
-        append_i32(result, buffer[i]);
+        __c_append_i32(result, buffer[i]);
     }
 
     return result;

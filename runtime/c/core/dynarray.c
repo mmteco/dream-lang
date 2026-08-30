@@ -18,7 +18,7 @@ static void debug_out_of_bounds(int index, int length) {
 }
 
 // 创建新的动态数组（使用 GC 分配）
-dynarray_i32* create_dynarray_i32(int initial_capacity) {
+dynarray_i32* __c_create_dynarray_i32(int initial_capacity) {
     if (initial_capacity < 0 || initial_capacity > INT_MAX / (int)sizeof(int)) {
         initial_capacity = 0;
     }
@@ -46,7 +46,7 @@ dynarray_i32* create_dynarray_i32(int initial_capacity) {
 }
 
 // 释放动态数组（使用引用计数）
-void free_dynarray_i32(dynarray_i32* arr) {
+void __c_free_dynarray_i32(dynarray_i32* arr) {
     if (arr == NULL) return;
 
     // 减少引用计数，可能触发释放
@@ -54,7 +54,7 @@ void free_dynarray_i32(dynarray_i32* arr) {
 }
 
 // 保留动态数组引用
-void retain_dynarray_i32(dynarray_i32* arr) {
+void __c_retain_dynarray_i32(dynarray_i32* arr) {
     if (arr == NULL) return;
     gc_retain(arr);
 }
@@ -86,7 +86,7 @@ static int grow_dynarray_i32(dynarray_i32* arr, int new_capacity) {
 }
 
 // 追加元素到动态数组
-void append_i32(dynarray_i32* arr, int value) {
+void __c_append_i32(dynarray_i32* arr, int value) {
     if (arr == NULL) {
         fprintf(stderr, "Error: append to NULL array\n");
         return;
@@ -120,21 +120,21 @@ void append_i32(dynarray_i32* arr, int value) {
     arr->length++;
 }
 
-void append_f64(dynarray_i32* arr, double value) {
+void __c_append_f64(dynarray_i32* arr, double value) {
     uint64_t bits = 0;
     memcpy(&bits, &value, sizeof(bits));
-    append_i32(arr, (int)(bits & UINT32_MAX));
-    append_i32(arr, (int)(bits >> 32));
+    __c_append_i32(arr, (int)(bits & UINT32_MAX));
+    __c_append_i32(arr, (int)(bits >> 32));
 }
 
-void append_pointer(dynarray_i32* arr, const void* value) {
+void __c_append_pointer(dynarray_i32* arr, const void* value) {
     uintptr_t bits = (uintptr_t)value;
-    append_i32(arr, (int)(bits & UINT32_MAX));
-    append_i32(arr, (int)(bits >> 32));
+    __c_append_i32(arr, (int)(bits & UINT32_MAX));
+    __c_append_i32(arr, (int)(bits >> 32));
 }
 
 // 获取数组元素
-int get_dynarray_i32(dynarray_i32* arr, int index) {
+int __c_get_dynarray_i32(dynarray_i32* arr, int index) {
     if (arr == NULL) {
         fprintf(stderr, "Error: access NULL array\n");
         return 0;
@@ -148,7 +148,7 @@ int get_dynarray_i32(dynarray_i32* arr, int index) {
     return arr->data[index];
 }
 
-int contains_dynarray_i32(dynarray_i32* arr, int value) {
+int __c_contains_dynarray_i32(dynarray_i32* arr, int value) {
     if (arr == NULL) return 0;
 
     for (int index = 0; index < arr->length; index++) {
@@ -157,32 +157,32 @@ int contains_dynarray_i32(dynarray_i32* arr, int value) {
     return 0;
 }
 
-int contains_dynarray_f64(dynarray_i32* arr, double value) {
+int __c_contains_dynarray_f64(dynarray_i32* arr, double value) {
     if (arr == NULL || arr->length % 2 != 0) return 0;
 
     for (int index = 0; index < arr->length / 2; index++) {
-        if (get_f64(arr, index) == value) return 1;
+        if (__c_get_f64(arr, index) == value) return 1;
     }
     return 0;
 }
 
-double get_f64(dynarray_i32* arr, int index) {
-    uint64_t low = (uint32_t)get_dynarray_i32(arr, index);
-    uint64_t high = (uint32_t)get_dynarray_i32(arr, index + 1);
+double __c_get_f64(dynarray_i32* arr, int index) {
+    uint64_t low = (uint32_t)__c_get_dynarray_i32(arr, index);
+    uint64_t high = (uint32_t)__c_get_dynarray_i32(arr, index + 1);
     uint64_t bits = low | (high << 32);
     double value = 0.0;
     memcpy(&value, &bits, sizeof(value));
     return value;
 }
 
-const void* get_pointer(dynarray_i32* arr, int index) {
-    uintptr_t low = (uint32_t)get_dynarray_i32(arr, index);
-    uintptr_t high = (uint32_t)get_dynarray_i32(arr, index + 1);
+const void* __c_get_pointer(dynarray_i32* arr, int index) {
+    uintptr_t low = (uint32_t)__c_get_dynarray_i32(arr, index);
+    uintptr_t high = (uint32_t)__c_get_dynarray_i32(arr, index + 1);
     return (const void*)(low | (high << 32));
 }
 
 // 设置数组元素
-void set_dynarray_i32(dynarray_i32* arr, int index, int value) {
+void __c_set_dynarray_i32(dynarray_i32* arr, int index, int value) {
     if (arr == NULL) {
         fprintf(stderr, "Error: access NULL array\n");
         return;
@@ -197,25 +197,25 @@ void set_dynarray_i32(dynarray_i32* arr, int index, int value) {
 }
 
 // 获取数组长度
-int len_dynarray_i32(dynarray_i32* arr) {
+int __c_len_dynarray_i32(dynarray_i32* arr) {
     if (arr == NULL) return 0;
     return arr->length;
 }
 
 // 获取数组容量
-int capacity_dynarray_i32(dynarray_i32* arr) {
+int __c_capacity_dynarray_i32(dynarray_i32* arr) {
     if (arr == NULL) return 0;
     return arr->capacity;
 }
 
 // 清空数组（保留容量）
-void clear_dynarray_i32(dynarray_i32* arr) {
+void __c_clear_dynarray_i32(dynarray_i32* arr) {
     if (arr == NULL) return;
     arr->length = 0;
 }
 
 // 预分配容量
-int reserve_dynarray_i32(dynarray_i32* arr, int new_capacity) {
+int __c_reserve_dynarray_i32(dynarray_i32* arr, int new_capacity) {
     if (arr == NULL) return 0;
     if (new_capacity <= arr->capacity) return 1;
 
@@ -223,10 +223,10 @@ int reserve_dynarray_i32(dynarray_i32* arr, int new_capacity) {
 }
 
 // 复制动态数组
-dynarray_i32* copy_dynarray_i32(dynarray_i32* src) {
+dynarray_i32* __c_copy_dynarray_i32(dynarray_i32* src) {
     if (src == NULL) return NULL;
 
-    dynarray_i32* dst = create_dynarray_i32(src->length);
+    dynarray_i32* dst = __c_create_dynarray_i32(src->length);
     if (dst == NULL) return NULL;
 
     if (src->length > 0 && src->data != NULL) {
@@ -238,7 +238,7 @@ dynarray_i32* copy_dynarray_i32(dynarray_i32* src) {
 }
 
 // 数组切片（创建新数组）
-dynarray_i32* slice_dynarray_i32(dynarray_i32* arr, int start, int end) {
+dynarray_i32* __c_slice_dynarray_i32(dynarray_i32* arr, int start, int end) {
     if (arr == NULL) return NULL;
 
     // 边界检查
@@ -248,11 +248,11 @@ dynarray_i32* slice_dynarray_i32(dynarray_i32* arr, int start, int end) {
     if (end > arr->length) end = arr->length;
     if (start > end) start = end;
     if (start >= end) {
-        return create_dynarray_i32(0);
+        return __c_create_dynarray_i32(0);
     }
 
     int slice_len = end - start;
-    dynarray_i32* result = create_dynarray_i32(slice_len);
+    dynarray_i32* result = __c_create_dynarray_i32(slice_len);
     if (result == NULL) return NULL;
 
     if (arr->data != NULL) {
@@ -264,7 +264,7 @@ dynarray_i32* slice_dynarray_i32(dynarray_i32* arr, int start, int end) {
 }
 
 // 连接两个数组（创建新数组）
-dynarray_i32* concat_dynarray_i32(dynarray_i32* arr1, dynarray_i32* arr2) {
+dynarray_i32* __c_concat_dynarray_i32(dynarray_i32* arr1, dynarray_i32* arr2) {
     if (arr1 == NULL || arr2 == NULL) return NULL;
 
     if (arr1->length > INT_MAX - arr2->length) {
@@ -272,7 +272,7 @@ dynarray_i32* concat_dynarray_i32(dynarray_i32* arr1, dynarray_i32* arr2) {
     }
 
     int total_len = arr1->length + arr2->length;
-    dynarray_i32* result = create_dynarray_i32(total_len);
+    dynarray_i32* result = __c_create_dynarray_i32(total_len);
     if (result == NULL) return NULL;
 
     // 复制第一个数组
@@ -308,7 +308,7 @@ void print_dynarray_i32(dynarray_i32* arr) {
 // dynarray_ptr 实现 (用于存储指针，自动适配32/64位)
 // ============================================================================
 
-dynarray_ptr* create_dynarray_ptr(int initial_capacity) {
+dynarray_ptr* __c_create_dynarray_ptr(int initial_capacity) {
     dynarray_ptr* arr = (dynarray_ptr*)gc_alloc(sizeof(dynarray_ptr), OBJ_DYNARRAY_PTR);
     if (!arr) return NULL;
 
@@ -330,7 +330,7 @@ dynarray_ptr* create_dynarray_ptr(int initial_capacity) {
     return arr;
 }
 
-void free_dynarray_ptr(dynarray_ptr* arr) {
+void __c_free_dynarray_ptr(dynarray_ptr* arr) {
     if (arr == NULL) return;
     if (gc_is_managed(arr)) {
         gc_release(arr);
@@ -340,7 +340,7 @@ void free_dynarray_ptr(dynarray_ptr* arr) {
     free(arr);
 }
 
-void append_ptr(dynarray_ptr* arr, intptr_t value) {
+void __c_append_ptr(dynarray_ptr* arr, intptr_t value) {
     if (!arr) return;
 
     // 扩容
@@ -363,14 +363,14 @@ void append_ptr(dynarray_ptr* arr, intptr_t value) {
     gc_retain_if_managed((void*)value);
 }
 
-intptr_t get_dynarray_ptr(dynarray_ptr* arr, int index) {
+intptr_t __c_get_dynarray_ptr(dynarray_ptr* arr, int index) {
     if (!arr || index < 0 || index >= arr->length) {
         return 0;
     }
     return arr->data[index];
 }
 
-int contains_dynarray_str(dynarray_ptr* arr, const char* value) {
+int __c_contains_dynarray_str(dynarray_ptr* arr, const char* value) {
     if (arr == NULL) return 0;
 
     const char* needle = value == NULL ? "" : value;
@@ -381,19 +381,19 @@ int contains_dynarray_str(dynarray_ptr* arr, const char* value) {
     return 0;
 }
 
-void set_dynarray_ptr(dynarray_ptr* arr, int index, const void* value) {
+void __c_set_dynarray_ptr(dynarray_ptr* arr, int index, const void* value) {
     if (!arr || index < 0 || index >= arr->length) {
         return;
     }
     arr->data[index] = (intptr_t)value;
 }
 
-int len_dynarray_ptr(dynarray_ptr* arr) {
+int __c_len_dynarray_ptr(dynarray_ptr* arr) {
     return arr ? arr->length : 0;
 }
 
 // 数组切片（创建新数组）
-dynarray_ptr* slice_dynarray_ptr(dynarray_ptr* arr, int start, int end) {
+dynarray_ptr* __c_slice_dynarray_ptr(dynarray_ptr* arr, int start, int end) {
     if (arr == NULL) return NULL;
 
     if (start < 0) start = 0;
@@ -402,11 +402,11 @@ dynarray_ptr* slice_dynarray_ptr(dynarray_ptr* arr, int start, int end) {
     if (end > arr->length) end = arr->length;
     if (start > end) start = end;
     if (start >= end) {
-        return create_dynarray_ptr(0);
+        return __c_create_dynarray_ptr(0);
     }
 
     int slice_len = end - start;
-    dynarray_ptr* result = create_dynarray_ptr(slice_len);
+    dynarray_ptr* result = __c_create_dynarray_ptr(slice_len);
     if (result == NULL) return NULL;
 
     if (arr->data != NULL) {
@@ -421,7 +421,7 @@ dynarray_ptr* slice_dynarray_ptr(dynarray_ptr* arr, int start, int end) {
 }
 
 // 连接两个数组（创建新数组）
-dynarray_ptr* concat_dynarray_ptr(dynarray_ptr* arr1, dynarray_ptr* arr2) {
+dynarray_ptr* __c_concat_dynarray_ptr(dynarray_ptr* arr1, dynarray_ptr* arr2) {
     if (arr1 == NULL || arr2 == NULL) return NULL;
 
     if (arr1->length > INT_MAX - arr2->length) {
@@ -429,7 +429,7 @@ dynarray_ptr* concat_dynarray_ptr(dynarray_ptr* arr1, dynarray_ptr* arr2) {
     }
 
     int total_len = arr1->length + arr2->length;
-    dynarray_ptr* result = create_dynarray_ptr(total_len);
+    dynarray_ptr* result = __c_create_dynarray_ptr(total_len);
     if (result == NULL) return NULL;
 
     if (arr1->length > 0 && arr1->data != NULL) {

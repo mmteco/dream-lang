@@ -13,7 +13,7 @@ int32_t bytes_get(bytes_t* bytes, int32_t index) {
 }
 
 bytes_t* bytes_slice(bytes_t* bytes, int32_t start, int32_t end) {
-    if (bytes == NULL) return create_dynarray_i32(0);
+    if (bytes == NULL) return __c_create_dynarray_i32(0);
     if (start < 0) start = 0;
     if (end < 0) end = 0;
     if (start > bytes->length) start = bytes->length;
@@ -21,7 +21,7 @@ bytes_t* bytes_slice(bytes_t* bytes, int32_t start, int32_t end) {
     if (start > end) start = end;
 
     int32_t length = end - start;
-    bytes_t* result = create_dynarray_i32(length);
+    bytes_t* result = __c_create_dynarray_i32(length);
     if (result == NULL) return NULL;
     if (length > 0 && bytes->data != NULL) {
         memcpy(result->data, bytes->data + start, (size_t)length * sizeof(int));
@@ -31,9 +31,9 @@ bytes_t* bytes_slice(bytes_t* bytes, int32_t start, int32_t end) {
 }
 
 bytes_t* bytes_from_array(uint8_t* data, int32_t length) {
-    if (data == NULL || length <= 0) return create_dynarray_i32(0);
+    if (data == NULL || length <= 0) return __c_create_dynarray_i32(0);
 
-    bytes_t* result = create_dynarray_i32(length);
+    bytes_t* result = __c_create_dynarray_i32(length);
     if (result == NULL) return NULL;
     for (int32_t index = 0; index < length; index++) {
         result->data[index] = data[index];
@@ -43,11 +43,11 @@ bytes_t* bytes_from_array(uint8_t* data, int32_t length) {
 }
 
 bytes_t* str_to_bytes(const char* str) {
-    if (str == NULL) return create_dynarray_i32(0);
+    if (str == NULL) return __c_create_dynarray_i32(0);
 
     size_t string_length = strlen(str);
     if (string_length > INT_MAX) return NULL;
-    bytes_t* result = create_dynarray_i32((int)string_length);
+    bytes_t* result = __c_create_dynarray_i32((int)string_length);
     if (result == NULL) return NULL;
     for (size_t index = 0; index < string_length; index++) {
         result->data[index] = (unsigned char)str[index];

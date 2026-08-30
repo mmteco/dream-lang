@@ -176,7 +176,7 @@ dynarray_i32* __c_file_read_bytes(const char* path) {
         return NULL;
     }
 
-    dynarray_i32* arr = create_dynarray_i32(file_size);
+    dynarray_i32* arr = __c_create_dynarray_i32(file_size);
     if (arr == NULL) {
         fclose(file);
         return NULL;
@@ -185,7 +185,7 @@ dynarray_i32* __c_file_read_bytes(const char* path) {
     if (file_size > 0) {
         unsigned char* buffer = (unsigned char*)malloc((size_t)file_size);
         if (buffer == NULL) {
-            free_dynarray_i32(arr);
+            __c_free_dynarray_i32(arr);
             fclose(file);
             return NULL;
         }
@@ -193,7 +193,7 @@ dynarray_i32* __c_file_read_bytes(const char* path) {
         size_t bytes_read = fread(buffer, 1, (size_t)file_size, file);
         if (ferror(file)) {
             free(buffer);
-            free_dynarray_i32(arr);
+            __c_free_dynarray_i32(arr);
             fclose(file);
             return NULL;
         }
@@ -206,7 +206,7 @@ dynarray_i32* __c_file_read_bytes(const char* path) {
     }
 
     if (fclose(file) != 0) {
-        free_dynarray_i32(arr);
+        __c_free_dynarray_i32(arr);
         return NULL;
     }
 
@@ -223,7 +223,7 @@ int __c_file_write_bytes(const char* path, dynarray_i32* data) {
         return -1;
     }
 
-    int len = len_dynarray_i32(data);
+    int len = __c_len_dynarray_i32(data);
     unsigned char* buffer = NULL;
     if (len > 0) {
         buffer = (unsigned char*)malloc((size_t)len);
@@ -234,7 +234,7 @@ int __c_file_write_bytes(const char* path, dynarray_i32* data) {
     }
 
     for (int i = 0; i < len; i++) {
-        int byte_val = get_dynarray_i32(data, i);
+        int byte_val = __c_get_dynarray_i32(data, i);
         buffer[i] = (unsigned char)(byte_val & 0xFF);
     }
 
@@ -259,7 +259,7 @@ int __c_file_append_bytes(const char* path, dynarray_i32* data) {
         return -1;
     }
 
-    int len = len_dynarray_i32(data);
+    int len = __c_len_dynarray_i32(data);
     unsigned char* buffer = NULL;
     if (len > 0) {
         buffer = (unsigned char*)malloc((size_t)len);
@@ -270,7 +270,7 @@ int __c_file_append_bytes(const char* path, dynarray_i32* data) {
     }
 
     for (int i = 0; i < len; i++) {
-        int byte_val = get_dynarray_i32(data, i);
+        int byte_val = __c_get_dynarray_i32(data, i);
         buffer[i] = (unsigned char)(byte_val & 0xFF);
     }
 

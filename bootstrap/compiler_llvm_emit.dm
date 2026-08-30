@@ -114,7 +114,7 @@ def llvm_lir_debug_checkpoint(label: str, previous_time: int) -> int:
     __c_eprint_text("[timing] llvm-")
     __c_eprint_text(label)
     __c_eprint_text(" ")
-    __c_eprint_int(current_time - previous_time)
+    __c_debug_eprint_int(current_time - previous_time)
     __c_eprint_text("ms\n")
     return current_time
 
@@ -214,12 +214,12 @@ def llvm_lir_external_call_name(program: LirProgram, record_offset: int, symbol:
         if operand_type == LIR_TYPE_STR:
             return "@__c_utf8_rune_count"
         if operand_type == LIR_TYPE_BYTES:
-            return "@__c_bytes_length"
+            return "@__c_bytes_len"
         if operand_type == LIR_TYPE_DICT:
-            return "@dream_dict_size_int_int"
+            return "@__c_dict_size_int_int"
         if operand_type == LIR_TYPE_LIST_PTR:
-            return "@len_dynarray_ptr"
-        return "@len_dynarray_i32"
+            return "@__c_len_dynarray_ptr"
+        return "@__c_len_dynarray_i32"
     if symbol != LIR_EXTERNAL_BASE + EXTERNAL_ID_APPEND:
         return llvm_lir_external_name(symbol)
     let operand_type = LIR_TYPE_I32
@@ -227,12 +227,12 @@ def llvm_lir_external_call_name(program: LirProgram, record_offset: int, symbol:
         operand_type = llvm_lir_value_type(program, program.records[record_offset + 1], llvm_lir_operand_value(program,
             record_offset, 2))
     if llvm_lir_is_pointer_like(operand_type):
-        return "@append_ptr"
+        return "@__c_append_ptr"
     if operand_type == LIR_TYPE_F64:
-        return "@append_f64"
+        return "@__c_append_f64"
     if operand_type == LIR_TYPE_I1:
-        return "@append_i32"
-    return "@append_i32"
+        return "@__c_append_i32"
+    return "@__c_append_i32"
 
 def llvm_lir_string_global_name(record_offset: int) -> str:
     return llvm_lir_join_int("@.dm_str_", record_offset, "")
@@ -339,12 +339,12 @@ def llvm_lir_print_name(program: LirProgram, record_offset: int) -> str:
         elif operand_kind == LIR_OPERAND_IMMEDIATE:
             value_type = LIR_TYPE_I32
     if value_type == LIR_TYPE_I32:
-        return "@dream_print_int"
+        return "@__c_print_int"
     if value_type == LIR_TYPE_F64:
-        return "@dream_print_float"
+        return "@__c_print_float"
     if value_type == LIR_TYPE_I1:
-        return "@dream_print_bool"
-    return "@dream_print_string"
+        return "@__c_print_bool"
+    return "@__c_print_str"
 
 def llvm_lir_prepare_func_cache(program: LirProgram):
     let maximum_function = -1
@@ -481,13 +481,13 @@ def llvm_emit_operand(program: LirProgram, record_offset: int, operand_index: in
 
 def llvm_lir_runtime_name(runtime_id: int, result_type: int) -> str:
     if runtime_id == 2:
-        return "@create_dynarray_i32"
+        return "@__c_create_dynarray_i32"
     if runtime_id == 3:
         if result_type == LIR_TYPE_I32:
-            return "@get_dynarray_i32"
-        return "@get_pointer"
+            return "@__c_get_dynarray_i32"
+        return "@__c_get_pointer"
     if runtime_id == 6:
-        return "@slice_dynarray_i32"
+        return "@__c_slice_dynarray_i32"
     return "@llvm.trap"
 
 def llvm_emit_dynamic_truthy(program: LirProgram, record_offset: int, operand_index: int, output: Buffer) -> str:
@@ -546,7 +546,7 @@ def llvm_emit_dynamic_membership(program: LirProgram, offset: int, left_type: in
             let match_name = llvm_lir_join_int("%dynamic_membership_match_", offset, "")
             append(output, "  ")
             append(output, match_name)
-            append(output, " = call i32 @contains_dynarray_f64(i8* ")
+            append(output, " = call i32 @__c_contains_dynarray_f64(i8* ")
             llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
             append(output, ", double ")
             llvm_emit_operand(program, offset, 1, LIR_TYPE_F64, output)
@@ -571,7 +571,7 @@ def llvm_emit_dynamic_membership(program: LirProgram, offset: int, left_type: in
         let match_name = llvm_lir_join_int("%dynamic_membership_match_", offset, "")
         append(output, "  ")
         append(output, match_name)
-        append(output, " = call i32 @contains_dynarray_i32(i8* ")
+        append(output, " = call i32 @__c_contains_dynarray_i32(i8* ")
         llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ", i32 ")
         if left_type == LIR_TYPE_I1:
@@ -589,7 +589,7 @@ def llvm_emit_dynamic_membership(program: LirProgram, offset: int, left_type: in
         let match_name = llvm_lir_join_int("%dynamic_membership_match_", offset, "")
         append(output, "  ")
         append(output, match_name)
-        append(output, " = call i32 @contains_dynarray_str(i8* ")
+        append(output, " = call i32 @__c_contains_dynarray_str(i8* ")
         llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
         llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
@@ -628,7 +628,7 @@ def llvm_emit_dynamic_boolean(program: LirProgram, offset: int, operator: int, o
     if operator == IR_OPERATOR_IN and left_type == LIR_TYPE_STR and right_type == LIR_TYPE_STR:
         append(output, "  %dynamic_find_")
         append(output, offset)
-        append(output, " = call i32 @string_find(i8* ")
+        append(output, " = call i32 @__c_str_find(i8* ")
         llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
         llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
@@ -641,7 +641,7 @@ def llvm_emit_dynamic_boolean(program: LirProgram, offset: int, operator: int, o
     if llvm_lir_is_pointer_like(left_type) and llvm_lir_is_pointer_like(right_type):
         append(output, "  %dynamic_compare_")
         append(output, offset)
-        append(output, " = call i32 @string_compare(i8* ")
+        append(output, " = call i32 @__c_str_compare(i8* ")
         llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
         llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
@@ -762,7 +762,7 @@ def llvm_emit_dynamic_binary(program: LirProgram, offset: int, output: Buffer, r
     if operator == IR_OPERATOR_ADD and llvm_lir_is_string(left_type) and llvm_lir_is_string(right_type):
         append(output, "  ")
         append(output, result_name)
-        append(output, " = call i8* @string_concat(i8* ")
+        append(output, " = call i8* @__c_str_concat(i8* ")
         llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
         llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
@@ -771,7 +771,7 @@ def llvm_emit_dynamic_binary(program: LirProgram, offset: int, output: Buffer, r
     if operator == IR_OPERATOR_ADD and left_type == LIR_TYPE_LIST and right_type == LIR_TYPE_LIST:
         append(output, "  ")
         append(output, result_name)
-        append(output, " = call i8* @concat_dynarray_i32(i8* ")
+        append(output, " = call i8* @__c_concat_dynarray_i32(i8* ")
         llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
         llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
@@ -780,7 +780,7 @@ def llvm_emit_dynamic_binary(program: LirProgram, offset: int, output: Buffer, r
     if operator == IR_OPERATOR_ADD and left_type == LIR_TYPE_LIST_PTR and right_type == LIR_TYPE_LIST_PTR:
         append(output, "  ")
         append(output, result_name)
-        append(output, " = call i8* @concat_dynarray_ptr(i8* ")
+        append(output, " = call i8* @__c_concat_dynarray_ptr(i8* ")
         llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
         append(output, ", i8* ")
         llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
@@ -844,9 +844,9 @@ def llvm_emit_container_create(program: LirProgram, offset: int, output: Buffer,
     append(output, result_name)
     append(output, " = call i8* @")
     if is_ptr_list:
-        append(output, "create_dynarray_ptr(i32 ")
+        append(output, "__c_create_dynarray_ptr(i32 ")
     else:
-        append(output, "create_dynarray_i32(i32 ")
+        append(output, "__c_create_dynarray_i32(i32 ")
     append(output, capacity)
     append(output, ")\n")
     let operand_index = 1
@@ -862,20 +862,20 @@ def llvm_emit_container_create(program: LirProgram, offset: int, output: Buffer,
             append(output, " to i32\n")
         append(output, "  call void @")
         if operand_type == LIR_TYPE_F64:
-            append(output, "append_f64(i8* ")
+            append(output, "__c_append_f64(i8* ")
             append(output, result_name)
             append(output, ", double ")
             llvm_emit_operand(program, offset, operand_index, LIR_TYPE_F64, output)
         elif llvm_lir_is_pointer_like(operand_type):
             if is_ptr_list:
-                append(output, "append_ptr(i8* ")
+                append(output, "__c_append_ptr(i8* ")
             else:
-                append(output, "append_pointer(i8* ")
+                append(output, "__c_append_pointer(i8* ")
             append(output, result_name)
             append(output, ", i8* ")
             llvm_emit_operand(program, offset, operand_index, LIR_TYPE_PTR, output)
         else:
-            append(output, "append_i32(i8* ")
+            append(output, "__c_append_i32(i8* ")
             append(output, result_name)
             append(output, ", i32 ")
             if operand_type == LIR_TYPE_I1:
@@ -898,7 +898,7 @@ def llvm_emit_struct_create(program: LirProgram, offset: int, output: Buffer, re
         capacity_index = capacity_index + 1
     append(output, "  ")
     append(output, result_name)
-    append(output, " = call i8* @create_dynarray_i32(i32 ")
+    append(output, " = call i8* @__c_create_dynarray_i32(i32 ")
     append(output, capacity)
     append(output, ")\n")
     let operand_index = 0
@@ -914,17 +914,17 @@ def llvm_emit_struct_create(program: LirProgram, offset: int, output: Buffer, re
             append(output, " to i32\n")
         append(output, "  call void @")
         if operand_type == LIR_TYPE_F64:
-            append(output, "append_f64(i8* ")
+            append(output, "__c_append_f64(i8* ")
             append(output, result_name)
             append(output, ", double ")
             llvm_emit_operand(program, offset, operand_index, LIR_TYPE_F64, output)
         elif llvm_lir_is_pointer_like(operand_type):
-            append(output, "append_pointer(i8* ")
+            append(output, "__c_append_pointer(i8* ")
             append(output, result_name)
             append(output, ", i8* ")
             llvm_emit_operand(program, offset, operand_index, LIR_TYPE_PTR, output)
         else:
-            append(output, "append_i32(i8* ")
+            append(output, "__c_append_i32(i8* ")
             append(output, result_name)
             append(output, ", i32 ")
             if operand_type == LIR_TYPE_I1:
@@ -937,28 +937,28 @@ def llvm_emit_struct_create(program: LirProgram, offset: int, output: Buffer, re
 def llvm_lir_dict_func_name(key_type: int, value_type: int, operation: int) -> str:
     if operation == 1:
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_I32:
-            return "@dream_dict_create_str_int"
+            return "@__c_dict_create_str_int"
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_STR:
-            return "@dream_dict_create_str_str"
+            return "@__c_dict_create_str_str"
         if key_type == LIR_TYPE_I32 and value_type == LIR_TYPE_I32:
-            return "@dream_dict_create_int_int"
-        return "@dream_dict_create_int_str"
+            return "@__c_dict_create_int_int"
+        return "@__c_dict_create_int_str"
     if operation == 2:
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_I32:
-            return "@dict_set_str_int"
+            return "@__c_dict_set_str_int"
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_STR:
-            return "@dict_set_str_str"
+            return "@__c_dict_set_str_str"
         if key_type == LIR_TYPE_I32 and value_type == LIR_TYPE_I32:
-            return "@dict_set_int_int"
-        return "@dict_set_int_str"
+            return "@__c_dict_set_int_int"
+        return "@__c_dict_set_int_str"
     if operation == 3:
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_I32:
-            return "@dream_dict_get_str_int"
+            return "@__c_dict_get_str_int"
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_STR:
-            return "@dream_dict_get_str_str"
+            return "@__c_dict_get_str_str"
         if key_type == LIR_TYPE_I32 and value_type == LIR_TYPE_I32:
-            return "@dream_dict_get_int_int"
-        return "@dream_dict_get_int_str"
+            return "@__c_dict_get_int_int"
+        return "@__c_dict_get_int_str"
     return "@llvm.trap"
 
 def llvm_emit_dict_create(program: LirProgram, offset: int, output: Buffer, result_name: str):
@@ -1056,7 +1056,7 @@ def llvm_emit_tuple_get(program: LirProgram, offset: int, output: Buffer, result
     if result_type == LIR_TYPE_I1:
         let bool_integer = llvm_lir_join_int("%tuple_bool_", offset, "")
         append(output, bool_integer)
-        append(output, " = call i32 @get_dynarray_i32(i8* ")
+        append(output, " = call i32 @__c_get_dynarray_i32(i8* ")
         if llvm_lir_is_pointer_like(base_type):
             llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
         else:
@@ -1072,11 +1072,11 @@ def llvm_emit_tuple_get(program: LirProgram, offset: int, output: Buffer, result
         return
     append(output, result_name)
     if result_type == LIR_TYPE_I32:
-        append(output, " = call i32 @get_dynarray_i32(i8* ")
+        append(output, " = call i32 @__c_get_dynarray_i32(i8* ")
     elif result_type == LIR_TYPE_F64:
-        append(output, " = call double @get_f64(i8* ")
+        append(output, " = call double @__c_get_f64(i8* ")
     else:
-        append(output, " = call i8* @get_pointer(i8* ")
+        append(output, " = call i8* @__c_get_pointer(i8* ")
     if llvm_lir_is_pointer_like(base_type):
         llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
     else:
@@ -1112,26 +1112,26 @@ def llvm_lir_func_parameter_type(program: LirProgram, func_index: int, parameter
 def llvm_emit_runtime_declarations(output: Buffer):
     append(output, "declare void @llvm.trap()\n")
     append(output, "declare void @__c_process_set_args(i32, i8**)\n")
-    append(output, "declare i8* @create_dynarray_i32(i32)\n")
-    append(output, "declare void @append_i32(i8*, i32)\n")
-    append(output, "declare void @append_pointer(i8*, i8*)\n")
-    append(output, "declare i32 @get_dynarray_i32(i8*, i32)\n")
-    append(output, "declare i32 @contains_dynarray_i32(i8*, i32)\n")
-    append(output, "declare i32 @contains_dynarray_f64(i8*, double)\n")
-    append(output, "declare double @get_f64(i8*, i32)\n")
-    append(output, "declare void @set_dynarray_i32(i8*, i32, i32)\n")
-    append(output, "declare i8* @get_pointer(i8*, i32)\n")
-    append(output, "declare i8* @slice_dynarray_i32(i8*, i32, i32)\n")
-    append(output, "declare i8* @concat_dynarray_i32(i8*, i8*)\n")
-    append(output, "declare i8* @create_dynarray_ptr(i32)\n")
-    append(output, "declare void @append_ptr(i8*, i8*)\n")
-    append(output, "declare i8* @get_dynarray_ptr(i8*, i32)\n")
-    append(output, "declare i32 @contains_dynarray_str(i8*, i8*)\n")
-    append(output, "declare void @set_dynarray_ptr(i8*, i32, i8*)\n")
-    append(output, "declare i32 @len_dynarray_ptr(i8*)\n")
-    append(output, "declare i8* @slice_dynarray_ptr(i8*, i32, i32)\n")
-    append(output, "declare i8* @concat_dynarray_ptr(i8*, i8*)\n")
-    append(output, "declare i8* @string_substring(i8*, i32, i32)\n")
+    append(output, "declare i8* @__c_create_dynarray_i32(i32)\n")
+    append(output, "declare void @__c_append_i32(i8*, i32)\n")
+    append(output, "declare void @__c_append_pointer(i8*, i8*)\n")
+    append(output, "declare i32 @__c_get_dynarray_i32(i8*, i32)\n")
+    append(output, "declare i32 @__c_contains_dynarray_i32(i8*, i32)\n")
+    append(output, "declare i32 @__c_contains_dynarray_f64(i8*, double)\n")
+    append(output, "declare double @__c_get_f64(i8*, i32)\n")
+    append(output, "declare void @__c_set_dynarray_i32(i8*, i32, i32)\n")
+    append(output, "declare i8* @__c_get_pointer(i8*, i32)\n")
+    append(output, "declare i8* @__c_slice_dynarray_i32(i8*, i32, i32)\n")
+    append(output, "declare i8* @__c_concat_dynarray_i32(i8*, i8*)\n")
+    append(output, "declare i8* @__c_create_dynarray_ptr(i32)\n")
+    append(output, "declare void @__c_append_ptr(i8*, i8*)\n")
+    append(output, "declare i8* @__c_get_dynarray_ptr(i8*, i32)\n")
+    append(output, "declare i32 @__c_contains_dynarray_str(i8*, i8*)\n")
+    append(output, "declare void @__c_set_dynarray_ptr(i8*, i32, i8*)\n")
+    append(output, "declare i32 @__c_len_dynarray_ptr(i8*)\n")
+    append(output, "declare i8* @__c_slice_dynarray_ptr(i8*, i32, i32)\n")
+    append(output, "declare i8* @__c_concat_dynarray_ptr(i8*, i8*)\n")
+    append(output, "declare i8* @__c_str_substring(i8*, i32, i32)\n")
 
 def llvm_emit_func_signature(program: LirProgram, record_id: int, output: Buffer):
     # 写函数 LLVM 签名 "return_type (param_types...)"，供函数指针表 bitcast 使用
@@ -1176,19 +1176,19 @@ def llvm_emit_func_table(program: LirProgram, output: Buffer):
             append(output, "ptr null")
         func_index = func_index + 1
     append(output, "]\n")
-    append(output, "declare i32 @string_compare(i8*, i8*)\n")
-    append(output, "declare i8* @dream_dict_create_int_int(i32)\n")
-    append(output, "declare i8* @dream_dict_create_int_str(i32)\n")
-    append(output, "declare i8* @dream_dict_create_str_int(i32)\n")
-    append(output, "declare i8* @dream_dict_create_str_str(i32)\n")
-    append(output, "declare void @dict_set_int_int(i8*, i32, i32)\n")
-    append(output, "declare void @dict_set_int_str(i8*, i32, i8*)\n")
-    append(output, "declare void @dict_set_str_int(i8*, i8*, i32)\n")
-    append(output, "declare void @dict_set_str_str(i8*, i8*, i8*)\n")
-    append(output, "declare i32 @dream_dict_get_int_int(i8*, i32)\n")
-    append(output, "declare i8* @dream_dict_get_int_str(i8*, i32)\n")
-    append(output, "declare i32 @dream_dict_get_str_int(i8*, i8*)\n")
-    append(output, "declare i8* @dream_dict_get_str_str(i8*, i8*)\n")
+    append(output, "declare i32 @__c_str_compare(i8*, i8*)\n")
+    append(output, "declare i8* @__c_dict_create_int_int(i32)\n")
+    append(output, "declare i8* @__c_dict_create_int_str(i32)\n")
+    append(output, "declare i8* @__c_dict_create_str_int(i32)\n")
+    append(output, "declare i8* @__c_dict_create_str_str(i32)\n")
+    append(output, "declare void @__c_dict_set_int_int(i8*, i32, i32)\n")
+    append(output, "declare void @__c_dict_set_int_str(i8*, i32, i8*)\n")
+    append(output, "declare void @__c_dict_set_str_int(i8*, i8*, i32)\n")
+    append(output, "declare void @__c_dict_set_str_str(i8*, i8*, i8*)\n")
+    append(output, "declare i32 @__c_dict_get_int_int(i8*, i32)\n")
+    append(output, "declare i8* @__c_dict_get_int_str(i8*, i32)\n")
+    append(output, "declare i32 @__c_dict_get_str_int(i8*, i8*)\n")
+    append(output, "declare i8* @__c_dict_get_str_str(i8*, i8*)\n")
 
 def llvm_emit_external_declarations(output: Buffer):
     let external_id = EXTERNAL_ID_BASE
@@ -1203,7 +1203,7 @@ def llvm_emit_external_declarations(output: Buffer):
             append(output, llvm_lir_external_name(LIR_EXTERNAL_BASE + external_id))
             append(output, "(...)\n")
         external_id = external_id + 1
-    append(output, "declare void @append_f64(i8*, double)\n")
+    append(output, "declare void @__c_append_f64(i8*, double)\n")
 
 def llvm_emit_string_globals(program: LirProgram, output: Buffer):
     let record_id = 0
@@ -1559,15 +1559,15 @@ def llvm_lir_render_direct_call_arguments(program: LirProgram, record_offset: in
         argument_index = argument_index + 1
 
 def llvm_emit_token_call(program: LirProgram, offset: int, result_name: str, result_type: int, output: Buffer):
-    append(output, "  call void @append_i32(i8* ")
+    append(output, "  call void @__c_append_i32(i8* ")
     llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
     append(output, ", i32 ")
     llvm_emit_operand(program, offset, 4, LIR_TYPE_I32, output)
-    append(output, ")\n  call void @append_i32(i8* ")
+    append(output, ")\n  call void @__c_append_i32(i8* ")
     llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
     append(output, ", i32 ")
     llvm_emit_operand(program, offset, 5, LIR_TYPE_I32, output)
-    append(output, ")\n  call void @append_i32(i8* ")
+    append(output, ")\n  call void @__c_append_i32(i8* ")
     llvm_emit_operand(program, offset, 3, LIR_TYPE_PTR, output)
     append(output, ", i32 ")
     llvm_emit_operand(program, offset, 6, LIR_TYPE_I32, output)
@@ -1610,13 +1610,13 @@ def llvm_emit_binary(program: LirProgram, offset: int, output: Buffer, result_na
         llvm_emit_dynamic_binary(program, offset, output, result_name, result_type)
         return
     if operator == IR_OPERATOR_FLOORDIV or operator == IR_OPERATOR_POW:
-        let function_name = "int_floordiv"
+        let function_name = "__c_int_floordiv"
         if operator == IR_OPERATOR_POW:
-            function_name = "int_pow"
+            function_name = "__c_int_pow"
         if operand_type == LIR_TYPE_F64:
-            function_name = "float_floordiv"
+            function_name = "__c_float_floordiv"
             if operator == IR_OPERATOR_POW:
-                function_name = "float_pow"
+                function_name = "__c_float_pow"
         append(output, "  ")
         append(output, result_name)
         append(output, " = call ")
@@ -1945,13 +1945,13 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 llvm_emit_dict_create(program, offset, output, result_name)
             return
         if runtime_id == 7:
-            # LIR_RUNTIME_LIST_APPEND（含 dict 外的追加）：按值类型选 append_i32 /
-            # append_pointer / append_ptr
+            # LIR_RUNTIME_LIST_APPEND（含 dict 外的追加）：按值类型选 __c_append_i32 /
+            # __c_append_pointer / __c_append_ptr
             let append_type = llvm_lir_binary_operand_type(program, offset, 1)
             if llvm_lir_is_pointer_like(append_type):
-                let append_name = "@append_pointer"
+                let append_name = "@__c_append_pointer"
                 if llvm_lir_binary_operand_type(program, offset, 0) == LIR_TYPE_LIST_PTR:
-                    append_name = "@append_ptr"
+                    append_name = "@__c_append_ptr"
                 append(output, "  call void ")
                 append(output, append_name)
                 append(output, "(i8* ")
@@ -1960,7 +1960,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
                 append(output, ")\n")
             else:
-                append(output, "  call void @append_i32(i8* ")
+                append(output, "  call void @__c_append_i32(i8* ")
                 llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 ")
                 llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
@@ -1970,7 +1970,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
             let collection_type = llvm_lir_binary_operand_type(program, offset, 0)
             if collection_type == LIR_TYPE_DICT and runtime_id in [4, 5]:
                 # 字典键赋值：dict[key] = value（int/int 变体）
-                append(output, "  call void @dict_set_int_int(i8* ")
+                append(output, "  call void @__c_dict_set_int_int(i8* ")
                 llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 ")
                 llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
@@ -1980,7 +1980,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 return
             if collection_type == LIR_TYPE_LIST_PTR:
                 # 指针元素列表：单槽写入
-                append(output, "  call void @set_dynarray_ptr(i8* ")
+                append(output, "  call void @__c_set_dynarray_ptr(i8* ")
                 llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 ")
                 llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
@@ -1993,7 +1993,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 collection_name = llvm_lir_join_int("%list_set_collection_", offset, "")
                 append(output, "  ")
                 append(output, collection_name)
-                append(output, " = call i8* @get_pointer(i8* ")
+                append(output, " = call i8* @__c_get_pointer(i8* ")
                 llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, ", i32 0)\n")
             let value_type = llvm_lir_binary_operand_type(program, offset, 2)
@@ -2014,7 +2014,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 append(output, " = ptrtoint i8* ")
                 llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
                 append(output, " to i32\n")
-            append(output, "  call void @set_dynarray_i32(i8* ")
+            append(output, "  call void @__c_set_dynarray_i32(i8* ")
             if collection_name != "":
                 append(output, collection_name)
             else:
@@ -2048,7 +2048,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
         if runtime_id == 3 and program.records[offset + 7] > 1:
             let base_type = llvm_lir_binary_operand_type(program, offset, 0)
             if base_type == LIR_TYPE_LIST_PTR:
-                runtime_name = "@get_dynarray_ptr"
+                runtime_name = "@__c_get_dynarray_ptr"
             elif base_type == LIR_TYPE_DICT and result_value >= 0:
                 llvm_emit_dict_get(program, offset, output, result_name, return_type)
                 return
@@ -2057,9 +2057,9 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
         elif runtime_id == 6 and program.records[offset + 7] > 2:
             let base_type = llvm_lir_binary_operand_type(program, offset, 0)
             if base_type == LIR_TYPE_LIST_PTR:
-                runtime_name = "@slice_dynarray_ptr"
+                runtime_name = "@__c_slice_dynarray_ptr"
             elif llvm_lir_is_string(base_type) or base_type in [LIR_TYPE_DYNAMIC, LIR_TYPE_PTR]:
-                runtime_name = "@string_substring"
+                runtime_name = "@__c_str_substring"
         if runtime_id == 31 and program.records[offset + 7] == 2:
             llvm_emit_dynamic_unary(program, offset, output, result_name, return_type)
             return
