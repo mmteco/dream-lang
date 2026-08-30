@@ -107,6 +107,13 @@ const EXTERNAL_ID_NET_CLOSE: int = 1105
 const EXTERNAL_ID_HTTP_REQUEST: int = 1106
 const EXTERNAL_ID_CRYPTO_SHA256: int = 1107
 const EXTERNAL_ID_CRYPTO_SHA256_BYTES: int = 1108
+const EXTERNAL_ID_DICT_SET_INT_PTR: int = 1109
+const EXTERNAL_ID_DICT_SET_STR_PTR: int = 1110
+const EXTERNAL_ID_DICT_CREATE_INT_PTR: int = 1111
+const EXTERNAL_ID_DICT_CREATE_STR_PTR: int = 1112
+const EXTERNAL_ID_DICT_GET_INT_PTR: int = 1113
+const EXTERNAL_ID_DICT_GET_STR_PTR: int = 1114
+const EXTERNAL_ID_DICT_HAS_STR: int = 1115
 
 const EXTERNAL_ID_BASE: int = 1000
 const EXTERNAL_RETURN_UNIT: int = 1
@@ -666,6 +673,41 @@ let EXTERNAL_DEFS: list[ExternalDef] = [
     ExternalDef{
         name: "__c_crypto_sha256_bytes",
         return_type: EXTERNAL_RETURN_STRING,
+        has_declaration: true
+    },
+    ExternalDef{
+        name: "__c_dict_set_int_ptr",
+        return_type: EXTERNAL_RETURN_UNIT,
+        has_declaration: false
+    },
+    ExternalDef{
+        name: "__c_dict_set_str_ptr",
+        return_type: EXTERNAL_RETURN_UNIT,
+        has_declaration: false
+    },
+    ExternalDef{
+        name: "__c_dict_create_int_ptr",
+        return_type: EXTERNAL_RETURN_POINTER,
+        has_declaration: false
+    },
+    ExternalDef{
+        name: "__c_dict_create_str_ptr",
+        return_type: EXTERNAL_RETURN_POINTER,
+        has_declaration: false
+    },
+    ExternalDef{
+        name: "__c_dict_get_int_ptr",
+        return_type: EXTERNAL_RETURN_POINTER,
+        has_declaration: false
+    },
+    ExternalDef{
+        name: "__c_dict_get_str_ptr",
+        return_type: EXTERNAL_RETURN_POINTER,
+        has_declaration: false
+    },
+    ExternalDef{
+        name: "__c_dict_has_str",
+        return_type: EXTERNAL_RETURN_BOOL,
         has_declaration: true
     }
 ]

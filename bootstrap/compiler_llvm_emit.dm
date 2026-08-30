@@ -982,24 +982,36 @@ def llvm_lir_dict_func_name(key_type: int, value_type: int, operation: int) -> s
             return "@__c_dict_create_str_int"
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_STR:
             return "@__c_dict_create_str_str"
+        if key_type == LIR_TYPE_STR:
+            return "@__c_dict_create_str_ptr"
         if key_type == LIR_TYPE_I32 and value_type == LIR_TYPE_I32:
             return "@__c_dict_create_int_int"
+        if key_type == LIR_TYPE_I32:
+            return "@__c_dict_create_int_ptr"
         return "@__c_dict_create_int_str"
     if operation == 2:
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_I32:
             return "@__c_dict_set_str_int"
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_STR:
             return "@__c_dict_set_str_str"
+        if key_type == LIR_TYPE_STR:
+            return "@__c_dict_set_str_ptr"
         if key_type == LIR_TYPE_I32 and value_type == LIR_TYPE_I32:
             return "@__c_dict_set_int_int"
+        if key_type == LIR_TYPE_I32:
+            return "@__c_dict_set_int_ptr"
         return "@__c_dict_set_int_str"
     if operation == 3:
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_I32:
             return "@__c_dict_get_str_int"
         if key_type == LIR_TYPE_STR and value_type == LIR_TYPE_STR:
             return "@__c_dict_get_str_str"
+        if key_type == LIR_TYPE_STR:
+            return "@__c_dict_get_str_ptr"
         if key_type == LIR_TYPE_I32 and value_type == LIR_TYPE_I32:
             return "@__c_dict_get_int_int"
+        if key_type == LIR_TYPE_I32:
+            return "@__c_dict_get_int_ptr"
         return "@__c_dict_get_int_str"
     return "@llvm.trap"
 
@@ -1044,7 +1056,7 @@ def llvm_emit_dict_get(program: LirProgram, offset: int, output: Buffer, result_
         key_type = llvm_lir_binary_operand_type(program, offset, 1)
     let value_type = result_type
     if value_type not in [LIR_TYPE_I32, LIR_TYPE_STR]:
-        value_type = LIR_TYPE_I32
+        value_type = LIR_TYPE_PTR
     append(output, "  ")
     append(output, result_name)
     append(output, " = call ")
@@ -1227,14 +1239,20 @@ def llvm_emit_func_table(program: LirProgram, output: Buffer):
     append(output, "declare i8* @__c_dict_create_int_str(i32)\n")
     append(output, "declare i8* @__c_dict_create_str_int(i32)\n")
     append(output, "declare i8* @__c_dict_create_str_str(i32)\n")
+    append(output, "declare i8* @__c_dict_create_int_ptr(i32)\n")
+    append(output, "declare i8* @__c_dict_create_str_ptr(i32)\n")
     append(output, "declare void @__c_dict_set_int_int(i8*, i32, i32)\n")
     append(output, "declare void @__c_dict_set_int_str(i8*, i32, i8*)\n")
     append(output, "declare void @__c_dict_set_str_int(i8*, i8*, i32)\n")
     append(output, "declare void @__c_dict_set_str_str(i8*, i8*, i8*)\n")
+    append(output, "declare void @__c_dict_set_int_ptr(i8*, i32, i8*)\n")
+    append(output, "declare void @__c_dict_set_str_ptr(i8*, i8*, i8*)\n")
     append(output, "declare i32 @__c_dict_get_int_int(i8*, i32)\n")
     append(output, "declare i8* @__c_dict_get_int_str(i8*, i32)\n")
     append(output, "declare i32 @__c_dict_get_str_int(i8*, i8*)\n")
     append(output, "declare i8* @__c_dict_get_str_str(i8*, i8*)\n")
+    append(output, "declare i8* @__c_dict_get_int_ptr(i8*, i32)\n")
+    append(output, "declare i8* @__c_dict_get_str_ptr(i8*, i8*)\n")
 
 def llvm_emit_external_declarations(output: Buffer):
     let external_id = EXTERNAL_ID_BASE
@@ -2011,13 +2029,21 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
         if runtime_id in [4, 5]:
             let collection_type = llvm_lir_binary_operand_type(program, offset, 0)
             if collection_type == LIR_TYPE_DICT and runtime_id in [4, 5]:
-                # 字典键赋值：dict[key] = value（int/int 变体）
-                append(output, "  call void @__c_dict_set_int_int(i8* ")
+                let key_type = llvm_lir_binary_operand_type(program, offset, 1)
+                let value_type = llvm_lir_binary_operand_type(program, offset, 2)
+                let setter_name = llvm_lir_dict_func_name(key_type, value_type, 2)
+                append(output, "  call void ")
+                append(output, setter_name)
+                append(output, "(i8* ")
                 llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
-                append(output, ", i32 ")
-                llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
-                append(output, ", i32 ")
-                llvm_emit_operand(program, offset, 2, LIR_TYPE_I32, output)
+                append(output, ", ")
+                append(output, llvm_lir_type(key_type))
+                append(output, " ")
+                llvm_emit_operand(program, offset, 1, key_type, output)
+                append(output, ", ")
+                append(output, llvm_lir_type(value_type))
+                append(output, " ")
+                llvm_emit_operand(program, offset, 2, value_type, output)
                 append(output, ")\n")
                 return
             if collection_type == LIR_TYPE_LIST_PTR:

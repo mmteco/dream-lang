@@ -2,7 +2,7 @@
 # io.open 与 with 上下文管理测试
 
 from io import open
-from fs import delete
+from fs import remove_file
 
 def result_value(value: Result[int, str]) -> int:
     return match value:
@@ -16,6 +16,6 @@ def main():
     with open("test_with.txt") as reader:
         print(reader.read())
 
-    print(delete("test_with.txt"))
+    print(remove_file("test_with.txt"))
 
 main()

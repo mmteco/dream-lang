@@ -67,6 +67,14 @@ dict_t* __c_dict_create_str_str(int initial_capacity) {
     return dict_create(DICT_KEY_STRING, DICT_VAL_STRING, initial_capacity);
 }
 
+dict_t* __c_dict_create_int_ptr(int initial_capacity) {
+    return dict_create(DICT_KEY_INT, DICT_VAL_PTR, initial_capacity);
+}
+
+dict_t* __c_dict_create_str_ptr(int initial_capacity) {
+    return dict_create(DICT_KEY_STRING, DICT_VAL_PTR, initial_capacity);
+}
+
 static bool keys_equal(dict_t* dict, void* k1, void* k2) {
     if (dict->key_type == DICT_KEY_INT) {
         return (intptr_t)k1 == (intptr_t)k2;
@@ -304,6 +312,14 @@ char* __c_dict_get_str_str(dict_t* dict, const char* key) {
     return dict_get_str_str(dict, key, NULL);
 }
 
+void* __c_dict_get_int_ptr(dict_t* dict, int key) {
+    return dict_get_int_ptr(dict, key, NULL);
+}
+
+void* __c_dict_get_str_ptr(dict_t* dict, const char* key) {
+    return dict_get_str_ptr(dict, key, NULL);
+}
+
 int __c_dict_size_int_int(dict_t* dict) {
     return dict_size(dict);
 }
@@ -317,6 +333,14 @@ int __c_dict_size_str_int(dict_t* dict) {
 }
 
 int __c_dict_size_str_str(dict_t* dict) {
+    return dict_size(dict);
+}
+
+int __c_dict_size_int_ptr(dict_t* dict) {
+    return dict_size(dict);
+}
+
+int __c_dict_size_str_ptr(dict_t* dict) {
     return dict_size(dict);
 }
 
@@ -334,6 +358,10 @@ bool dict_has_str(dict_t* dict, const char* key) {
     bool found;
     dict_get_internal(dict, (void*)key, &found);
     return found;
+}
+
+bool __c_dict_has_str(dict_t* dict, const char* key) {
+    return dict_has_str(dict, key);
 }
 
 void dict_remove_int(dict_t* dict, int key) {

@@ -1,6 +1,6 @@
 from buffer import Buffer
 from io import read, write
-from fs import exists, delete, mkdir, rename
+from fs import exists, remove_file, mkdir, rename
 from compiler import build
 from str import from_int
 from utf8 import ord
@@ -322,10 +322,10 @@ def write_text_atomic(path: str, content: str) -> bool:
         Ok(_): true
         Err(_): false
     if not written:
-        delete(temp_path)
+        remove_file(temp_path)
         return false
     if not rename(temp_path, path):
-        delete(temp_path)
+        remove_file(temp_path)
         return false
     return true
 
@@ -333,10 +333,10 @@ def write_buffer(path: str, output: Buffer) -> bool:
     let temp_path = compiler_temp_path("buffer")
     let written = __c_file_write_bytes(temp_path, __c_bytes_from_array(output.data))
     if written < 0:
-        delete(temp_path)
+        remove_file(temp_path)
         return false
     if not rename(temp_path, path):
-        delete(temp_path)
+        remove_file(temp_path)
         return false
     return true
 
@@ -810,19 +810,19 @@ def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool
     let llvm_path = "target/tmp/llvm_" + build_token + ".ll"
     let build_output_path = "target/tmp/output_" + build_token
     if not compile_source(source_path, llvm_path, COMPILE_OUTPUT_LLVM):
-        delete(llvm_path)
+        remove_file(llvm_path)
         return false
     if not build(llvm_path, build_output_path, is_optimized):
-        delete(llvm_path)
-        delete(build_output_path)
+        remove_file(llvm_path)
+        remove_file(build_output_path)
         eprintln("error: failed to build executable")
         return false
     if not rename(build_output_path, output_path):
-        delete(llvm_path)
-        delete(build_output_path)
+        remove_file(llvm_path)
+        remove_file(build_output_path)
         eprintln("error: failed to publish executable")
         return false
-    delete(llvm_path)
+    remove_file(llvm_path)
     return true
 
 def run_build_command(argument_count: int) -> bool:

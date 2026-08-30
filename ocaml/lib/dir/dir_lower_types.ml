@@ -326,6 +326,7 @@ let escaped_operands = function
   | Dir.Call (_, _, _, _, arguments) -> arguments
   | Dir.CallIndirect (_, _, _, _, arguments) -> arguments
   | Dir.InterfaceCall (_, _, _, _, _, _, _, arguments) -> arguments
+  | Dir.MakeInterface (_, _, _, object_value, _) -> [object_value]
   | Dir.MakeClosure (_, _, _, _, captures) -> captures
   | Dir.GlobalStore (_, value) -> [value]
   | _ -> []

@@ -35,6 +35,8 @@ dict_t* __c_dict_create_int_int(int initial_capacity);
 dict_t* __c_dict_create_int_str(int initial_capacity);
 dict_t* __c_dict_create_str_int(int initial_capacity);
 dict_t* __c_dict_create_str_str(int initial_capacity);
+dict_t* __c_dict_create_int_ptr(int initial_capacity);
+dict_t* __c_dict_create_str_ptr(int initial_capacity);
 
 void __c_dict_set_int_int(dict_t* dict, int key, int value);
 void __c_dict_set_int_str(dict_t* dict, int key, const char* value);
@@ -54,14 +56,19 @@ int __c_dict_get_int_int(dict_t* dict, int key);
 char* __c_dict_get_int_str(dict_t* dict, int key);
 int __c_dict_get_str_int(dict_t* dict, const char* key);
 char* __c_dict_get_str_str(dict_t* dict, const char* key);
+void* __c_dict_get_int_ptr(dict_t* dict, int key);
+void* __c_dict_get_str_ptr(dict_t* dict, const char* key);
 
 int __c_dict_size_int_int(dict_t* dict);
 int __c_dict_size_int_str(dict_t* dict);
 int __c_dict_size_str_int(dict_t* dict);
 int __c_dict_size_str_str(dict_t* dict);
+int __c_dict_size_int_ptr(dict_t* dict);
+int __c_dict_size_str_ptr(dict_t* dict);
 
 bool dict_has_int(dict_t* dict, int key);
 bool dict_has_str(dict_t* dict, const char* key);
+bool __c_dict_has_str(dict_t* dict, const char* key);
 
 void dict_remove_int(dict_t* dict, int key);
 void dict_remove_str(dict_t* dict, const char* key);

@@ -1,4 +1,4 @@
-# TCP 网络标准库
+# TCP networking utilities
 
 struct Connection:
     fd: int
@@ -24,7 +24,10 @@ struct Connection:
     def close(self) -> bool:
         if not self.is_open():
             return false
-        return __c_net_close(self.fd)
+        let closed = __c_net_close(self.fd)
+        if closed:
+            self.fd = -1
+        return closed
 
 def connect(host: str, port: int) -> Connection:
     return Connection{fd: __c_net_connect(host, port)}

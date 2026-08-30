@@ -2,7 +2,7 @@
 # Dream 文件 I/O 综合测试
 
 from io import open
-from fs import exists, delete
+from fs import exists, remove_file
 from bytes import encode
 
 def report_result(r: Result[int, str]) -> int:
@@ -51,10 +51,10 @@ def main():
 
     print("--- Cleanup ---")
 
-    let del1 = delete("test1.txt")
+    let del1 = remove_file("test1.txt")
     print(del1)
 
-    let del2 = delete("test2.txt")
+    let del2 = remove_file("test2.txt")
     print(del2)
 
     print("=== All File I/O Tests Passed ===")

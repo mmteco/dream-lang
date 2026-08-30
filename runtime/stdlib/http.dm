@@ -1,10 +1,10 @@
-# HTTP/1.1 客户端标准库
+# HTTP client utilities
 
-from str import from_int
+from collections import OrderedSet
 
 struct Response:
     status: int
-    headers: list[str]
+    headers: dict[str, OrderedSet]
     body: str
     error: str
 
@@ -12,12 +12,13 @@ struct Response:
         return self.error == "" and self.status >= 200 and self.status < 300
 
     def header(self, name: str) -> str:
-        let index = 0
-        while index + 1 < len(self.headers):
-            if self.headers[index] == name:
-                return self.headers[index + 1]
-            index = index + 2
-        return ""
+        let key = __c_str_lower(name)
+        if not __c_dict_has_str(self.headers, key):
+            return ""
+        let values = self.headers[key]
+        if len(values.values) == 0:
+            return ""
+        return values.values[0]
 
 def decimal(value: str) -> int:
     if value == "":
@@ -32,23 +33,12 @@ def decimal(value: str) -> int:
         index = index + 1
     return result
 
+def empty_headers() -> dict[str, OrderedSet]:
+    return __c_dict_create_str_ptr(8)
+
 def response_error(message: str) -> Response:
-    let headers: list[str] = []
+    let headers: dict[str, OrderedSet] = empty_headers()
     return Response{status: 0, headers: headers, body: "", error: message}
-
-def header_text(headers: list[str]) -> str:
-    let result = ""
-    let index = 0
-    while index + 1 < len(headers):
-        result = result + headers[index] + ": " + headers[index + 1] + "\r\n"
-        index = index + 2
-    return result
-
-def request_headers(headers: list[str], body: str) -> str:
-    let result = header_text(headers)
-    if body != "":
-        result = result + "Content-Length: " + from_int(len(__c_str_to_bytes(body))) + "\r\n"
-    return result
 
 def parse_status(line: str) -> int:
     let first_space = __c_str_find(line, " ")
@@ -60,16 +50,20 @@ def parse_status(line: str) -> int:
         return decimal(remainder)
     return decimal(remainder[:second_space])
 
-def parse_headers(header_text: str) -> list[str]:
+def parse_headers(header_text: str) -> dict[str, OrderedSet]:
     let lines = __c_str_split(header_text, "\r\n")
-    let result: list[str] = []
+    let result: dict[str, OrderedSet] = empty_headers()
     let index = 1
     while index < len(lines):
         let line = lines[index]
         let separator = __c_str_find(line, ":")
         if separator > 0:
-            append(result, line[:separator])
-            append(result, __c_str_strip(line[separator + 1:]))
+            let name = __c_str_lower(__c_str_strip(line[:separator]))
+            let value = __c_str_strip(line[separator + 1:])
+            if __c_dict_has_str(result, name):
+                result[name].add(value)
+            else:
+                result[name] = OrderedSet{values: [value]}
         index = index + 1
     return result
 
@@ -87,17 +81,17 @@ def parse_response(raw: str) -> Response:
     let body = raw[header_end + 4:]
     return Response{status: status, headers: parse_headers(header_text), body: body, error: ""}
 
-def is_supported_url(value: str) -> bool:
-    let scheme_end = __c_str_find(value, "://")
+def is_supported_url(url: str) -> bool:
+    let scheme_end = __c_str_find(url, "://")
     if scheme_end < 0:
         return true
-    let scheme = value[:scheme_end]
+    let scheme = url[:scheme_end]
     return scheme == "http" or scheme == "https"
 
-def request(method: str, value: str, headers: list[str], body: str) -> Response:
-    if not is_supported_url(value):
+def request(method: str, url: str, headers: dict[str, str] = {}, body: str = "", timeout: int = 30) -> Response:
+    if not is_supported_url(url):
         return response_error("only HTTP and HTTPS URLs are supported")
-    let raw = __c_http_request(method, value, request_headers(headers, body), body)
+    let raw = __c_http_request(method, url, headers, body, timeout)
     if raw == "":
         return response_error("failed to execute HTTP request")
     let response = parse_response(raw)
@@ -105,10 +99,8 @@ def request(method: str, value: str, headers: list[str], body: str) -> Response:
         return response_error(response.body)
     return response
 
-def get(value: str) -> Response:
-    let headers: list[str] = []
-    return request("GET", value, headers, "")
+def get(url: str, headers: dict[str, str] = {}, timeout: int = 30) -> Response:
+    return request("GET", url, headers, "", timeout)
 
-def post(value: str, body: str) -> Response:
-    let headers: list[str] = []
-    return request("POST", value, headers, body)
+def post(url: str, body: str = "", headers: dict[str, str] = {}, timeout: int = 30) -> Response:
+    return request("POST", url, headers, body, timeout)

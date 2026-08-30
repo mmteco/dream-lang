@@ -140,7 +140,11 @@ let rec equal_ty left right =
   | Str, Str
   | Bytes, Bytes -> true
   | Dict (left_key, left_value), Dict (right_key, right_value) ->
-      equal_ty left_key right_key && equal_ty left_value right_value
+      equal_ty left_key right_key &&
+      (match left_value, right_value with
+       | ClosureEnv [], _
+       | _, ClosureEnv [] -> true
+       | _ -> equal_ty left_value right_value)
   | Enum (left_name, _), Enum (right_name, _) -> left_name = right_name
   | List left_element, List right_element -> equal_ty left_element right_element
   | Tuple left_elements, Tuple right_elements ->

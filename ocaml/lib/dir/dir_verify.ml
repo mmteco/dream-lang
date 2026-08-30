@@ -25,6 +25,8 @@ let verify module_ =
   in
   let ty_compatible left right =
     match left, right with
+    | ClosureEnv [], _
+    | _, ClosureEnv [] -> true
     | Union left_members, Union right_members ->
         List.exists (fun member ->
           List.exists (equal_ty member) right_members

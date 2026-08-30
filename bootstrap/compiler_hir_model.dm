@@ -20,11 +20,13 @@ from compiler_lex import (
     STRUCT_FIELD_STR,
     STRUCT_FIELD_LIST_INT,
     STRUCT_FIELD_LIST_STR,
+    STRUCT_FIELD_DICT,
     STRUCT_FIELD_DECLARATIONS,
     STRUCT_FIELD_NAME_STARTS,
     STRUCT_FIELD_NAME_ENDS,
     STRUCT_FIELD_KINDS,
-    STRUCT_FIELD_TYPE_DECLS
+    STRUCT_FIELD_TYPE_DECLS,
+    STRUCT_FIELD_VALUE_TYPE_DECLS
 )
 from compiler_external import (
     external_id_from_name,
@@ -1439,6 +1441,8 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
                         return HIR_TYPE_LIST_INT
                     if field_kind == STRUCT_FIELD_LIST_STR:
                         return HIR_TYPE_LIST
+                    if field_kind == STRUCT_FIELD_DICT:
+                        return HIR_TYPE_DICT
             field_index = field_index + 1
         return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_LIST:

@@ -1566,6 +1566,7 @@ const STRUCT_FIELD_FLOAT: int = 4
 const STRUCT_FIELD_STR: int = 5
 const STRUCT_FIELD_LIST_INT: int = 6
 const STRUCT_FIELD_LIST_STR: int = 7
+const STRUCT_FIELD_DICT: int = 8
 
 let STRUCT_FIELD_DECLARATIONS = []
 let STRUCT_FIELD_NAME_STARTS = []
@@ -1573,6 +1574,7 @@ let STRUCT_FIELD_NAME_ENDS = []
 let STRUCT_FIELD_SLOTS = []
 let STRUCT_FIELD_KINDS = []
 let STRUCT_FIELD_TYPE_DECLS = []
+let STRUCT_FIELD_VALUE_TYPE_DECLS = []
 
 def struct_field_kind_from_type(tokens: TokenStream, type_index: int) -> int:
     let source = tokens.src
@@ -1590,6 +1592,8 @@ def struct_field_kind_from_type(tokens: TokenStream, type_index: int) -> int:
         if source_equals(source, token_start(starts, element_index), token_end(ends, element_index), "str"):
             return STRUCT_FIELD_LIST_STR
         return STRUCT_FIELD_LIST_INT
+    if source_equals(source, type_start, type_end, "dict") and token_kind(kinds, type_index + 1) == TOKEN_OPEN_BRACKET:
+        return STRUCT_FIELD_DICT
     if source_equals(source, type_start, type_end, "int") or source_equals(source, type_start, type_end,
         "rune") or source_equals(source, type_start, type_end, "byte"):
         return STRUCT_FIELD_INT
@@ -1599,9 +1603,38 @@ def struct_field_kind_from_type(tokens: TokenStream, type_index: int) -> int:
         return STRUCT_FIELD_FLOAT
     return STRUCT_FIELD_PTR
 
+def struct_field_value_type_declaration(tokens: TokenStream, type_index: int) -> int:
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let source = tokens.src
+    if token_kind(kinds, type_index) != TOKEN_IDENTIFIER or not source_equals(source,
+        token_start(starts, type_index), token_end(ends, type_index), "dict"):
+        return -1
+    if token_kind(kinds, type_index + 1) != TOKEN_OPEN_BRACKET:
+        return -1
+    let cursor = type_index + 2
+    let depth = 0
+    while token_kind(kinds, cursor) != TOKEN_EOF:
+        if token_kind(kinds, cursor) == TOKEN_OPEN_BRACKET:
+            depth = depth + 1
+        elif token_kind(kinds, cursor) == TOKEN_CLOSE_BRACKET:
+            if depth == 0:
+                return -1
+            depth = depth - 1
+        elif token_kind(kinds, cursor) == TOKEN_COMMA and depth == 0:
+            let value_index = cursor + 1
+            if token_kind(kinds, value_index) != TOKEN_IDENTIFIER:
+                return -1
+            let value_start = token_start(starts, value_index)
+            let value_end = token_end(ends, value_index)
+            return find_type_declaration_index(source, value_start, value_end)
+        cursor = cursor + 1
+    return -1
+
 def struct_field_slot_width(field_kind: int) -> int:
     if field_kind in [STRUCT_FIELD_PTR, STRUCT_FIELD_FLOAT, STRUCT_FIELD_STR, STRUCT_FIELD_LIST_INT,
-        STRUCT_FIELD_LIST_STR]:
+        STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DICT]:
         return 2
     return 1
 
@@ -1628,6 +1661,7 @@ def collect_struct_fields(tokens: TokenStream):
     STRUCT_FIELD_SLOTS = []
     STRUCT_FIELD_KINDS = []
     STRUCT_FIELD_TYPE_DECLS = []
+    STRUCT_FIELD_VALUE_TYPE_DECLS = []
     let declaration_index = 0
     while declaration_index < len(STRUCT_DECLARATION_TOKENS):
         let cursor = STRUCT_DECLARATION_TOKENS[declaration_index] + 1
@@ -1651,6 +1685,7 @@ def collect_struct_fields(tokens: TokenStream):
                 append(STRUCT_FIELD_SLOTS, slot_index)
                 append(STRUCT_FIELD_KINDS, field_kind)
                 append(STRUCT_FIELD_TYPE_DECLS, struct_field_type_declaration(tokens, cursor + 2))
+                append(STRUCT_FIELD_VALUE_TYPE_DECLS, struct_field_value_type_declaration(tokens, cursor + 2))
                 slot_index = slot_index + struct_field_slot_width(field_kind)
                 while token_kind(kinds, cursor) not in [TOKEN_NEWLINE, TOKEN_EOF]:
                     cursor = cursor + 1

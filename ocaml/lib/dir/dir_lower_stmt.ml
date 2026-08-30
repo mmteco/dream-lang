@@ -503,7 +503,9 @@ and lower_statement context function_builder environment statement =
              | Dir.I32, Dir.Str -> "__c_dict_set_int_str"
              | Dir.Str, Dir.I32 -> "__c_dict_set_str_int"
              | Dir.Str, Dir.Str -> "__c_dict_set_str_str"
-             | _ -> fail_at position "DIR dict supports only int and str keys/values"
+             | Dir.I32, _ -> "__c_dict_set_int_ptr"
+             | Dir.Str, _ -> "__c_dict_set_str_ptr"
+             | _ -> fail_at position "DIR dict supports only int and str keys"
            in
            emit function_builder (Dir.Call (None, Dir.Unit, setter_name,
              [lowered_collection.ty; key_type; value_type],

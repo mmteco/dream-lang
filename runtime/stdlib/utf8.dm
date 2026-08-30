@@ -14,7 +14,11 @@ def encode_rune(r: rune) -> bytes:
     return __c_utf8_encode_rune(r)
 
 def decode_rune(b: bytes, offset: int) -> (rune, int):
-    let first = __c_bytes_get(b, offset)
+    let byte_length = len(b)
+    if offset < 0 or offset >= byte_length:
+        return (0, 0)
+
+    let first = b[offset]
     if first < 0x80:
         return (first, 1)
     if first < 0xC0:
@@ -32,12 +36,12 @@ def decode_rune(b: bytes, offset: int) -> (rune, int):
         lead_base = 0xF0
     else:
         return (0, 1)
-    if offset + length > __c_bytes_len(b):
+    if offset + length > byte_length:
         return (0, 1)
     let rune_value = first - lead_base
     let index = 1
     while index < length:
-        let current = __c_bytes_get(b, offset + index)
+        let current = b[offset + index]
         if current < 0x80 or current >= 0xC0:
             return (0, index)
         rune_value = rune_value * 64 + (current - 0x80)

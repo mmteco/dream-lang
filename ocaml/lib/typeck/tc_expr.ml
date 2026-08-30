@@ -44,6 +44,45 @@ let find_method_type env struct_name method_name struct_def =
   | Some method_type -> Some method_type
   | None -> Env.find_impl_method_for_type (TyStruct (struct_name, [])) method_name env
 
+let infer_struct_constructor infer env struct_name args pos =
+  match Env.find_struct struct_name env with
+  | None -> (TyUnknown, empty_subst)
+  | Some struct_def ->
+      (match Env.StringMap.find_opt "__init__" struct_def.struct_methods with
+       | None when args = [] -> (TyStruct (struct_name, []), empty_subst)
+       | None ->
+           let err = make_error (TypeError "Constructor argument count mismatch") pos
+             (Printf.sprintf "Struct '%s' has no __init__ arguments" struct_name) in
+           report_error err;
+           (TyUnknown, empty_subst)
+       | Some (TyFunc (expected_types, _)) ->
+           let (arg_types, arg_substs) = List.split (List.map (infer env) args) in
+           let combined_subst = List.fold_left compose_subst empty_subst arg_substs in
+           if List.length expected_types <> List.length arg_types then begin
+             let err = make_error (TypeError "Constructor argument count mismatch") pos
+               (Printf.sprintf "Struct '%s' expects %d arguments but got %d"
+                 struct_name (List.length expected_types) (List.length arg_types)) in
+             report_error err;
+             (TyUnknown, combined_subst)
+           end else begin
+             try
+               let argument_substs = List.map2 (fun expected actual ->
+                 unify (apply_subst combined_subst expected) (apply_subst combined_subst actual)
+               ) expected_types arg_types in
+               let final_subst = List.fold_left compose_subst combined_subst argument_substs in
+               (TyStruct (struct_name, []), final_subst)
+             with Failure msg ->
+               let err = make_error (TypeError msg) pos
+                 (Printf.sprintf "Constructor argument type mismatch: %s" msg) in
+               report_error err;
+               (TyUnknown, combined_subst)
+           end
+       | Some _ ->
+           let err = make_error (TypeError "Invalid constructor") pos
+             (Printf.sprintf "Struct '%s' __init__ must be a function" struct_name) in
+           report_error err;
+           (TyUnknown, empty_subst))
+
 let find_enum_method_type env enum_name method_name =
   match Env.find_impl_method_for_type (TyEnum (enum_name, [])) method_name env with
   | Some (TyFunc (self_type :: parameter_types, return_type))
@@ -411,6 +450,10 @@ let rec infer_expr env = function
         let combined_subst = List.fold_left compose_subst empty_subst substs in
         let (first_kt, first_vt) = List.hd pair_types in
         (TyDict (first_kt, first_vt), combined_subst)
+
+  | ECall (EVar (struct_name, _), args, pos)
+    when Env.find_struct struct_name env <> None ->
+      infer_struct_constructor infer_expr env struct_name args pos
 
   | ECall (func, args, pos) ->
       (match func with

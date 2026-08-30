@@ -90,25 +90,37 @@ static size_t write_headers(char* data, size_t size, size_t count, void* user_da
     return length;
 }
 
-static struct curl_slist* parse_headers(const char* headers) {
+static struct curl_slist* parse_header_map(dict_t* headers) {
     struct curl_slist* result = NULL;
     if (headers == NULL) {
         return NULL;
     }
 
-    const char* line_start = headers;
-    while (*line_start != '\0') {
-        const char* line_end = strstr(line_start, "\r\n");
-        size_t line_length = line_end == NULL
-            ? strlen(line_start)
-            : (size_t)(line_end - line_start);
-        if (line_length > 0) {
+    for (int bucket_index = 0; bucket_index < headers->capacity; bucket_index++) {
+        dict_entry_t* entry = headers->buckets[bucket_index];
+        while (entry != NULL) {
+            const char* key = entry->key;
+            const char* value = entry->value;
+            if (key == NULL || value == NULL) {
+                curl_slist_free_all(result);
+                return NULL;
+            }
+            size_t key_length = strlen(key);
+            size_t value_length = strlen(value);
+            if (key_length > SIZE_MAX - value_length - 3) {
+                curl_slist_free_all(result);
+                return NULL;
+            }
+            size_t line_length = key_length + value_length + 2;
             char* line = malloc(line_length + 1);
             if (line == NULL) {
                 curl_slist_free_all(result);
                 return NULL;
             }
-            memcpy(line, line_start, line_length);
+            memcpy(line, key, key_length);
+            line[key_length] = ':';
+            line[key_length + 1] = ' ';
+            memcpy(line + key_length + 2, value, value_length);
             line[line_length] = '\0';
             struct curl_slist* next = curl_slist_append(result, line);
             free(line);
@@ -117,11 +129,8 @@ static struct curl_slist* parse_headers(const char* headers) {
                 return NULL;
             }
             result = next;
+            entry = entry->next;
         }
-        if (line_end == NULL) {
-            break;
-        }
-        line_start = line_end + 2;
     }
     return result;
 }
@@ -152,9 +161,17 @@ static char* error_response(const char* message) {
 }
 
 char* __c_http_request(const char* method, const char* url,
-    const char* headers, const char* body) {
+    dict_t* headers, const char* body, int timeout) {
     if (method == NULL || url == NULL || method[0] == '\0' || url[0] == '\0') {
         return error_response("invalid HTTP method or URL");
+    }
+    if (headers != NULL && (headers->key_type != DICT_KEY_STRING ||
+        headers->val_type != DICT_VAL_STRING || headers->capacity <= 0 ||
+        headers->buckets == NULL)) {
+        return error_response("HTTP headers must be dict[str, str]");
+    }
+    if (timeout <= 0) {
+        return error_response("HTTP timeout must be positive");
     }
 
     pthread_once(&curl_once, initialize_curl);
@@ -169,8 +186,8 @@ char* __c_http_request(const char* method, const char* url,
 
     HttpBuffer header_buffer = {0};
     HttpBuffer body_buffer = {0};
-    struct curl_slist* request_headers = parse_headers(headers);
-    if (headers != NULL && headers[0] != '\0' && request_headers == NULL) {
+    struct curl_slist* request_headers = parse_header_map(headers);
+    if (headers != NULL && headers->size > 0 && request_headers == NULL) {
         curl_easy_cleanup(curl);
         return error_response("failed to allocate HTTP headers");
     }
@@ -179,8 +196,10 @@ char* __c_http_request(const char* method, const char* url,
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 10000L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 30000L);
+    long timeout_ms = (long)timeout * 1000L;
+    long connect_timeout_ms = timeout_ms < 10000L ? timeout_ms : 10000L;
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, connect_timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "dream-http/1.0");
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, write_headers);

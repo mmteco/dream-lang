@@ -3,7 +3,7 @@
 def exists(path: str) -> bool:
     return __c_file_exists(path)
 
-def delete(path: str) -> bool:
+def remove_file(path: str) -> bool:
     return __c_file_delete(path)
 
 def is_dir(path: str) -> bool:

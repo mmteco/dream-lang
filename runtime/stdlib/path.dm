@@ -1,4 +1,4 @@
-# 路径操作标准库
+# Path utilities
 
 def is_abs(value: str) -> bool:
     return __c_str_starts_with(value, "/")
@@ -21,14 +21,9 @@ def normalize(value: str) -> str:
         if index == len(value) or value[index] == '/':
             let part = value[segment_start:index]
             if part == "..":
-                let last_separator = -1
-                let search_index = 0
-                while search_index < len(result):
-                    if result[search_index] == '/':
-                        last_separator = search_index
-                    search_index = search_index + 1
-                if last_separator >= 0:
-                    result = result[:last_separator]
+                let separator = last_separator(result)
+                if separator >= 0:
+                    result = result[:separator]
                 elif result != "":
                     result = ""
                 elif not absolute:

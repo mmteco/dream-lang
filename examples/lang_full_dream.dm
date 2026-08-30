@@ -2,7 +2,7 @@
 # Dream 语言导览：覆盖自举编译器当前支持的表达式、语句和模式语法。
 from bytes import encode, decode
 from io import open
-from fs import exists, delete
+from fs import exists, remove_file
 from path import join, normalize, basename, dirname, ext, stem
 from time import monotonic_ms, elapsed_ms
 from http import parse_response
@@ -284,7 +284,7 @@ def main():
     print(io_reader.read())
     io_reader.close()
     print(exists(io_path))
-    print(delete(io_path))
+    print(remove_file(io_path))
 
     # 路径、时间、JSON 与 HTTP 响应解析
     print(normalize("a/./b/../c.txt"))

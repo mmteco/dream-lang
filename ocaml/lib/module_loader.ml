@@ -154,18 +154,50 @@ let import_symbol (symbol : exported_symbol) (alias : string option) : (string *
   in
   (imported_name, symbol)
 
+let is_type_symbol = function
+  | ExportedStruct _
+  | ExportedInterface _
+  | ExportedEnum _ -> true
+  | _ -> false
+
+let dependency_type_imports module_path ast =
+  let imported_modules = List.filter_map (function
+    | SImport (path, _, _)
+    | SFromImport (path, _, _) -> Some path
+    | _ -> None
+  ) ast in
+  let rec collect visited path =
+    if List.exists (( = ) path) visited then []
+    else
+      match load_module path with
+      | Error _ -> []
+      | Ok (_, dependency_ast) ->
+          let own_types = extract_exports dependency_ast
+            |> List.filter is_type_symbol
+            |> List.map (fun symbol -> import_symbol symbol None) in
+          let nested_modules = List.filter_map (function
+            | SImport (nested_path, _, _)
+            | SFromImport (nested_path, _, _) -> Some nested_path
+            | _ -> None
+          ) dependency_ast in
+          let nested_types = List.concat_map (collect (path :: visited)) nested_modules in
+          own_types @ nested_types
+  in
+  List.concat_map (collect [module_path]) imported_modules
+
 (* 从模块导入所有符号 *)
 let import_all_from_module module_path alias =
   match load_module module_path with
   | Error msg -> Error msg
   | Ok (_, ast) ->
       let exports = extract_exports ast in
+      let dependency_types = dependency_type_imports module_path ast in
       (* 如果有别名，所有符号都使用 "alias.name" 的形式 *)
       let imports = match alias with
         | None -> List.map (fun sym -> import_symbol sym None) exports
         | Some _ -> List.map (fun sym -> import_symbol sym None) exports
       in
-      Ok imports
+      Ok (dependency_types @ imports)
 
 (* 从模块导入指定符号 *)
 let import_selected_from_module module_path selections =
@@ -173,8 +205,9 @@ let import_selected_from_module module_path selections =
   | Error msg -> Error msg
   | Ok (_, ast) ->
       let exports = extract_exports ast in
+      let dependency_types = dependency_type_imports module_path ast in
       if List.exists (fun (name, _) -> name = "*") selections then
-        Ok (List.map (fun symbol -> import_symbol symbol None) exports)
+        Ok (dependency_types @ List.map (fun symbol -> import_symbol symbol None) exports)
       else
       (* 为每个选择查找对应的符号 *)
       let rec find_and_import selections acc =
@@ -216,4 +249,4 @@ let import_selected_from_module module_path selections =
              | _ -> None
            ) exports in
            let imported_impls = List.map (fun symbol -> import_symbol symbol None) imported_impls in
-           Ok (imported_types @ selected_imports @ imported_impls @ constant_imports))
+           Ok (dependency_types @ imported_types @ selected_imports @ imported_impls @ constant_imports))

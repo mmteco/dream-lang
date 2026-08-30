@@ -1,3 +1,5 @@
+from utf8 import ord
+
 def main():
     let text = "A你𐀀"
     let middle: rune = text[1]

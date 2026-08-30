@@ -772,7 +772,9 @@ and lower_expr context function_builder environment expression =
              | Dict (I32, Str) -> "__c_dict_size_int_str"
              | Dict (Str, I32) -> "__c_dict_size_str_int"
              | Dict (Str, Str) -> "__c_dict_size_str_str"
-             | _ -> fail_at position "DIR dict supports only int and str keys/values"
+             | Dict (I32, _) -> "__c_dict_size_int_ptr"
+             | Dict (Str, _) -> "__c_dict_size_str_ptr"
+             | _ -> fail_at position "DIR dict supports only int and str keys"
            in
            emit function_builder (Call (Some value, I32, size_name,
              [lowered_argument.ty], [lowered_argument.operand]));
@@ -886,19 +888,21 @@ and lower_expr context function_builder environment expression =
       emit function_builder (Call (Some value, Bool, "__c_net_close",
         [I32], [lowered_fd.operand]));
       { operand = Value value; ty = Bool }
-  | ECall (EVar ("__c_http_request", _), [method_; url; headers; body], position) ->
+  | ECall (EVar ("__c_http_request", _), [method_; url; headers; body; timeout], position) ->
       let lowered_method = lower_expr context function_builder environment method_ in
       let lowered_url = lower_expr context function_builder environment url in
       let lowered_headers = lower_expr context function_builder environment headers in
       let lowered_body = lower_expr context function_builder environment body in
+      let lowered_timeout = lower_expr context function_builder environment timeout in
       expect_type position Str lowered_method.ty "__c_http_request method";
       expect_type position Str lowered_url.ty "__c_http_request URL";
-      expect_type position Str lowered_headers.ty "__c_http_request headers";
+      expect_type position (Dict (Str, Str)) lowered_headers.ty "__c_http_request headers";
       expect_type position Str lowered_body.ty "__c_http_request body";
+      expect_type position I32 lowered_timeout.ty "__c_http_request timeout";
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, Str, "__c_http_request",
-        [Str; Str; Str; Str], [lowered_method.operand; lowered_url.operand;
-          lowered_headers.operand; lowered_body.operand]));
+        [Str; Str; Dict (Str, Str); Str; I32], [lowered_method.operand; lowered_url.operand;
+          lowered_headers.operand; lowered_body.operand; lowered_timeout.operand]));
       { operand = Value value; ty = Str }
   | ECall (EVar ("__c_file_read_bytes", _), [path], position) ->
       let lowered_path = lower_expr context function_builder environment path in
@@ -950,7 +954,8 @@ and lower_expr context function_builder environment expression =
         match List.assoc_opt field_name field_initializers with
         | None -> fail_at position ("missing field " ^ field_name ^ " in " ^ struct_name)
         | Some expression ->
-            let value = lower_expr context function_builder environment expression in
+            let value = lower_expr_expected context function_builder environment
+                (Some field_type) expression in
             expect_type position field_type value.ty ("struct field " ^ field_name);
             value.operand
       ) fields in
@@ -1004,12 +1009,13 @@ and lower_expr context function_builder environment expression =
         | Some signature -> signature
         | None -> fail_at position ("unknown function " ^ module_name ^ "." ^ function_name)
       in
-      let lowered_arguments = List.map
-        (lower_expr context function_builder environment) arguments in
-      if List.length lowered_arguments <> List.length signature.parameter_types then
+      if List.length arguments <> List.length signature.parameter_types then
         fail_at position (Printf.sprintf "function %s.%s expects %d arguments, got %d"
           module_name function_name (List.length signature.parameter_types)
-          (List.length lowered_arguments));
+          (List.length arguments));
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        lower_expr_expected context function_builder environment (Some expected_type) argument
+      ) arguments signature.parameter_types in
       let lowered_arguments = List.map2 (fun argument expected_type ->
         coerce_value context function_builder position expected_type argument
       ) lowered_arguments signature.parameter_types in
@@ -1103,9 +1109,9 @@ and lower_expr context function_builder environment expression =
       let callee = lookup_value position environment name in
       lower_call_indirect context function_builder environment callee arguments position
   | ECall (EVar (name, _), arguments, position) ->
-      let lowered_arguments = List.map
-        (lower_expr context function_builder environment) arguments in
       if name = "print" || name = "eprintln" || name = "eprint" then begin
+        let lowered_arguments = List.map
+          (lower_expr context function_builder environment) arguments in
         match name, lowered_arguments with
         | "print", [argument] ->
             let text = lower_display_value context function_builder environment argument position in
@@ -1136,9 +1142,12 @@ and lower_expr context function_builder environment expression =
           | Some signature -> (name, signature)
           | None -> fail_at position ("unknown function " ^ name)
         in
-        if List.length lowered_arguments <> List.length signature.parameter_types then
+        if List.length arguments <> List.length signature.parameter_types then
           fail_at position (Printf.sprintf "function %s expects %d arguments, got %d"
-            actual_name (List.length signature.parameter_types) (List.length lowered_arguments));
+            actual_name (List.length signature.parameter_types) (List.length arguments));
+        let lowered_arguments = List.map2 (fun argument expected_type ->
+          lower_expr_expected context function_builder environment (Some expected_type) argument
+        ) arguments signature.parameter_types in
         let lowered_arguments = List.map2 (fun argument expected_type ->
           coerce_value context function_builder position expected_type argument
         ) lowered_arguments signature.parameter_types in
@@ -1239,7 +1248,9 @@ and lower_expr context function_builder environment expression =
              | I32, Str -> "__c_dict_get_int_str"
              | Str, I32 -> "__c_dict_get_str_int"
              | Str, Str -> "__c_dict_get_str_str"
-             | _ -> fail_at position "DIR dict supports only int and str keys/values"
+             | I32, _ -> "__c_dict_get_int_ptr"
+             | Str, _ -> "__c_dict_get_str_ptr"
+             | _ -> fail_at position "DIR dict supports only int and str keys"
            in
            let value = fresh_value function_builder in
            emit function_builder (Call (Some value, value_type, getter_name,
@@ -1323,7 +1334,9 @@ and lower_expr context function_builder environment expression =
         | I32, Str -> "__c_dict_create_int_str"
         | Str, I32 -> "__c_dict_create_str_int"
         | Str, Str -> "__c_dict_create_str_str"
-        | _ -> fail_at position "DIR dict supports only int and str keys/values"
+        | I32, _ -> "__c_dict_create_int_ptr"
+        | Str, _ -> "__c_dict_create_str_ptr"
+        | _ -> fail_at position "DIR dict supports only int and str keys"
       in
       let dictionary = fresh_value function_builder in
       emit function_builder (Call (Some dictionary, dict_type, create_name,
@@ -1333,7 +1346,9 @@ and lower_expr context function_builder environment expression =
         | I32, Str -> "__c_dict_set_int_str"
         | Str, I32 -> "__c_dict_set_str_int"
         | Str, Str -> "__c_dict_set_str_str"
-        | _ -> fail_at position "DIR dict supports only int and str keys/values"
+        | I32, _ -> "__c_dict_set_int_ptr"
+        | Str, _ -> "__c_dict_set_str_ptr"
+        | _ -> fail_at position "DIR dict supports only int and str keys"
       in
       List.iter (fun (key, value) ->
         emit function_builder (Call (None, Unit, setter_name,
@@ -1448,12 +1463,13 @@ and lower_expr context function_builder environment expression =
         | Some signature -> signature
         | None -> fail_at position ("unknown function " ^ module_name ^ "." ^ function_name)
       in
-      let lowered_arguments = List.map
-        (lower_expr context function_builder environment) arguments in
-      if List.length lowered_arguments <> List.length signature.parameter_types then
+      if List.length arguments <> List.length signature.parameter_types then
         fail_at position (Printf.sprintf "function %s.%s expects %d arguments, got %d"
           module_name function_name (List.length signature.parameter_types)
-          (List.length lowered_arguments));
+          (List.length arguments));
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        lower_expr_expected context function_builder environment (Some expected_type) argument
+      ) arguments signature.parameter_types in
       let lowered_arguments = List.map2 (fun argument expected_type ->
         coerce_value context function_builder position expected_type argument
       ) lowered_arguments signature.parameter_types in
@@ -1623,6 +1639,24 @@ and lower_expr context function_builder environment expression =
 and lower_expr_expected context function_builder environment expected_type expression =
   match expression with
   | EList ([], _) -> lower_empty_list function_builder expected_type
+  | EDict ([], position) ->
+      let key_type, value_type = match expected_type with
+        | Some (Dict (key_type, value_type)) -> key_type, value_type
+        | _ -> fail_at position "DIR cannot infer the type of an empty dict"
+      in
+      let create_name = match key_type, value_type with
+        | I32, I32 -> "__c_dict_create_int_int"
+        | I32, Str -> "__c_dict_create_int_str"
+        | Str, I32 -> "__c_dict_create_str_int"
+        | Str, Str -> "__c_dict_create_str_str"
+        | I32, _ -> "__c_dict_create_int_ptr"
+        | Str, _ -> "__c_dict_create_str_ptr"
+        | _ -> fail_at position "DIR dict supports only int and str keys"
+      in
+      let dict_type = Dict (key_type, value_type) in
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, dict_type, create_name, [I32], [Int 8]));
+      { operand = Value value; ty = dict_type }
   | _ -> lower_expr context function_builder environment expression
 
 and lower_lambda context enclosing_builder outer_environment parameters body position =
@@ -1687,8 +1721,9 @@ and lower_call_indirect context function_builder environment callee arguments po
   if List.length parameter_types <> List.length arguments then
     fail_at position (Printf.sprintf "function expects %d arguments, got %d"
       (List.length parameter_types) (List.length arguments));
-  let lowered_arguments = List.map
-    (lower_expr context function_builder environment) arguments in
+  let lowered_arguments = List.map2 (fun argument expected_type ->
+    lower_expr_expected context function_builder environment (Some expected_type) argument
+  ) arguments parameter_types in
   let lowered_arguments = List.map2 (fun expected actual ->
     coerce_value context function_builder position expected actual
   ) parameter_types lowered_arguments in
@@ -2457,7 +2492,7 @@ let runtime_externs = [
   { name = "__c_net_write"; parameters = [I32; Str]; return_type = I32 };
   { name = "__c_net_read"; parameters = [I32; I32]; return_type = Str };
   { name = "__c_net_close"; parameters = [I32]; return_type = Bool };
-  { name = "__c_http_request"; parameters = [Str; Str; Str; Str]; return_type = Str };
+  { name = "__c_http_request"; parameters = [Str; Str; Dict (Str, Str); Str; I32]; return_type = Str };
   { name = "__c_build_llvm"; parameters = [Str; Str; Bool]; return_type = I32 };
   { name = "__c_file_read_bytes"; parameters = [Str]; return_type = Bytes };
   { name = "__c_file_write_bytes"; parameters = [Str; Bytes]; return_type = I32 };
@@ -2479,18 +2514,27 @@ let runtime_externs = [
   { name = "__c_dict_set_int_str"; parameters = [Dict (I32, Str); I32; Str]; return_type = Unit };
   { name = "__c_dict_set_str_int"; parameters = [Dict (Str, I32); Str; I32]; return_type = Unit };
   { name = "__c_dict_set_str_str"; parameters = [Dict (Str, Str); Str; Str]; return_type = Unit };
+  { name = "__c_dict_set_int_ptr"; parameters = [Dict (I32, ClosureEnv []); I32; ClosureEnv []]; return_type = Unit };
+  { name = "__c_dict_set_str_ptr"; parameters = [Dict (Str, ClosureEnv []); Str; ClosureEnv []]; return_type = Unit };
   { name = "__c_dict_create_int_int"; parameters = [I32]; return_type = Dict (I32, I32) };
   { name = "__c_dict_create_int_str"; parameters = [I32]; return_type = Dict (I32, Str) };
   { name = "__c_dict_create_str_int"; parameters = [I32]; return_type = Dict (Str, I32) };
   { name = "__c_dict_create_str_str"; parameters = [I32]; return_type = Dict (Str, Str) };
+  { name = "__c_dict_create_int_ptr"; parameters = [I32]; return_type = Dict (I32, ClosureEnv []) };
+  { name = "__c_dict_create_str_ptr"; parameters = [I32]; return_type = Dict (Str, ClosureEnv []) };
   { name = "__c_dict_get_int_int"; parameters = [Dict (I32, I32); I32]; return_type = I32 };
   { name = "__c_dict_get_int_str"; parameters = [Dict (I32, Str); I32]; return_type = Str };
   { name = "__c_dict_get_str_int"; parameters = [Dict (Str, I32); Str]; return_type = I32 };
   { name = "__c_dict_get_str_str"; parameters = [Dict (Str, Str); Str]; return_type = Str };
+  { name = "__c_dict_get_int_ptr"; parameters = [Dict (I32, ClosureEnv []); I32]; return_type = ClosureEnv [] };
+  { name = "__c_dict_get_str_ptr"; parameters = [Dict (Str, ClosureEnv []); Str]; return_type = ClosureEnv [] };
   { name = "__c_dict_size_int_int"; parameters = [Dict (I32, I32)]; return_type = I32 };
   { name = "__c_dict_size_int_str"; parameters = [Dict (I32, Str)]; return_type = I32 };
   { name = "__c_dict_size_str_int"; parameters = [Dict (Str, I32)]; return_type = I32 };
   { name = "__c_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
+  { name = "__c_dict_size_int_ptr"; parameters = [Dict (I32, ClosureEnv [])]; return_type = I32 };
+  { name = "__c_dict_size_str_ptr"; parameters = [Dict (Str, ClosureEnv [])]; return_type = I32 };
+  { name = "__c_dict_has_str"; parameters = [Dict (Str, ClosureEnv []); Str]; return_type = Bool };
   { name = "__c_utf8_rune_count"; parameters = [Str]; return_type = I32 };
   { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
   { name = "__c_utf8_byte_offset"; parameters = [Str; I32]; return_type = I32 };
@@ -2522,6 +2566,8 @@ let lower_program program =
       | TStr -> Str
       | TByte | TRune -> I32
       | TBytes -> Bytes
+      | TDict (key_type, value_type) ->
+          Dict (resolve_type resolving key_type, resolve_type resolving value_type)
       | TList element_type -> List (resolve_type resolving element_type)
       | TTuple element_types -> Tuple (List.map (resolve_type resolving) element_types)
       | TNone -> Unit

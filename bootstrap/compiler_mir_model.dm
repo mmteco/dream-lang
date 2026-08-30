@@ -22,12 +22,16 @@ from compiler_lex import (
     STRUCT_FIELD_STR,
     STRUCT_FIELD_LIST_INT,
     STRUCT_FIELD_LIST_STR,
+    STRUCT_FIELD_DICT,
     STRUCT_FIELD_DECLARATIONS,
     STRUCT_FIELD_NAME_STARTS,
     STRUCT_FIELD_NAME_ENDS,
     STRUCT_FIELD_SLOTS,
     STRUCT_FIELD_KINDS,
     STRUCT_FIELD_TYPE_DECLS,
+    STRUCT_FIELD_VALUE_TYPE_DECLS,
+    STRUCT_DECLARATION_STARTS,
+    STRUCT_DECLARATION_ENDS,
     lex,
     token_kind,
     token_start,
@@ -507,6 +511,19 @@ def mir_lower_default_argument(state: MirLowerState, default_token: int) -> int:
         starts: starts,
         ends: ends
     })
+    if (
+        token_kind(kinds, default_token) == TOKEN_OPEN_BRACE and
+        token_kind(kinds, default_token + 1) == TOKEN_CLOSE_BRACE
+    ):
+        let value_id = mir_int_list_get(state.next_value, 0)
+        mir_int_list_set(state.next_value, 0, value_id + 1)
+        let call_start = mir_value_count(state.values)
+        mir_append_operand(state.values, MIR_OPERAND_SYMBOL,
+            MIR_EXTERNAL_BASE + EXTERNAL_ID_DICT_CREATE_STR_STR)
+        mir_append_operand(state.values, MIR_OPERAND_INT, 8)
+        mir_state_append_instruction_source(state, MIR_OP_CALL, MIR_TYPE_DICT, value_id, call_start, 2,
+            token_start(starts, default_token), token_end(ends, default_token + 1))
+        return value_id
     let value_token = default_token
     let token_value = token_kind(kinds, default_token)
     if token_value == TOKEN_MINUS:
@@ -944,6 +961,27 @@ def mir_find_struct_method(state: MirLowerState, declaration_index: int, method_
         impl_index = impl_index + 1
     return -1
 
+def mir_find_struct_init(state: MirLowerState, declaration_index: int) -> int:
+    if declaration_index < 0 or declaration_index >= len(STRUCT_DECLARATION_STARTS):
+        return -1
+    let struct_start = STRUCT_DECLARATION_ENDS[declaration_index]
+    let next_struct = len(state.source)
+    let next_index = declaration_index + 1
+    if next_index < len(STRUCT_DECLARATION_STARTS):
+        next_struct = STRUCT_DECLARATION_STARTS[next_index]
+    let function_index = 0
+    while function_index < len(state.functions.starts):
+        let function_start = mir_int_list_get(state.functions.starts, function_index)
+        let function_end = mir_int_list_get(state.functions.ends, function_index)
+        if (
+            function_start > struct_start and
+            function_start < next_struct and
+            state.source[function_start:function_end] == "__init__"
+        ):
+            return function_index
+        function_index = function_index + 1
+    return -1
+
 def mir_impl_method_pair(state: MirLowerState, declaration_index: int) -> (int, int, int):
     let iterator_has_next = mir_find_impl_method(state, declaration_index, "Iterator", "has_next")
     let iterator_next = mir_find_impl_method(state, declaration_index, "Iterator", "next")
@@ -1144,6 +1182,8 @@ def mir_external_type_for_name(name: str, external_id: int) -> int:
         "__c_dict_create_int_str",
         "__c_dict_create_str_int",
         "__c_dict_create_str_str",
+        "__c_dict_create_int_ptr",
+        "__c_dict_create_str_ptr",
     ]
     let bytes_names: list[str] = [
         "__c_file_read_bytes",
@@ -1349,6 +1389,49 @@ def mir_struct_field_type_declaration(state: MirLowerState, declaration_index: i
         return -1
     return mir_int_list_get(STRUCT_FIELD_TYPE_DECLS, entry)
 
+def mir_struct_field_value_type_declaration(state: MirLowerState, declaration_index: int, name_start: int,
+    name_end: int) -> int:
+    let entry = mir_declared_field_entry(state, declaration_index, name_start, name_end)
+    if entry < 0:
+        return -1
+    return mir_int_list_get(STRUCT_FIELD_VALUE_TYPE_DECLS, entry)
+
+def mir_dict_value_type_declaration(source: str, type_start: int, type_end: int) -> int:
+    let cursor = type_start
+    let depth = 0
+    while cursor < type_end:
+        if source[cursor] == '[':
+            depth = depth + 1
+        elif source[cursor] == ',' and depth == 1:
+            let value_start = cursor + 1
+            let value_end = type_end - 1
+            while value_start < value_end and source[value_start] == ' ':
+                value_start = value_start + 1
+            while value_end > value_start and (source[value_end - 1] == ' ' or source[value_end - 1] == ']'):
+                value_end = value_end - 1
+            return find_type_declaration_index(source, value_start, value_end)
+        cursor = cursor + 1
+    return -1
+
+def mir_func_return_dict_value_declaration(state: MirLowerState, function_index: int) -> int:
+    if function_index < 0 or function_index >= len(state.functions.ends):
+        return -1
+    let cursor = mir_int_list_get(state.functions.ends, function_index)
+    let source_end = len(state.source)
+    while cursor + 1 < source_end and state.source[cursor] != '\n':
+        if state.source[cursor] == '-' and state.source[cursor + 1] == '>':
+            let type_start = cursor + 2
+            let type_end = type_start
+            while type_end < source_end and state.source[type_end] != ':' and state.source[type_end] != '\n':
+                type_end = type_end + 1
+            while type_end > type_start and state.source[type_end - 1] == ' ':
+                type_end = type_end - 1
+            if type_start < type_end and state.source[type_start:type_start + 5] == "dict[":
+                return mir_dict_value_type_declaration(state.source, type_start, type_end)
+            return -1
+        cursor = cursor + 1
+    return -1
+
 def mir_struct_declaration_by_field(state: MirLowerState, name_start: int, name_end: int) -> int:
     let found = -1
     let field_index = 0
@@ -1418,6 +1501,11 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
         if local_value >= 0:
             let base_type = mir_state_value_type(state, local_value)
             if base_type == MIR_TYPE_DICT:
+                let declared_value = mir_state_struct_declaration(state, local_value)
+                if declared_value >= 0:
+                    mir_state_set_struct_declaration(state, mir_int_list_get(state.next_value, 0) - 1,
+                        declared_value)
+                    return MIR_TYPE_STRUCT
                 # dict 值类型：从创建指令的首个 value 操作数推断
                 let dict_record_id = 0
                 while dict_record_id < mir_record_count(state.records):
@@ -1432,7 +1520,12 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
                             if dict_operand_count >= 3:
                                 let value_operand_offset = mir_value_offset(dict_operand_start + 2)
                                 if state.values[value_operand_offset] == MIR_OPERAND_VALUE:
-                                    return mir_state_value_type(state, state.values[value_operand_offset + 1])
+                                    let value = state.values[value_operand_offset + 1]
+                                    let value_type = mir_state_value_type(state, value)
+                                    if value_type == MIR_TYPE_STRUCT:
+                                        mir_state_set_struct_declaration(state, mir_int_list_get(state.next_value, 0) - 1,
+                                            mir_state_struct_declaration(state, value))
+                                    return value_type
                                 return MIR_TYPE_I32
                     dict_record_id = dict_record_id + 1
                 # 泛型 dict 参数（dict[int, T]）无创建指令，默认元素为 int
@@ -1444,6 +1537,35 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
                 # tuple 底层为 dynarray_i32，元素为 int
                 return MIR_TYPE_I32
         return result_type
+    if hir.records[base_node_offset + 1] == HIR_OP_FIELD:
+        let field_payload_start = hir.records[base_node_offset + 5]
+        if hir.records[base_node_offset + 6] >= 3:
+            let base_value_offset = hir_value_offset(field_payload_start)
+            let field_start_offset = hir_value_offset(field_payload_start + 1)
+            let field_end_offset = hir_value_offset(field_payload_start + 2)
+            if (
+                hir.values[base_value_offset] == HIR_VALUE_NODE and
+                hir.values[field_start_offset] == HIR_VALUE_INT and
+                hir.values[field_end_offset] == HIR_VALUE_INT
+            ):
+                let field_base_node = hir.values[base_value_offset + 1]
+                let field_base_value = -1
+                if field_base_node >= 0 and field_base_node < len(state.hir_value_map):
+                    field_base_value = mir_int_list_get(state.hir_value_map, field_base_node)
+                let field_declaration = mir_state_struct_declaration(state, field_base_value)
+                if field_declaration < 0:
+                    field_declaration = mir_hir_node_struct_declaration(hir, field_base_node)
+                let field_start = hir.values[field_start_offset + 1]
+                let field_end = hir.values[field_end_offset + 1]
+                if mir_struct_field_kind(state, field_declaration, field_start, field_end) == STRUCT_FIELD_DICT:
+                    let value_declaration = mir_struct_field_value_type_declaration(state, field_declaration,
+                        field_start, field_end)
+                    if value_declaration >= 0:
+                        mir_state_set_struct_declaration(state, mir_int_list_get(state.next_value, 0) - 1,
+                            value_declaration)
+                        return MIR_TYPE_STRUCT
+                    return MIR_TYPE_PTR
+
     if hir.records[base_node_offset + 1] == HIR_OP_INDEX:
         # 嵌套索引：base 是列表索引结果（list[list[T]][i][j]），元素类型递归推断
         let inner_index_value = -1
@@ -1568,6 +1690,75 @@ def mir_append_func_signature(hir_values: list[int], auxiliary_start: int, value
     let return_type = mir_type_from_hir(mir_hir_signature_value(hir_values, auxiliary_start, HIR_SIGNATURE_RETURN_TYPE))
     mir_append_operand(values, MIR_OPERAND_TYPE, return_type)
     return parameter_count
+
+def mir_lower_struct_constructor(hir: HirProgram, node_id: int, state: MirLowerState, declaration_index: int,
+    init_function: int, payload_start: int, payload_count: int) -> int:
+    if init_function >= 0:
+        let argument_count = 0
+        if payload_count > 1:
+            let count_offset = hir_value_offset(payload_start + 1)
+            if hir.values[count_offset] == HIR_VALUE_INT:
+                argument_count = hir.values[count_offset + 1]
+        let init_operand_start = mir_value_count(state.values)
+        mir_append_operand(state.values, MIR_OPERAND_SYMBOL, init_function)
+        let argument_index = 0
+        while argument_index < argument_count and payload_count > argument_index + 2:
+            let argument_offset = hir_value_offset(payload_start + argument_index + 2)
+            if hir.values[argument_offset] == HIR_VALUE_NODE:
+                let argument_value = mir_lower_hir_node(hir, hir.values[argument_offset + 1], state)
+                if argument_value >= 0:
+                    mir_append_operand(state.values, MIR_OPERAND_VALUE, argument_value)
+            argument_index = argument_index + 1
+        let result_value = mir_int_list_get(state.next_value, 0)
+        mir_int_list_set(state.next_value, 0, result_value + 1)
+        let result_type = MIR_TYPE_STRUCT
+        if init_function < len(state.functions.returns):
+            result_type = mir_int_list_get(state.functions.returns, init_function)
+        mir_state_append_instruction(state, MIR_OP_CALL, result_type, result_value, init_operand_start,
+            mir_value_count(state.values) - init_operand_start)
+        mir_state_set_struct_declaration(state, result_value, declaration_index)
+        mir_int_list_set(state.hir_value_map, node_id, result_value)
+        return result_value
+    let field_values: list[int] = []
+    let field_index = 0
+    while field_index < len(STRUCT_FIELD_DECLARATIONS):
+        if mir_int_list_get(STRUCT_FIELD_DECLARATIONS, field_index) == declaration_index:
+            let field_kind = mir_int_list_get(STRUCT_FIELD_KINDS, field_index)
+            let field_type = MIR_TYPE_PTR
+            if field_kind == STRUCT_FIELD_INT:
+                field_type = MIR_TYPE_I32
+            if field_kind == STRUCT_FIELD_BOOL:
+                field_type = MIR_TYPE_BOOL
+            if field_kind == STRUCT_FIELD_FLOAT:
+                field_type = MIR_TYPE_F64
+            if field_kind == STRUCT_FIELD_LIST_INT:
+                field_type = MIR_TYPE_LIST
+            if field_kind in [STRUCT_FIELD_LIST_STR, STRUCT_FIELD_DICT]:
+                field_type = MIR_TYPE_LIST_PTR
+                if field_kind == STRUCT_FIELD_DICT:
+                    field_type = MIR_TYPE_DICT
+            let field_value = mir_int_list_get(state.next_value, 0)
+            mir_int_list_set(state.next_value, 0, field_value + 1)
+            let field_operand_start = mir_value_count(state.values)
+            mir_append_operand(state.values, MIR_OPERAND_INT, 0)
+            let field_opcode = MIR_OP_CONST
+            if field_kind in [STRUCT_FIELD_LIST_INT, STRUCT_FIELD_LIST_STR]:
+                field_opcode = MIR_OP_LIST
+            mir_state_append_instruction(state, field_opcode, field_type, field_value, field_operand_start, 1)
+            append(field_values, field_value)
+        field_index = field_index + 1
+    let struct_value = mir_int_list_get(state.next_value, 0)
+    mir_int_list_set(state.next_value, 0, struct_value + 1)
+    let struct_operand_start = mir_value_count(state.values)
+    let value_index = 0
+    while value_index < len(field_values):
+        mir_append_operand(state.values, MIR_OPERAND_VALUE, mir_int_list_get(field_values, value_index))
+        value_index = value_index + 1
+    mir_state_append_instruction(state, MIR_OP_STRUCT, MIR_TYPE_STRUCT, struct_value, struct_operand_start,
+        len(field_values))
+    mir_state_set_struct_declaration(state, struct_value, declaration_index)
+    mir_int_list_set(state.hir_value_map, node_id, struct_value)
+    return struct_value
 
 def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> int:
     if node_id < 0 or node_id >= hir_record_count(hir.records):
@@ -1794,6 +1985,10 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                         annotation != "list[float]"
                     ):
                         mir_promote_list_type(state, initializer, MIR_TYPE_LIST_PTR)
+                    if annotation[0:5] == "dict[":
+                        let value_declaration = mir_dict_value_type_declaration(state.source, ann_start, ann_end)
+                        if value_declaration >= 0:
+                            mir_state_set_struct_declaration(state, initializer, value_declaration)
             let name_start_offset = hir_value_offset(payload_start)
             let name_end_offset = hir_value_offset(payload_start + 1)
             mir_bind_symbol(state, hir.values[name_start_offset + 1], hir.values[name_end_offset + 1], initializer)
@@ -1988,6 +2183,17 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
         if direct_function < 0 and callee_name_text == "len":
             external_function = MIR_EXTERNAL_BASE + EXTERNAL_ID_LEN
             call_type = MIR_TYPE_I32
+        let constructor_declaration = -1
+        let constructor_function = -1
+        if method_target_id < 0 and callee_name_start >= 0:
+            constructor_declaration = find_struct_declaration_index(state.source, callee_name_start, callee_name_end)
+            if constructor_declaration >= 0:
+                constructor_function = mir_find_struct_method(state, constructor_declaration, "__init__")
+                if constructor_function < 0:
+                    constructor_function = mir_find_struct_init(state, constructor_declaration)
+                let constructor_value = mir_lower_struct_constructor(hir, node_id, state, constructor_declaration,
+                    constructor_function, payload_start, payload_count)
+                return constructor_value
         # 点号方法调用：payload[1]/[2] 为方法名区间，payload[0] 为目标表达式。
         # 目标表达式作为首个参数，方法名查函数表获得目标函数。
         let method_name_start_offset = hir_value_offset(payload_start + 1)
@@ -2271,6 +2477,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                 return_declaration = mir_int_list_get(state.func_return_struct_decls, direct_function)
             if return_declaration < 0:
                 return_declaration = mir_func_return_struct_decl(hir, state, direct_function)
+            if call_type == MIR_TYPE_DICT:
+                return_declaration = mir_func_return_dict_value_declaration(state, direct_function)
             if call_type == MIR_TYPE_INTERFACE and callee_name_text == "iter":
                 let iterator_declaration = mir_unique_iterator_declaration(state)
                 if iterator_declaration >= 0:
@@ -2375,6 +2583,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                         field_type = MIR_TYPE_LIST
                     if field_kind == STRUCT_FIELD_LIST_STR:
                         field_type = MIR_TYPE_LIST_PTR
+                    if field_kind == STRUCT_FIELD_DICT:
+                        field_type = MIR_TYPE_DICT
                     let field_result = mir_int_list_get(state.next_value, 0)
                     mir_int_list_set(state.next_value, 0, mir_int_list_get(state.next_value, 0) + 1)
                     let field_operand_start = mir_value_count(state.values)
