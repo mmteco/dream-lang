@@ -70,7 +70,6 @@
         ("def", DEF);
         ("struct", STRUCT);
         ("interface", INTERFACE);
-        ("implements", IMPLEMENTS);
         ("impl", IMPL);
         ("type", TYPE);
         ("const", CONST);
@@ -369,12 +368,6 @@ rule token = parse
       update_pos lexbuf;
       let end_pos = make_lexing_pos () in
       (COLON, start_pos, end_pos)
-    }
-  | ';' {
-      let start_pos = make_lexing_pos () in
-      update_pos lexbuf;
-      let end_pos = make_lexing_pos () in
-      (SEMICOLON, start_pos, end_pos)
     }
   | '.' {
       let start_pos = make_lexing_pos () in

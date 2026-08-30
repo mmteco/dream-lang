@@ -16,7 +16,6 @@ type token =
   | DEF
   | STRUCT
   | INTERFACE
-  | IMPLEMENTS
   | IMPL
   | TYPE
   | CONST
@@ -83,7 +82,6 @@ type token =
   | RBRACE
   | COMMA
   | COLON
-  | SEMICOLON
   | DOT
   | QUESTION  (* ? for error propagation and ternary operator *)
   | CONS  (* :: for list pattern matching *)
