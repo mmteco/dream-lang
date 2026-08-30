@@ -2,13 +2,13 @@
 # 节点索引 = 池中 kind 字段的下标;池首 dummy 节点(kind=0),真实节点 >= 1,0 表示"无节点"
 # 子节点区间 [child_start, child_end) 可走查:从 child_start 循环 ast_next_node 直到 child_end
 
+from str import from_int
 from compiler_lex import (
     parse_integer,
     TOKEN_EOF,
     TOKEN_INTEGER,
     TOKEN_IDENTIFIER,
     TOKEN_LET,
-    TOKEN_PRINT,
     TOKEN_PLUS,
     TOKEN_MINUS,
     token_kind,
@@ -61,7 +61,6 @@ from compiler_lex import (
     TOKEN_CONS,
     TOKEN_RUNE,
     TOKEN_BREAK,
-    TOKEN_EPRINT,
     TOKEN_CONTINUE,
     TOKEN_PLUS_ASSIGN,
     TOKEN_MINUS_ASSIGN,
@@ -116,7 +115,6 @@ const AST_EXPR_SLICE: int = 21
 const AST_EXPR_LAMBDA: int = 22
 const AST_EXPR_LIST_COMP: int = 23
 const AST_EXPR_MATCH: int = 24
-const AST_EXPR_PRINT: int = 25
 
 # === 语句 ===
 const AST_STMT_LET: int = 32
@@ -267,8 +265,6 @@ def ast_kind_name(kind: int) -> str:
             return "expr_list_comp"
         case AST_EXPR_MATCH:
             return "expr_match"
-        case AST_EXPR_PRINT:
-            return "expr_print"
         case AST_STMT_LET:
             return "stmt_let"
         case AST_STMT_LET_TUPLE:
@@ -551,8 +547,6 @@ def ast_validate_node_children(ast: list[int], node: int) -> bool:
             if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
                 return false
             return ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
-        case AST_EXPR_PRINT:
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0))
         case AST_STMT_LET:
             if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 4)):
                 return false
@@ -624,22 +618,22 @@ def ast_validate_program(ast: list[int]) -> bool:
     let node = 1
     while node < len(ast):
         if not ast_validate_node_children(ast, node):
-            __c_eprint_text("AST validation failed node=")
-            __c_debug_eprint_int(node)
-            __c_eprint_text(" kind=")
-            __c_debug_eprint_int(ast_node_kind(ast, node))
-            __c_eprint_text(" start=")
-            __c_debug_eprint_int(ast_node_start(ast, node))
-            __c_eprint_text(" end=")
-            __c_debug_eprint_int(ast_node_end(ast, node))
-            __c_eprint_text(" args=")
+            eprint("AST validation failed node=")
+            eprint(from_int(node))
+            eprint(" kind=")
+            eprint(from_int(ast_node_kind(ast, node)))
+            eprint(" start=")
+            eprint(from_int(ast_node_start(ast, node)))
+            eprint(" end=")
+            eprint(from_int(ast_node_end(ast, node)))
+            eprint(" args=")
             let diagnostic_argument_index = 0
             while diagnostic_argument_index < ast_node_size(ast, node) - AST_HEADER_SIZE:
                 if diagnostic_argument_index > 0:
-                    __c_eprint_text(",")
-                __c_debug_eprint_int(ast_node_arg(ast, node, diagnostic_argument_index))
+                    eprint(",")
+                eprint(from_int(ast_node_arg(ast, node, diagnostic_argument_index)))
                 diagnostic_argument_index = diagnostic_argument_index + 1
-            __c_eprint_text("\n")
+            eprintln("")
             return false
         node = node + ast_node_size(ast, node)
     return true
@@ -922,13 +916,6 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
         return ast_parse_for_statement(context, index, body_end, ast)
     if token_kind_value == TOKEN_SWITCH:
         return ast_parse_switch_statement(context, index, body_end, ast)
-    if token_kind_value == TOKEN_PRINT:
-        let print_node = ast_parse_print_statement(context, index, ast, 0)
-        let print_next_index = ast_scan_print_end(context, index)
-        return (print_next_index, print_node)
-    if token_kind_value == TOKEN_EPRINT:
-        let eprint_node = ast_parse_print_statement(context, index, ast, 1)
-        return (ast_scan_print_end(context, index), eprint_node)
     if token_kind_value == TOKEN_IDENTIFIER:
         let next_index = ast_next_index(index)
         let next_kind = token_kind(kinds, next_index)
@@ -1089,36 +1076,6 @@ def ast_parse_return_statement(context: ParseContext, index: int, body_end: int,
     ast_set_arg(ast, return_node, 1, return_tuple_flag)
     ast_set_arg(ast, return_node, 2, len(ast))
     return (return_next_index, return_node)
-
-def ast_scan_print_end(context: ParseContext, index: int) -> int:
-    let kinds = context.kinds
-    let cursor = index + 1
-    let depth = 0
-    while token_kind(kinds, cursor) != TOKEN_EOF:
-        let kind = token_kind(kinds, cursor)
-        if kind == TOKEN_OPEN_PAREN:
-            depth = depth + 1
-        elif kind == TOKEN_CLOSE_PAREN:
-            depth = depth - 1
-            if depth == 0:
-                return cursor + 1
-        cursor = cursor + 1
-    return index
-
-def ast_parse_print_statement(context: ParseContext, index: int, ast: list[int], to_stderr: int) -> int:
-    let starts = context.starts
-    let ends = context.ends
-    let print_stmt_node = ast_append_node(ast, AST_STMT_EXPR, 0, 0, ARGS_STMT_EXPR)
-    let print_node = ast_append_node(ast, AST_EXPR_PRINT, token_start(starts, index), token_end(ends, index), 2)
-    let value_index = ast_advance_index(index, 2)
-    let (print_value_next_index, print_value_node) = ast_parse_expression(context, value_index, ast)
-    if print_value_node == 0:
-        return 0
-    ast_set_arg(ast, print_node, 0, print_value_node)
-    ast_set_arg(ast, print_node, 1, to_stderr)
-    ast_set_arg(ast, print_stmt_node, 0, print_node)
-    ast_set_arg(ast, print_stmt_node, 1, len(ast))
-    return print_stmt_node
 
 def ast_parse_assign_statement(context: ParseContext, index: int, ast: list[int]) -> (int, int):
     let starts = context.starts
@@ -2020,16 +1977,9 @@ def ast_parse_stmt_block(context: ParseContext, body_start: int, body_end: int, 
             let node = 0
             let next_index = current_index
             let current_kind = token_kind(kinds, current_index)
-            if current_kind == TOKEN_PRINT:
-                node = ast_parse_print_statement(context, current_index, ast, 0)
-                next_index = ast_scan_print_end(context, current_index)
-            elif current_kind == TOKEN_EPRINT:
-                node = ast_parse_print_statement(context, current_index, ast, 1)
-                next_index = ast_scan_print_end(context, current_index)
-            if current_kind not in [TOKEN_PRINT, TOKEN_EPRINT]:
-                let statement_result: list[int] = [0, 0]
-                node = ast_parse_statement_into(context, current_index, body_end, ast, statement_result)
-                next_index = ast_int_list_get(statement_result, 0)
+            let statement_result: list[int] = [0, 0]
+            node = ast_parse_statement_into(context, current_index, body_end, ast, statement_result)
+            next_index = ast_int_list_get(statement_result, 0)
             if node == 0:
                 return (current_index, 0)
             if next_index > current_index:

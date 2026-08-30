@@ -1,7 +1,8 @@
 # dream-test: dir
 # Dream 文件 I/O 综合测试
 
-from io import open, exists, delete
+from io import open
+from fs import exists, delete
 from bytes import encode
 
 def report_result(r: Result[int, str]) -> int:

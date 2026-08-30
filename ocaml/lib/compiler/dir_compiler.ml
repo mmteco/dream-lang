@@ -188,7 +188,7 @@ let imported_definitions program =
     | Error _ -> definitions
     | Ok (_, module_program) ->
         let selected_name_set = match selected_names with
-          | None -> None
+          | None | Some ["*"] -> None
           | Some names -> Some (dependency_closed_names module_program names)
         in
         let definitions = List.fold_left (fun definitions statement ->
@@ -245,7 +245,10 @@ let imported_definitions program =
     | Ast.SImport (module_path, _, _) ->
         add_module definitions module_path None
     | Ast.SFromImport (module_path, selections, _) ->
-        let selected_names = Some (List.map fst selections) in
+        let selected_names =
+          if List.exists (fun (name, _) -> name = "*") selections then None
+          else Some (List.map fst selections)
+        in
         add_module definitions module_path selected_names
     | _ -> definitions
   ) [] program in

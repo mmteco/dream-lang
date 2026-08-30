@@ -1,4 +1,10 @@
-# 文件系统标准库
+# File system utilities
+
+def exists(path: str) -> bool:
+    return __c_file_exists(path)
+
+def delete(path: str) -> bool:
+    return __c_file_delete(path)
 
 def is_dir(path: str) -> bool:
     return __c_file_is_dir(path)

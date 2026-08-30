@@ -4,6 +4,52 @@
 #include <stdlib.h>
 #include <string.h>
 
+static char* union_value_to_str(union_t* value) {
+    if (value == NULL) return "(null)";
+    switch (value->tag) {
+        case UNION_INT:
+            {
+                char* result = (char*)gc_alloc(64, OBJ_STRING);
+                if (result == NULL) return NULL;
+                snprintf(result, 64, "%d", value->value.as_int);
+                return result;
+            }
+        case UNION_FLOAT:
+            {
+                char* result = (char*)gc_alloc(64, OBJ_STRING);
+                if (result == NULL) return NULL;
+                snprintf(result, 64, "%g", value->value.as_float);
+                return result;
+            }
+        case UNION_STRING:
+            return value->value.as_string == NULL ? "" : value->value.as_string;
+        case UNION_BOOL:
+            return (char*)(value->value.as_bool ? "true" : "false");
+        case UNION_BYTES: {
+            char* result = (char*)gc_alloc(64, OBJ_STRING);
+            if (result == NULL) return NULL;
+            snprintf(result, 64, "<bytes at %p>", value->value.as_bytes);
+            return result;
+        }
+        case UNION_STRUCT: {
+            char* result = (char*)gc_alloc(128, OBJ_STRING);
+            if (result == NULL) return NULL;
+            snprintf(result, 128, "<%s at %p>",
+                     value->type_name == NULL ? "struct" : value->type_name,
+                     value->value.as_ptr);
+            return result;
+        }
+        case UNION_NONE:
+            return "None";
+        default:
+            return "(unknown)";
+    }
+}
+
+char* __c_union_to_str(union_t* value) {
+    return union_value_to_str(value);
+}
+
 // ============================================================================
 // Union 创建函数（使用 GC 内存分配）
 // ============================================================================

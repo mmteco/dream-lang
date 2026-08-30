@@ -236,11 +236,3 @@ int __c_time_ms(void) {
 bool __c_debug_on(void) {
     return getenv("DEBUG") != NULL;
 }
-
-void __c_eprint_text(const char* text) {
-    fprintf(stderr, "%s", text);
-}
-
-void __c_debug_eprint_int(int value) {
-    fprintf(stderr, "%d", value);
-}

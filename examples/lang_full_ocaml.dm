@@ -1,5 +1,6 @@
 # dream-test: smoke
 # 语法综合导览：覆盖 Dream 语言的主要语法特性，作为宿主与自举回归的覆盖用例。
+from utf8 import chr, ord
 interface Shape:
     def area(self) -> int
 

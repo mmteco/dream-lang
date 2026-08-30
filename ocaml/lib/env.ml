@@ -282,6 +282,8 @@ let c_runtime_functions_table =
     ("__c_env", TyFunc ([TyStr], TyStr));
     ("__c_build_llvm", TyFunc ([TyStr; TyStr; TyBool], TyInt));
     (* 文件 I/O *)
+    ("__c_io_write", TyFunc ([TyInt; TyStr; TyStr], TyNone));
+    ("__c_value_to_str", TyFunc ([TyInt; TyInt; TyBool; TyFloat; TyStr], TyStr));
     ("__c_file_read", TyFunc ([TyStr], TyStr));
     ("__c_file_write", TyFunc ([TyStr; TyStr], TyInt));
     ("__c_file_exists", TyFunc ([TyStr], TyBool));
@@ -460,8 +462,6 @@ let get_operator_method_type impl_def method_name =
 
 let builtin_env =
   let env = empty_env in
-  let env = add_binding "print" (TyFunc ([TyVar "T"], TyNone)) env in
-  let env = add_binding "eprint" (TyFunc ([TyVar "T"], TyNone)) env in
   let env = add_binding "len" (TyFunc ([TyList (TyVar "T")], TyInt)) env in
   let env = add_binding "append" (TyFunc ([TyList (TyVar "T"); TyVar "T"], TyNone)) env in
   let env = add_binding "range" (TyFunc ([TyInt], TyList TyInt)) env in
@@ -470,8 +470,6 @@ let builtin_env =
   let env = add_binding "dict_items" (TyFunc ([TyDict (TyVar "K", TyVar "V")], TyList (TyTuple [TyVar "K"; TyVar "V"]))) env in
   let env = add_binding "join" (TyFunc ([TyList TyStr; TyStr], TyStr)) env in
   let env = add_binding "__c_str_concat" (TyFunc ([TyStr; TyStr], TyStr)) env in
-  let env = add_binding "chr" (TyFunc ([TyInt], TyRune)) env in
-  let env = add_binding "ord" (TyFunc ([TyRune], TyInt)) env in
   let env = add_binding "array" (TyFunc ([TyList (TyVar "T")], TyList (TyVar "T"))) env in
   let env = add_binding "array_new" (TyFunc ([TyInt], TyList (TyVar "T"))) env in
   (* 将所有 C Runtime 函数添加到环境中 *)

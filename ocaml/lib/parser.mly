@@ -368,6 +368,7 @@ import_names:
 import_name:
   | name = IDENT { (name, None) }
   | name = IDENT AS alias = IDENT { (name, Some alias) }
+  | TIMES { ("*", None) }
 
 elif_list:
   | { [] }

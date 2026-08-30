@@ -1,10 +1,12 @@
 # dream-test: dir
 # Dream 语言导览：覆盖自举编译器当前支持的表达式、语句和模式语法。
 from bytes import encode, decode
-from io import open, exists, delete
+from io import open
+from fs import exists, delete
 from path import join, normalize, basename, dirname, ext, stem
 from time import monotonic_ms, elapsed_ms
 from http import parse_response
+from utf8 import chr, ord
 import json
 
 const BASE: int = 3
@@ -35,7 +37,7 @@ def pair_values(value: int) -> (int, int):
     return (value, value + 1)
 
 def debug_value(value: int) -> int:
-    eprint(value)
+    eprintln(value)
     return value
 
 def classify(value: int) -> int:
@@ -223,6 +225,7 @@ def main():
     print(total)
     print(total >= 3.5)
     print('A')
+    print(chr(ord('A')))
     print(b'B')
 
     # 复合赋值

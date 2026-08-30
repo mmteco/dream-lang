@@ -173,6 +173,9 @@ let import_selected_from_module module_path selections =
   | Error msg -> Error msg
   | Ok (_, ast) ->
       let exports = extract_exports ast in
+      if List.exists (fun (name, _) -> name = "*") selections then
+        Ok (List.map (fun symbol -> import_symbol symbol None) exports)
+      else
       (* 为每个选择查找对应的符号 *)
       let rec find_and_import selections acc =
         match selections with

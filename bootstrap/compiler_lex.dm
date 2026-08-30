@@ -1,8 +1,10 @@
+from str import from_int
+from utf8 import ord
+
 const TOKEN_EOF: int = 0
 const TOKEN_INTEGER: int = 1
 const TOKEN_IDENTIFIER: int = 2
 const TOKEN_LET: int = 3
-const TOKEN_PRINT: int = 4
 const TOKEN_PLUS: int = 5
 const TOKEN_MINUS: int = 6
 const TOKEN_MULTIPLY: int = 7
@@ -48,7 +50,6 @@ const TOKEN_NOT: int = 46
 const TOKEN_CONS: int = 47
 const TOKEN_RUNE: int = 48
 const TOKEN_BREAK: int = 49
-const TOKEN_EPRINT: int = 50
 const TOKEN_IN: int = 51
 const TOKEN_CONTINUE: int = 52
 const TOKEN_PLUS_ASSIGN: int = 53
@@ -262,17 +263,17 @@ let access_violation_count: list[int] = [0]
 
 def report_access_violation(context: ParseContext, call_site_offset: int, callee_name: str, callee_offset: int):
     access_violation_count[0] = access_violation_count[0] + 1
-    __c_eprint_text("Error: access violation - '")
-    __c_eprint_text(callee_name)
-    __c_eprint_text("' is not accessible from ")
+    eprint("Error: access violation - '")
+    eprint(callee_name)
+    eprint("' is not accessible from ")
     let caller_pkg = get_package_at_offset(context, call_site_offset)
     if caller_pkg == PACKAGE_STDLIB:
-        __c_eprint_text("stdlib")
+        eprint("stdlib")
     elif caller_pkg == PACKAGE_BOOTSTRAP:
-        __c_eprint_text("bootstrap")
+        eprint("bootstrap")
     else:
-        __c_eprint_text("user code")
-    __c_eprint_text("\n")
+        eprint("user code")
+    eprintln("")
 
 def is_digit(code: int) -> bool:
     if code < ASCII_DIGIT_ZERO:
@@ -583,10 +584,6 @@ def keyword_kind(source: str, start: int, end: int) -> int:
     let word = source[start:end]
     if word == "let":
         return TOKEN_LET
-    if word == "print":
-        return TOKEN_PRINT
-    if word == "eprint":
-        return TOKEN_EPRINT
     if word == "def":
         return TOKEN_DEF
     if word == "return":
@@ -2136,10 +2133,11 @@ def parse_global_let_annotation(source: str, kinds: list[int], starts: list[int]
             return VALUE_TYPE_BOOL
         if type_name == "list" and token_kind(kinds, type_index + 1) == TOKEN_OPEN_BRACKET:
             let element_index = type_index + 2
-            if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source[token_start(starts,
-                element_index):token_end(ends, element_index)] == "str":
+            if token_kind(kinds, element_index) == TOKEN_IDENTIFIER:
+                let element_name = source[token_start(starts, element_index):token_end(ends, element_index)]
+                if element_name in ["int", "rune", "byte", "float", "bool"]:
+                    return VALUE_TYPE_LIST_INT
                 return VALUE_TYPE_LIST_STRING
-            return VALUE_TYPE_LIST_INT
     return VALUE_TYPE_UNKNOWN
 
 def collect_global_lets(tokens: TokenStream, globals: GlobalTable) -> int:

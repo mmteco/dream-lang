@@ -1,9 +1,11 @@
 from buffer import Buffer
-from io import read, write, exists, delete
-from fs import mkdir, rename
+from io import read, write
+from fs import exists, delete, mkdir, rename
+from compiler import build
 from str import from_int
+from utf8 import ord
 from crypto import sha256
-from sys import argc, arg, env, build
+from sys import argc, arg, env
 from time import monotonic_ms
 
 const COMPILE_OUTPUT_AST: int = 0
@@ -217,10 +219,13 @@ def rewrite_module_namespace(source: str, module_names: str) -> str:
 
 def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int],
     file_ends: list[int], file_paths: Buffer) -> str:
+    let source_with_prelude = source
+    if source_path != "runtime/stdlib/prelude.dm":
+        source_with_prelude = "from prelude import *\n" + source
     let imported_source = ""
     let loaded_modules = ""
     let namespace_modules = ""
-    let scan_source = source
+    let scan_source = source_with_prelude
     let scan_round = 0
     let found_new_module = true
     while scan_round < 64 and found_new_module:
@@ -383,11 +388,11 @@ def compiler_debug_checkpoint(label: str, previous_time: int) -> int:
     if not __c_debug_on():
         return previous_time
     let current_time = __c_time_ms()
-    __c_eprint_text("[timing] ")
-    __c_eprint_text(label)
-    __c_eprint_text(" ")
-    __c_debug_eprint_int(current_time - previous_time)
-    __c_eprint_text("ms\n")
+    eprint("[timing] ")
+    eprint(label)
+    eprint(" ")
+    eprint(from_int(current_time - previous_time))
+    eprintln("ms")
     return current_time
 
 def build_ast_compilation(
@@ -457,7 +462,7 @@ def write_ast_output(output_path: str, source: str, func_starts: list[int], func
 def compile_source(source_path: str, output_path: str, output_mode: int) -> bool:
     access_violation_count[0] = 0
     if not ensure_compiler_dirs():
-        __c_eprint_text("error: failed to create compiler target directories\n")
+        eprintln("error: failed to create compiler target directories")
         return false
     let phase_time = compiler_debug_start()
     let raw_source = read(source_path)
@@ -595,14 +600,14 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         global_let_expression_indexes, ast_nodes, ast_func_nodes_start, ast_func_nodes_end, ast_global_nodes)
     phase_time = compiler_debug_checkpoint("ast", phase_time)
     if not is_ast_valid:
-        __c_eprint_text("error: AST validation failed\n")
+        eprintln("error: AST validation failed")
         return false
     if output_mode == COMPILE_OUTPUT_AST:
         if not write_ast_output(output_path, source, func_starts, func_ends, ast_nodes, ast_func_nodes_start,
             ast_func_nodes_end):
             return false
         if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
-            __c_eprint_text("warning: failed to store compiler cache\n")
+            eprintln("warning: failed to store compiler cache")
         return true
     let hir_records: list[int] = []
     let hir_values: list[int] = []
@@ -631,7 +636,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         hir_values,
         hir_struct_decls,
     ):
-        __c_eprint_text("error: HIR build failed\n")
+        eprintln("error: HIR build failed")
         return false
     let hir_output_records: list[int] = []
     let hir_output_struct_decls: list[int] = []
@@ -649,7 +654,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let validated_hir_struct_decls: list[int] = []
     if not hir_validate_semantics(hir_records, hir_values, hir_struct_decls, source, validated_hir_records,
         validated_hir_struct_decls):
-        __c_eprint_text("error: HIR semantic validation failed\n")
+        eprintln("error: HIR semantic validation failed")
         return false
     let hir_program = HirProgram{
         records: validated_hir_records,
@@ -665,12 +670,12 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         }
         let hir_output = Buffer{data: []}
         if not hir_model_dump_program(raw_hir_program, hir_output):
-            __c_eprint_text("error: HIR validation failed while dumping\n")
+            eprintln("error: HIR validation failed while dumping")
             return false
         if not write_buffer(output_path, hir_output):
             return false
         if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
-            __c_eprint_text("warning: failed to store compiler cache\n")
+            eprintln("warning: failed to store compiler cache")
         compiler_debug_checkpoint("hir-dump", phase_time)
         return true
     let mir_program = mir_model_build_program(
@@ -706,19 +711,19 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     if output_mode == COMPILE_OUTPUT_MIR:
         let mir_output = Buffer{data: []}
         if not mir_validate_program(optimized_mir_program):
-            __c_eprint_text("error: MIR validation failed\n")
+            eprintln("error: MIR validation failed")
             return false
         if not mir_dump_program(optimized_mir_program, mir_output):
-            __c_eprint_text("error: MIR validation failed while dumping\n")
+            eprintln("error: MIR validation failed while dumping")
             return false
         if not write_buffer(output_path, mir_output):
             return false
         if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
-            __c_eprint_text("warning: failed to store compiler cache\n")
+            eprintln("warning: failed to store compiler cache")
         return true
     elif output_mode == COMPILE_OUTPUT_LIR:
         if not mir_validate_program(optimized_mir_program):
-            __c_eprint_text("error: MIR validation failed\n")
+            eprintln("error: MIR validation failed")
             return false
         let lir_program = lir_model_build_program(optimized_mir_program)
         phase_time = compiler_debug_checkpoint("lir-build", phase_time)
@@ -726,19 +731,19 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         let is_lir_valid = lir_validate_program(lir_program)
         phase_time = compiler_debug_checkpoint("lir-validate", phase_time)
         if not is_lir_valid:
-            __c_eprint_text("error: LIR validation failed\n")
+            eprintln("error: LIR validation failed")
             return false
         if not lir_dump_validated_program(lir_program, lir_output):
-            __c_eprint_text("error: LIR validation failed while dumping\n")
+            eprintln("error: LIR validation failed while dumping")
             return false
         if not write_buffer(output_path, lir_output):
             return false
         if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
-            __c_eprint_text("warning: failed to store compiler cache\n")
+            eprintln("warning: failed to store compiler cache")
         return true
     elif output_mode == COMPILE_OUTPUT_LLVM:
         if not mir_validate_program(optimized_mir_program):
-            __c_eprint_text("error: MIR validation failed\n")
+            eprintln("error: MIR validation failed")
             return false
         let lir_program = lir_model_build_program(optimized_mir_program)
         phase_time = compiler_debug_checkpoint("lir-build", phase_time)
@@ -746,21 +751,21 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         let is_lir_valid = lir_validate_program(lir_program)
         phase_time = compiler_debug_checkpoint("lir-validate", phase_time)
         if not is_lir_valid:
-            __c_eprint_text("error: LIR validation failed\n")
+            eprintln("error: LIR validation failed")
             return false
         let is_llvm_valid = llvm_lower_lir(lir_program, source, llvm_output)
         phase_time = compiler_debug_checkpoint("llvm-lower", phase_time)
         if not is_llvm_valid:
-            __c_eprint_text("error: LLVM lowering failed\n")
+            eprintln("error: LLVM lowering failed")
             return false
         if not write_buffer(output_path, llvm_output):
             return false
         phase_time = compiler_debug_checkpoint("llvm-write", phase_time)
         if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
-            __c_eprint_text("warning: failed to store compiler cache\n")
+            eprintln("warning: failed to store compiler cache")
         phase_time = compiler_debug_checkpoint("llvm-cache-store", phase_time)
         return true
-    __c_eprint_text("error: only ast, hir, mir, lir, and llvm outputs are supported\n")
+    eprintln("error: only ast, hir, mir, lir, and llvm outputs are supported")
     return false
 
 struct BuildArguments:
@@ -799,7 +804,7 @@ def parse_build_arguments(argument_count: int):
 
 def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool:
     if not ensure_compiler_dirs():
-        __c_eprint_text("error: failed to create compiler target directories\n")
+        eprintln("error: failed to create compiler target directories")
         return false
     let build_token = compiler_temp_token("build_" + source_path)
     let llvm_path = "target/tmp/llvm_" + build_token + ".ll"
@@ -810,12 +815,12 @@ def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool
     if not build(llvm_path, build_output_path, is_optimized):
         delete(llvm_path)
         delete(build_output_path)
-        __c_eprint_text("error: failed to build executable\n")
+        eprintln("error: failed to build executable")
         return false
     if not rename(build_output_path, output_path):
         delete(llvm_path)
         delete(build_output_path)
-        __c_eprint_text("error: failed to publish executable\n")
+        eprintln("error: failed to publish executable")
         return false
     delete(llvm_path)
     return true
@@ -823,11 +828,11 @@ def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool
 def run_build_command(argument_count: int) -> bool:
     parse_build_arguments(argument_count)
     if not BA_is_valid:
-        __c_eprint_text("error: build accepts [--dev] <file.dm> [-o output]\n")
+        eprintln("error: build accepts [--dev] <file.dm> [-o output]")
         return false
     let input_length = len(BA_input_path)
     if input_length < 3 or BA_input_path[input_length - 3:input_length] != ".dm":
-        __c_eprint_text("error: input file must have .dm extension\n")
+        eprintln("error: input file must have .dm extension")
         return false
     return build_source(BA_input_path, BA_output_path, BA_is_optimized)
 
@@ -858,7 +863,7 @@ def main() -> int:
             case "llvm":
                 output_mode = COMPILE_OUTPUT_LLVM
             default:
-                __c_eprint_text("error: use ast, hir, mir, lir, or llvm\n")
+                eprintln("error: use ast, hir, mir, lir, or llvm")
                 return 1
         if compile_source(arg(2), arg(4), output_mode):
             return 0

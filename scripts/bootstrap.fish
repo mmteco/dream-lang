@@ -177,9 +177,7 @@ or exit 1
 check_bootstrapped_ast "$full_dream_example" expr_unary expr_logical expr_cond expr_call expr_index
 rg -q 'stmt_return s6: [1-9][0-9]* ' "$ast_output_file"
 or exit 1
-check_bootstrapped_ast "$full_dream_example" expr_attr expr_binary expr_bool expr_builtin_enum expr_call expr_cond expr_dict expr_float expr_index expr_lambda expr_list expr_list_comp expr_logical expr_match expr_method_call expr_print expr_rune expr_slice expr_string expr_struct expr_tuple expr_unary expr_var pat_bool pat_builtin pat_cons pat_enum pat_float pat_int pat_list pat_rune pat_string pat_struct pat_var pat_wildcard m_case stmt_assign stmt_break stmt_case stmt_elif stmt_expr stmt_for stmt_if stmt_let stmt_let_tuple stmt_return stmt_switch stmt_while
-rg -q 'expr_print s5: [0-9]+ 1$' "$ast_output_file"
-or exit 1
+check_bootstrapped_ast "$full_dream_example" expr_attr expr_binary expr_bool expr_builtin_enum expr_call expr_cond expr_dict expr_float expr_index expr_lambda expr_list expr_list_comp expr_logical expr_match expr_method_call expr_rune expr_slice expr_string expr_struct expr_tuple expr_unary expr_var pat_bool pat_builtin pat_cons pat_enum pat_float pat_int pat_list pat_rune pat_string pat_struct pat_var pat_wildcard m_case stmt_assign stmt_break stmt_case stmt_elif stmt_expr stmt_for stmt_if stmt_let stmt_let_tuple stmt_return stmt_switch stmt_while
 "$stage1_binary" llvm "$compiler_source" -o "tmp/stage2.ll"
 or exit 1
 verify_bootstrap_llvm

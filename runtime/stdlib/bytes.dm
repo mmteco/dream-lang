@@ -1,3 +1,7 @@
+# Byte sequence utilities
+
+from utf8 import encode_rune
+
 def from_list(values: list[byte]) -> bytes:
     return __c_bytes_from_array(values)
 
@@ -22,4 +26,4 @@ def extend(target: list[byte], value: bytes):
         index = index + 1
 
 def append_rune(target: list[byte], value: rune):
-    extend(target, __c_utf8_encode_rune(value))
+    extend(target, encode_rune(value))

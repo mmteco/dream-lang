@@ -19,7 +19,7 @@ test_union: $(CORE_OBJS) core/union.o tests/test_union.o
 test_string: $(CORE_OBJS) core/str.o wrappers/str.o tests/test_string_ops.o
 	$(CC) $(LDFLAGS) -o $@ $^ -pthread
 
-test_runtime_safety: $(CORE_OBJS) core/str.o core/bytes.o core/tuple.o core/union.o wrappers/str.o wrappers/bytes.o wrappers/file.o wrappers/net.o wrappers/http.o tests/test_runtime_safety.o
+test_runtime_safety: $(CORE_OBJS) core/str.o core/bytes.o core/tuple.o core/union.o core/value.o wrappers/str.o wrappers/bytes.o wrappers/file.o wrappers/net.o wrappers/http.o tests/test_runtime_safety.o
 	$(CC) $(LDFLAGS) -o $@ $^ -pthread $(CURL_LIBS)
 
 core/%.o: core/%.c
@@ -44,6 +44,7 @@ core/memory.o: core/memory.c core/memory.h core/union.h core/utf8.h
 core/dynarray.o: core/dynarray.c core/dynarray.h core/memory.h
 core/utf8.o: core/utf8.c core/utf8.h
 core/union.o: core/union.c core/union.h core/memory.h
+core/value.o: core/value.c core/value.h core/union.h core/memory.h
 core/str.o: core/str.c core/str.h core/dynarray.h core/memory.h core/utf8.h
 core/bytes.o: core/bytes.c core/bytes.h core/dynarray.h
 core/dict.o: core/dict.c core/dict.h core/dynarray.h

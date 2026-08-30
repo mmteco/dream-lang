@@ -1,7 +1,8 @@
 # dream-test: dir
 # io.open 与 with 上下文管理测试
 
-from io import open, delete
+from io import open
+from fs import delete
 
 def result_value(value: Result[int, str]) -> int:
     return match value:

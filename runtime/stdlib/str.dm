@@ -35,6 +35,12 @@ def from_int(value: int) -> str:
         index = index - 1
     return result
 
+def rune_at(value: str, index: int) -> rune:
+    return __c_utf8_rune_at(value, index)
+
+def rune_count(value: str) -> int:
+    return __c_utf8_rune_count(value)
+
 def split(value: str, separator: str) -> list[str]:
     return __c_str_split(value, separator)
 

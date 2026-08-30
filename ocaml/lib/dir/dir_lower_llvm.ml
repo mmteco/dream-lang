@@ -440,7 +440,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
               Printf.bprintf buffer "  call void @__c_append_i32(%%dynarray_i32* %s, i32 %s)\n"
                 (value_name value) (operand item)
             ) values
-        | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
+        | Str | Tuple _ | Struct _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
             Printf.bprintf buffer "  %s = call %%dynarray_ptr* @__c_create_dynarray_ptr(i32 %d)\n"
               (value_name value) (List.length values);
             List.iteri (fun index item ->
@@ -589,7 +589,7 @@ let render_instruction string_literals value_types buffer _instruction_label ins
         | F64 ->
             Printf.bprintf buffer "  call void @__c_append_f64(%%dynarray_i32* %s, double %s)\n"
               (operand collection) (operand value)
-        | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
+        | Str | Tuple _ | Struct _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
             let elem_int_name = match value with
               | Value n -> Printf.sprintf "%%dir_append_elem_v%d" n
               | _ -> failwith "list append element must be a value" in

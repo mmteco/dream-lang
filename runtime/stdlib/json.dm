@@ -1,6 +1,7 @@
 # JSON 值、解析和序列化
 
 from ops import Display
+from utf8 import ord
 
 enum Json:
     Null

@@ -25,7 +25,6 @@ from compiler_lex import (
     TOKEN_INTEGER,
     TOKEN_IDENTIFIER,
     TOKEN_LET,
-    TOKEN_PRINT,
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_MULTIPLY,
@@ -70,7 +69,6 @@ from compiler_lex import (
     TOKEN_CONS,
     TOKEN_RUNE,
     TOKEN_BREAK,
-    TOKEN_EPRINT,
     TOKEN_CONTINUE
 )
 from compiler_ast import (
@@ -105,7 +103,6 @@ from compiler_ast import (
     AST_EXPR_LOGICAL,
     AST_EXPR_MATCH,
     AST_EXPR_METHOD_CALL,
-    AST_EXPR_PRINT,
     AST_EXPR_RUNE,
     AST_EXPR_SLICE,
     AST_EXPR_STRING,

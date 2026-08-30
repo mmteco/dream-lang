@@ -1,3 +1,5 @@
+from str import from_int
+from utf8 import ord
 from compiler_lir_model import (
     LirProgram,
     lir_record_count,
@@ -81,8 +83,8 @@ from compiler_operator import (
     IR_OPERATOR_NEG
 )
 from compiler_external import (
-    EXTERNAL_COUNT,
     EXTERNAL_ID_BASE,
+    EXTERNAL_DEFS,
     EXTERNAL_ID_APPEND,
     EXTERNAL_ID_LEN,
     external_llvm_name,
@@ -111,11 +113,11 @@ def llvm_lir_debug_checkpoint(label: str, previous_time: int) -> int:
     if not __c_debug_on():
         return previous_time
     let current_time = __c_time_ms()
-    __c_eprint_text("[timing] llvm-")
-    __c_eprint_text(label)
-    __c_eprint_text(" ")
-    __c_debug_eprint_int(current_time - previous_time)
-    __c_eprint_text("ms\n")
+    eprint("[timing] llvm-")
+    eprint(label)
+    eprint(" ")
+    eprint(from_int(current_time - previous_time))
+    eprintln("ms")
     return current_time
 
 def llvm_lir_resize_int_list(target: list[int], size: int, fill_value: int):
@@ -329,22 +331,62 @@ def llvm_emit_string_global(record_id: int, source_start: int, source_end: int, 
             index = index + 1
     append(output, "\\00\"\n")
 
-def llvm_lir_print_name(program: LirProgram, record_offset: int) -> str:
+def llvm_emit_print_value(program: LirProgram, record_offset: int, output: Buffer):
     let value_type = LIR_TYPE_PTR
     if program.records[record_offset + 7] > 0:
-        let operand_kind = llvm_lir_operand_kind(program, record_offset, 0)
-        if operand_kind == LIR_OPERAND_VALUE:
-            value_type = llvm_lir_value_type(program, program.records[record_offset + 1],
-                llvm_lir_operand_value(program, record_offset, 0))
-        elif operand_kind == LIR_OPERAND_IMMEDIATE:
-            value_type = LIR_TYPE_I32
+        value_type = llvm_lir_binary_operand_type(program, record_offset, 0)
+    let value_kind = 4
     if value_type == LIR_TYPE_I32:
-        return "@__c_print_int"
-    if value_type == LIR_TYPE_F64:
-        return "@__c_print_float"
+        value_kind = 1
+    elif value_type == LIR_TYPE_F64:
+        value_kind = 2
+    elif value_type == LIR_TYPE_I1:
+        value_kind = 3
+    let text_name = llvm_lir_join_int("%print_text_", record_offset, "")
+    append(output, "  ")
+    append(output, text_name)
+    append(output, " = call i8* @__c_value_to_str(i32 ")
+    append(output, value_kind)
+    append(output, ", i32 ")
+    if value_type == LIR_TYPE_I32:
+        llvm_emit_operand(program, record_offset, 0, LIR_TYPE_I32, output)
+    else:
+        append(output, "0")
+    append(output, ", i1 ")
     if value_type == LIR_TYPE_I1:
-        return "@__c_print_bool"
-    return "@__c_print_str"
+        llvm_emit_operand(program, record_offset, 0, LIR_TYPE_I1, output)
+    else:
+        append(output, "0")
+    append(output, ", double ")
+    if value_type == LIR_TYPE_F64:
+        llvm_emit_operand(program, record_offset, 0, LIR_TYPE_F64, output)
+    else:
+        append(output, "0.000000e+00")
+    append(output, ", i8* ")
+    if value_type not in [LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_I1]:
+        llvm_emit_operand(program, record_offset, 0, LIR_TYPE_PTR, output)
+    else:
+        append(output, "null")
+    append(output, ")\n")
+    append(output, "  call void @__c_io_write(i32 ")
+    if program.records[record_offset + 7] > 1:
+        llvm_emit_operand(program, record_offset, 1, LIR_TYPE_I32, output)
+    else:
+        append(output, "0")
+    append(output, ", i8* ")
+    append(output, text_name)
+    append(output, ", i8* ")
+    if program.records[record_offset + 7] > 2:
+        llvm_emit_operand(program, record_offset, 2, LIR_TYPE_PTR, output)
+    elif (
+        program.records[record_offset + 7] > 1 and
+        llvm_lir_operand_kind(program, record_offset, 1) == LIR_OPERAND_IMMEDIATE and
+        llvm_lir_operand_value(program, record_offset, 1) == 2
+    ):
+        append(output, "getelementptr inbounds ([1 x i8], [1 x i8]* @.dm_print_empty, i32 0, i32 0)")
+    else:
+        append(output, "getelementptr inbounds ([2 x i8], [2 x i8]* @.dm_print_end, i32 0, i32 0)")
+    append(output, ")\n")
 
 def llvm_lir_prepare_func_cache(program: LirProgram):
     let maximum_function = -1
@@ -1111,6 +1153,10 @@ def llvm_lir_func_parameter_type(program: LirProgram, func_index: int, parameter
 
 def llvm_emit_runtime_declarations(output: Buffer):
     append(output, "declare void @llvm.trap()\n")
+    append(output, "declare i8* @__c_value_to_str(i32, i32, i1, double, i8*)\n")
+    append(output, "declare void @__c_io_write(i32, i8*, i8*)\n")
+    append(output, "@.dm_print_end = private constant [2 x i8] c\"\\0A\\00\"\n")
+    append(output, "@.dm_print_empty = private constant [1 x i8] c\"\\00\"\n")
     append(output, "declare void @__c_process_set_args(i32, i8**)\n")
     append(output, "declare i8* @__c_create_dynarray_i32(i32)\n")
     append(output, "declare void @__c_append_i32(i8*, i32)\n")
@@ -1192,7 +1238,7 @@ def llvm_emit_func_table(program: LirProgram, output: Buffer):
 
 def llvm_emit_external_declarations(output: Buffer):
     let external_id = EXTERNAL_ID_BASE
-    while external_id < EXTERNAL_ID_BASE + EXTERNAL_COUNT:
+    while external_id < EXTERNAL_ID_BASE + len(EXTERNAL_DEFS):
         if external_has_declaration(external_id):
             let external_type = llvm_lir_external_type(external_id)
             append(output, "declare ")
@@ -1933,11 +1979,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
             append(output, ")\n")
             return
         if runtime_id == 1:
-            append(output, "  call void ")
-            append(output, llvm_lir_print_name(program, offset))
-            append(output, "(")
-            llvm_lir_render_call_arguments(program, offset, output)
-            append(output, ")\n")
+            llvm_emit_print_value(program, offset, output)
             return
         if runtime_id == 7 and program.records[offset + 4] == LIR_TYPE_DICT:
             # dict 字面量与 list append 共用 runtime id 7；按结果类型分派

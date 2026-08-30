@@ -374,7 +374,7 @@ let verify module_ =
           | None -> ())
      | ListCreate (value, element_type, values) ->
          (match element_type with
-          | I32 | Str | Tuple _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
+          | I32 | Str | Tuple _ | Struct _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
               List.iter (fun item ->
                 verify_operand value_types item element_type "list_create element"
               ) values

@@ -1,3 +1,5 @@
+from str import from_int
+from utf8 import ord
 from compiler_operator import (
     IR_OPERATOR_EQ,
     IR_OPERATOR_NE,
@@ -345,8 +347,6 @@ def mir_opcode_from_hir(opcode: int) -> int:
         return MIR_OP_STRUCT
     if opcode == HIR_OP_ENUM:
         return MIR_OP_ENUM
-    if opcode == HIR_OP_PRINT:
-        return MIR_OP_PRINT
     if opcode == HIR_OP_SEQUENCE:
         return MIR_OP_SEQUENCE
     if opcode in [HIR_OP_LET, HIR_OP_ASSIGN]:
@@ -758,7 +758,7 @@ def mir_impl_interface_accepts(interface_type: int, value_type: int, literal_for
 
 def mir_find_function(state: MirLowerState, source_start: int, source_end: int) -> int:
     let name = state.source[source_start:source_end]
-    if name in ["print", "eprint", "append", "len"]:
+    if name in prelude_all_names or external_id_from_name(name) >= 0:
         return -1
     let func_index = 0
     while func_index < len(state.functions.starts):
@@ -2060,6 +2060,29 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                     append(argument_values, argument_value)
                     append(argument_node_ids, argument_node_id)
             argument_index = argument_index + 1
+        if method_target_id < 0 and callee_name_text in prelude_all_names:
+            let valid_arguments = len(argument_values) == 1
+            if callee_name_text == "print":
+                valid_arguments = len(argument_values) == 1 or len(argument_values) == 3
+            if valid_arguments:
+                let operand_start = mir_value_count(state.values)
+                mir_append_operand(state.values, MIR_OPERAND_VALUE, mir_int_list_get(argument_values, 0))
+                if len(argument_values) == 3:
+                    mir_append_operand(state.values, MIR_OPERAND_VALUE, mir_int_list_get(argument_values, 1))
+                    mir_append_operand(state.values, MIR_OPERAND_VALUE, mir_int_list_get(argument_values, 2))
+                else:
+                    let stream = 0
+                    if callee_name_text != "print":
+                        stream = 1
+                    if callee_name_text == "eprint":
+                        stream = 2
+                    mir_append_operand(state.values, MIR_OPERAND_INT, stream)
+                mir_state_append_instruction(state, MIR_OP_PRINT, MIR_TYPE_UNIT, -1, operand_start,
+                    mir_value_count(state.values) - operand_start)
+                mir_int_list_set(state.hir_value_map, node_id, -1)
+                return -1
+            mir_int_list_set(state.hir_value_map, node_id, -1)
+            return -1
         # 裸变体构造：Some(7) / Ok(x) 等，callee 名命中已声明变体
         if (
             enum_construct_tag < 0 and
@@ -4646,11 +4669,11 @@ def mir_model_build_program(hir_records: list[int], hir_values: list[int], hir_s
     return MirProgram{records: records, values: values}
 
 def mir_validation_error(record_id: int, reason: str) -> bool:
-    __c_eprint_text("MIR validation failed record=")
-    __c_debug_eprint_int(record_id)
-    __c_eprint_text(" reason=")
-    __c_eprint_text(reason)
-    __c_eprint_text("\n")
+    eprint("MIR validation failed record=")
+    eprint(from_int(record_id))
+    eprint(" reason=")
+    eprint(reason)
+    eprintln("")
     return false
 
 def mir_index_ensure_function(max_values: list[int], max_blocks: list[int], func_index: int):
@@ -4871,24 +4894,24 @@ def mir_validate_model_program(program: MirProgram) -> bool:
                 return mir_validation_error(record_id, "unknown jump block")
             let parameter_count = mir_block_parameter_count(index, func_index, target_block)
             if operand_count != parameter_count + 1:
-                __c_debug_eprint_int(record_id)
-                __c_eprint_text(" fn=")
-                __c_debug_eprint_int(func_index)
-                __c_eprint_text(" opc=")
-                __c_debug_eprint_int(operand_count)
-                __c_eprint_text(" tgt=")
-                __c_debug_eprint_int(target_block)
-                __c_eprint_text(" pc=")
-                __c_debug_eprint_int(parameter_count)
+                eprint(from_int(record_id))
+                eprint(" fn=")
+                eprint(from_int(func_index))
+                eprint(" opc=")
+                eprint(from_int(operand_count))
+                eprint(" tgt=")
+                eprint(from_int(target_block))
+                eprint(" pc=")
+                eprint(from_int(parameter_count))
                 let debug_index = 0
                 while debug_index < operand_count:
                     let debug_offset = mir_value_offset(operand_start + debug_index)
-                    __c_eprint_text(" v")
-                    __c_debug_eprint_int(mir_int_list_get(values, debug_offset))
-                    __c_eprint_text(":")
-                    __c_debug_eprint_int(mir_int_list_get(values, debug_offset + 1))
+                    eprint(" v")
+                    eprint(from_int(mir_int_list_get(values, debug_offset)))
+                    eprint(":")
+                    eprint(from_int(mir_int_list_get(values, debug_offset + 1)))
                     debug_index = debug_index + 1
-                __c_eprint_text("\n")
+                eprintln("")
                 return mir_validation_error(record_id, "jump argument count")
         if kind == MIR_RECORD_TERMINATOR and opcode == MIR_TERM_BRANCH:
             let branch_target_index = 1
@@ -4922,16 +4945,16 @@ def mir_validate_model_program(program: MirProgram) -> bool:
                     expected_argument_count = false_argument_count
                 if mir_block_parameter_count(index, func_index,
                     values[target_offset + 1]) != expected_argument_count:
-                    __c_debug_eprint_int(record_id)
-                    __c_eprint_text(" tgt=")
-                    __c_debug_eprint_int(branch_target_index)
-                    __c_eprint_text(" blk=")
-                    __c_debug_eprint_int(values[target_offset + 1])
-                    __c_eprint_text(" exp=")
-                    __c_debug_eprint_int(expected_argument_count)
-                    __c_eprint_text(" got=")
-                    __c_debug_eprint_int(mir_block_parameter_count(index, func_index, values[target_offset + 1]))
-                    __c_eprint_text("\n")
+                    eprint(from_int(record_id))
+                    eprint(" tgt=")
+                    eprint(from_int(branch_target_index))
+                    eprint(" blk=")
+                    eprint(from_int(values[target_offset + 1]))
+                    eprint(" exp=")
+                    eprint(from_int(expected_argument_count))
+                    eprint(" got=")
+                    eprint(from_int(mir_block_parameter_count(index, func_index, values[target_offset + 1])))
+                    eprintln("")
                     return mir_validation_error(record_id, "branch arguments")
                 branch_target_index = branch_target_index + 1
         record_id = record_id + 1

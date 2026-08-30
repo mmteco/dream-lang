@@ -126,6 +126,40 @@ let rec lower_method_call context function_builder environment object_value meth
   in
   { operand; ty = method_binding.signature.return_type }
 
+and lower_display_value context function_builder environment value position =
+  let lower_primitive kind int_value bool_value float_value pointer_type pointer_value =
+    let result = fresh_value function_builder in
+    emit function_builder (Call (Some result, Str, "__c_value_to_str",
+      [I32; I32; Bool; F64; pointer_type],
+      [Int kind; int_value; bool_value; float_value; pointer_value]));
+    { operand = Value result; ty = Str }
+  in
+  match value.ty with
+  | Str -> value
+  | I32 -> lower_primitive 1 value.operand (Bool false) (Float 0.0) Str (String "")
+  | F64 -> lower_primitive 2 (Int 0) (Bool false) value.operand Str (String "")
+  | Bool -> lower_primitive 3 (Int 0) value.operand (Float 0.0) Str (String "")
+  | Bytes ->
+      let result = fresh_value function_builder in
+      emit function_builder (Call (Some result, Str, "__c_bytes_to_str",
+        [Bytes], [value.operand]));
+      { operand = Value result; ty = Str }
+  | Union _ ->
+      let result = fresh_value function_builder in
+      emit function_builder (Call (Some result, Str, "__c_union_to_str",
+        [value.ty], [value.operand]));
+      { operand = Value result; ty = Str }
+  | Interface _ ->
+      lower_interface_call context function_builder environment value "to_string" [] position
+  | Struct (name, _) | Enum (name, _) ->
+      if Hashtbl.mem context.method_signatures (name ^ ".to_string") then
+        lower_method_call context function_builder environment value "to_string" [] position
+      else
+        fail_at position (Printf.sprintf
+          "print requires %s to implement Display" (Dir.ty_to_string value.ty))
+  | actual_type -> fail_at position (Printf.sprintf
+      "print does not support %s" (Dir.ty_to_string actual_type))
+
 and lower_string_method context function_builder environment object_value method_name
     arguments position =
   let lowered_arguments = List.map
@@ -807,10 +841,6 @@ and lower_expr context function_builder environment expression =
         { operand = Value status; ty = Bool }
       else
         { operand = Value value; ty = I32 }
-  | ECall (EVar ("ord", _), [rune], position) ->
-      let lowered_rune = lower_expr context function_builder environment rune in
-      expect_type position I32 lowered_rune.ty "ord argument";
-      lowered_rune
   | ECall (EVar ("__c_rune_to_int", _), [rune], position) ->
       let lowered_rune = lower_expr context function_builder environment rune in
       expect_type position I32 lowered_rune.ty "__c_rune_to_int argument";
@@ -994,6 +1024,31 @@ and lower_expr context function_builder environment expression =
         | None -> Int 0
       in
       { operand; ty = signature.return_type }
+  | ECall (EVar ("__c_utf8_rune_count", _), [text], position) ->
+      let lowered_text = lower_expr context function_builder environment text in
+      expect_type position Str lowered_text.ty "__c_utf8_rune_count text";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_utf8_rune_count",
+        [Str], [lowered_text.operand]));
+      { operand = Value value; ty = I32 }
+  | ECall (EVar ("__c_utf8_rune_at", _), [text; index], position) ->
+      let lowered_text = lower_expr context function_builder environment text in
+      let lowered_index = lower_expr context function_builder environment index in
+      expect_type position Str lowered_text.ty "__c_utf8_rune_at text";
+      expect_type position I32 lowered_index.ty "__c_utf8_rune_at index";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_utf8_rune_at",
+        [Str; I32], [lowered_text.operand; lowered_index.operand]));
+      { operand = Value value; ty = I32 }
+  | ECall (EVar ("__c_utf8_byte_offset", _), [text; index], position) ->
+      let lowered_text = lower_expr context function_builder environment text in
+      let lowered_index = lower_expr context function_builder environment index in
+      expect_type position Str lowered_text.ty "__c_utf8_byte_offset text";
+      expect_type position I32 lowered_index.ty "__c_utf8_byte_offset index";
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, "__c_utf8_byte_offset",
+        [Str; I32], [lowered_text.operand; lowered_index.operand]));
+      { operand = Value value; ty = I32 }
   | ECall (EVar ("__c_utf8_encode_rune", _), [rune], position) ->
       let lowered_rune = lower_expr context function_builder environment rune in
       expect_type position I32 lowered_rune.ty "__c_utf8_encode_rune rune";
@@ -1050,48 +1105,60 @@ and lower_expr context function_builder environment expression =
   | ECall (EVar (name, _), arguments, position) ->
       let lowered_arguments = List.map
         (lower_expr context function_builder environment) arguments in
-      let actual_name, signature =
-        if name = "print" || name = "eprint" then
-          let prefix = if name = "eprint" then "__c_eprint" else "__c_print" in
-          match lowered_arguments with
-          | [argument] ->
-              let print_name = match argument.ty with
-                | I32 -> prefix ^ "_int"
-                | F64 -> prefix ^ "_float"
-                | Bool -> prefix ^ "_bool"
-                | Str -> prefix ^ "_str"
-                | Union _ when name = "print" -> "__c_union_print_value"
-                | _ -> fail_at position (name ^ " supports int, float, bool and str in DIR subset")
-              in
-              (print_name, { parameter_types = [argument.ty]; return_type = Unit })
-          | _ -> fail_at position (name ^ " expects exactly one argument")
-        else
+      if name = "print" || name = "eprintln" || name = "eprint" then begin
+        match name, lowered_arguments with
+        | "print", [argument] ->
+            let text = lower_display_value context function_builder environment argument position in
+            emit function_builder (Call (None, Unit, "__c_io_write",
+              [I32; Str; Str], [Int 0; text.operand; String "\n"]));
+            { operand = Int 0; ty = Unit }
+        | "print", [argument; file; end_] ->
+            let text = lower_display_value context function_builder environment argument position in
+            expect_type position I32 file.ty "print file";
+            expect_type position Str end_.ty "print end";
+            emit function_builder (Call (None, Unit, "__c_io_write",
+              [I32; Str; Str], [file.operand; text.operand; end_.operand]));
+            { operand = Int 0; ty = Unit }
+        | "eprintln", [argument] ->
+            let text = lower_display_value context function_builder environment argument position in
+            emit function_builder (Call (None, Unit, "__c_io_write",
+              [I32; Str; Str], [Int 1; text.operand; String "\n"]));
+            { operand = Int 0; ty = Unit }
+        | "eprint", [argument] ->
+            let text = lower_display_value context function_builder environment argument position in
+            emit function_builder (Call (None, Unit, "__c_io_write",
+              [I32; Str; Str], [Int 1; text.operand; String ""]));
+            { operand = Int 0; ty = Unit }
+        | _ -> fail_at position (name ^ " has invalid arguments")
+      end else begin
+        let actual_name, signature =
           match Hashtbl.find_opt context.signatures name with
           | Some signature -> (name, signature)
           | None -> fail_at position ("unknown function " ^ name)
-      in
-      if List.length lowered_arguments <> List.length signature.parameter_types then
-        fail_at position (Printf.sprintf "function %s expects %d arguments, got %d"
-          actual_name (List.length signature.parameter_types) (List.length lowered_arguments));
-      let lowered_arguments = List.map2 (fun argument expected_type ->
-        coerce_value context function_builder position expected_type argument
-      ) lowered_arguments signature.parameter_types in
-      List.iter2 (fun actual expected ->
-        expect_type position expected actual.ty ("argument to " ^ actual_name)
-      ) lowered_arguments signature.parameter_types;
-      let argument_types = List.map (fun argument -> argument.ty) lowered_arguments in
-      let arguments = List.map (fun argument -> argument.operand) lowered_arguments in
-      let result_value = match signature.return_type with
-        | Unit -> None
-        | _ -> Some (fresh_value function_builder)
-      in
-      emit function_builder (Call (result_value, signature.return_type, actual_name,
-        argument_types, arguments));
-      let operand = match result_value with
-        | Some value -> Value value
-        | None -> Int 0
-      in
-      { operand; ty = signature.return_type }
+        in
+        if List.length lowered_arguments <> List.length signature.parameter_types then
+          fail_at position (Printf.sprintf "function %s expects %d arguments, got %d"
+            actual_name (List.length signature.parameter_types) (List.length lowered_arguments));
+        let lowered_arguments = List.map2 (fun argument expected_type ->
+          coerce_value context function_builder position expected_type argument
+        ) lowered_arguments signature.parameter_types in
+        List.iter2 (fun actual expected ->
+          expect_type position expected actual.ty ("argument to " ^ actual_name)
+        ) lowered_arguments signature.parameter_types;
+        let argument_types = List.map (fun argument -> argument.ty) lowered_arguments in
+        let arguments = List.map (fun argument -> argument.operand) lowered_arguments in
+        let result_value = match signature.return_type with
+          | Unit -> None
+          | _ -> Some (fresh_value function_builder)
+        in
+        emit function_builder (Call (result_value, signature.return_type, actual_name,
+          argument_types, arguments));
+        let operand = match result_value with
+          | Some value -> Value value
+          | None -> Int 0
+        in
+        { operand; ty = signature.return_type }
+      end
   | ECall ((EAttr (object_expression, method_name, _)
            | EStructAccess (object_expression, method_name, _)), arguments, position) ->
       let object_value = lower_expr context function_builder environment object_expression in
@@ -2336,14 +2403,9 @@ let lower_function context constant_bindings def_info =
   finish_function function_builder parameters
 
 let runtime_externs = [
-  { name = "__c_print_int"; parameters = [I32]; return_type = Unit };
-  { name = "__c_print_float"; parameters = [F64]; return_type = Unit };
-  { name = "__c_print_bool"; parameters = [Bool]; return_type = Unit };
-  { name = "__c_print_str"; parameters = [Str]; return_type = Unit };
-  { name = "__c_eprint_int"; parameters = [I32]; return_type = Unit };
-  { name = "__c_eprint_float"; parameters = [F64]; return_type = Unit };
-  { name = "__c_eprint_bool"; parameters = [Bool]; return_type = Unit };
-  { name = "__c_eprint_str"; parameters = [Str]; return_type = Unit };
+  { name = "__c_value_to_str"; parameters = [I32; I32; Bool; F64; Str]; return_type = Str };
+  { name = "__c_union_to_str"; parameters = [Union [I32; F64; Str; Bool; Bytes]]; return_type = Str };
+  { name = "__c_io_write"; parameters = [I32; Str; Str]; return_type = Unit };
   { name = "__c_str_concat"; parameters = [Str; Str]; return_type = Str };
   { name = "__c_str_len"; parameters = [Str]; return_type = I32 };
   { name = "__c_str_find"; parameters = [Str; Str]; return_type = I32 };
@@ -2364,8 +2426,6 @@ let runtime_externs = [
   { name = "__c_str_is_alpha"; parameters = [I32]; return_type = Bool };
   { name = "__c_time_ms"; parameters = []; return_type = I32 };
   { name = "__c_debug_on"; parameters = []; return_type = Bool };
-  { name = "__c_eprint_text"; parameters = [Str]; return_type = Unit };
-  { name = "__c_debug_eprint_int"; parameters = [I32]; return_type = Unit };
   { name = "__c_range_equal"; parameters = [Str; I32; I32; I32; I32]; return_type = Bool };
   { name = "__c_fnv_hash_range"; parameters = [Str; I32; I32]; return_type = I32 };
   { name = "__c_range_equals_cstr"; parameters = [Str; I32; I32; Str]; return_type = Bool };
@@ -2433,6 +2493,8 @@ let runtime_externs = [
   { name = "__c_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
   { name = "__c_utf8_rune_count"; parameters = [Str]; return_type = I32 };
   { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_utf8_byte_offset"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_rune_to_int"; parameters = [I32]; return_type = I32 };
   { name = "__c_utf8_encode_rune"; parameters = [I32]; return_type = Bytes };
 ]
 

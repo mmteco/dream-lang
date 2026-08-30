@@ -460,10 +460,30 @@ let rec infer_expr env = function
                (Printf.sprintf "Cannot call internal C function '%s' directly. Use the Dream API instead." func_name) in
              report_error err;
              (TyUnknown, empty_subst)
-           end else if (func_name = "print" || func_name = "eprint") && List.length args = 1 then begin
+           end else if (func_name = "print" || func_name = "eprintln" || func_name = "eprint") &&
+                      List.length args = 1 then begin
              let (arg_type, arg_subst) = infer_expr env (List.hd args) in
              add_generic_instance func_name [apply_subst arg_subst arg_type] pos;
              (TyNone, arg_subst)
+           end else if func_name = "print" && List.length args = 3 then begin
+             let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
+             let combined_subst = List.fold_left compose_subst empty_subst arg_substs in
+             let file_type = apply_subst combined_subst (List.nth arg_types 1) in
+             let end_type = apply_subst combined_subst (List.nth arg_types 2) in
+             if file_type <> TyInt then begin
+               let err = make_error (TypeError "Invalid print file argument") func_pos
+                 (Printf.sprintf "print file expects int, got %s" (ty_to_string file_type)) in
+               report_error err;
+               (TyUnknown, combined_subst)
+             end else if end_type <> TyStr then begin
+               let err = make_error (TypeError "Invalid print end argument") func_pos
+                 (Printf.sprintf "print end expects str, got %s" (ty_to_string end_type)) in
+               report_error err;
+               (TyUnknown, combined_subst)
+             end else begin
+               add_generic_instance "print" [apply_subst combined_subst (List.hd arg_types)] pos;
+               (TyNone, combined_subst)
+             end
            end else if func_name = "len" && List.length args = 1 then begin
              let (arg_type, arg_subst) = infer_expr env (List.hd args) in
              (match apply_subst arg_subst arg_type with

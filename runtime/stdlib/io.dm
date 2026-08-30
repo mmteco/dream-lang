@@ -1,4 +1,16 @@
-# 文件 I/O 标准库
+# File I/O utilities
+
+const STDOUT: int = 0
+const STDERR: int = 1
+
+def print(value: str, file: int = STDOUT, end: str = "\n"):
+    __c_io_write(file, value, end)
+
+def eprintln(value: str):
+    print(value, STDERR, "\n")
+
+def eprint(value: str):
+    print(value, STDERR, "")
 
 def read(path: str) -> str:
     return __c_file_read(path)
@@ -52,12 +64,6 @@ struct File:
 
 def open(path: str, mode: str = "r") -> File:
     return File{path: path, mode: mode}
-
-def exists(path: str) -> bool:
-    return __c_file_exists(path)
-
-def delete(path: str) -> bool:
-    return __c_file_delete(path)
 
 def read_bytes(path: str) -> bytes:
     return open(path, "rb").read_bytes()

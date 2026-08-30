@@ -32,7 +32,12 @@ let compile_program_to_ir input_file =
       exit 1
   in
 
-  let full_ast = Module_loader.builtin_enums @ ast in
+  let is_prelude = Filename.basename input_file = "prelude.dm" in
+  let prelude_import = Ast.SFromImport (["prelude"], [("*", None)], { line = 0; column = 0 }) in
+  let full_ast =
+    if is_prelude then Module_loader.builtin_enums @ ast
+    else Module_loader.builtin_enums @ [prelude_import] @ ast
+  in
 
   (* 设置当前文件路径，用于类型检查中判断是否为标准库 *)
   Typeck.set_current_file input_file;
@@ -88,6 +93,7 @@ let compile_to_exe_at ?(optimized=true) output_ll output_exe =
     "runtime/c/core/dict.c";
     "runtime/c/core/tuple.c";
     "runtime/c/core/union.c";
+    "runtime/c/core/value.c";
     "runtime/c/core/enum.c";
     "runtime/c/core/io.c";
     "runtime/c/core/math.c";

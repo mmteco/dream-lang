@@ -1,3 +1,5 @@
+from str import from_int
+from utf8 import ord
 from compiler_operator import (
     ir_binary_operator_from_token,
     ir_unary_operator_from_token,
@@ -62,7 +64,6 @@ from compiler_ast import (
     AST_EXPR_LOGICAL,
     AST_EXPR_MATCH,
     AST_EXPR_METHOD_CALL,
-    AST_EXPR_PRINT,
     AST_EXPR_RUNE,
     AST_EXPR_SLICE,
     AST_EXPR_STRING,
@@ -135,7 +136,6 @@ const HIR_OP_SLICE: int = 20
 const HIR_OP_FIELD: int = 21
 const HIR_OP_STRUCT: int = 22
 const HIR_OP_ENUM: int = 23
-const HIR_OP_PRINT: int = 24
 const HIR_OP_SEQUENCE: int = 25
 const HIR_OP_MAX: int = HIR_OP_SEQUENCE
 
@@ -283,8 +283,6 @@ def hir_opcode_from_ast(kind: int) -> int:
         return HIR_OP_LOCAL
     if kind in [AST_EXPR_CALL, AST_EXPR_METHOD_CALL]:
         return HIR_OP_CALL
-    if kind == AST_EXPR_PRINT:
-        return HIR_OP_PRINT
     if kind in [AST_EXPR_BINARY, AST_EXPR_LOGICAL]:
         return HIR_OP_BINARY
     if kind == AST_EXPR_UNARY:
@@ -497,9 +495,6 @@ def hir_lower_ast_node(ast: list[int], node: int, records: list[int], values: li
         hir_append_ast_block(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2), records, values, payload,
             cache)
         hir_append_int(payload, ast_node_arg(ast, node, 3))
-    elif kind == AST_EXPR_PRINT:
-        hir_append_ast_child(ast, ast_node_arg(ast, node, 0), records, values, payload, cache)
-        hir_append_int(payload, ast_node_arg(ast, node, 1))
     elif kind == AST_STMT_LET:
         let index = 0
         while index < 4:
@@ -697,9 +692,9 @@ def hir_validate_model_program(program: HirProgram) -> bool:
     return true
 
 def hir_semantic_error(reason: str) -> bool:
-    __c_eprint_text("HIR semantic validation failed: ")
-    __c_eprint_text(reason)
-    __c_eprint_text("\n")
+    eprint("HIR semantic validation failed: ")
+    eprint(reason)
+    eprintln("")
     return false
 
 struct HirDiagnosticContext:
@@ -792,15 +787,15 @@ def hir_diag_report(program: HirProgram, context: HirDiagnosticContext, func_ind
     let line: list[int] = [1]
     let column: list[int] = [1]
     hir_diag_line_column(context, file_index, position, line, column)
-    __c_eprint_text("warning: ")
-    __c_eprint_text(hir_diag_file_path(context, file_index))
-    __c_eprint_text(":")
-    __c_debug_eprint_int(line[0])
-    __c_eprint_text(":")
-    __c_debug_eprint_int(column[0])
-    __c_eprint_text(": unreachable code in function ")
-    __c_eprint_text(hir_diag_func_name(context, func_index))
-    __c_eprint_text("\n")
+    eprint("warning: ")
+    eprint(hir_diag_file_path(context, file_index))
+    eprint(":")
+    eprint(from_int(line[0]))
+    eprint(":")
+    eprint(from_int(column[0]))
+    eprint(": unreachable code in function ")
+    eprint(hir_diag_func_name(context, func_index))
+    eprintln("")
 
 def hir_diag_payload_block(program: HirProgram, node_id: int, payload_index: int) -> int:
     if node_id < 0 or node_id >= hir_record_count(program.records):
@@ -1072,10 +1067,7 @@ def hir_find_func_return_type(program: HirProgram, source: str, name_start: int,
         func_index = func_index + 1
     return HIR_TYPE_UNKNOWN
 
-def hir_is_builtin_name(name: str) -> bool:
-    return name == "print" or name == "eprint" or name == "append" or name == "len"
-
-# extern 调用返回类型：统一查外部表；表外特例保留 ord 的 HIR 语义
+# extern 调用返回类型：统一查外部表；表外特例保留 UTF-8 API 的 HIR 语义
 def hir_external_type_for_name(name: str) -> int:
     let byte_names: list[str] = [
         "__c_file_read_bytes",
@@ -1085,8 +1077,6 @@ def hir_external_type_for_name(name: str) -> int:
         "__c_utf8_encode_rune",
     ]
     let string_names: list[str] = ["__c_process_arg", "__c_bytes_to_str"]
-    if name == "ord":
-        return HIR_TYPE_I32
     if name == "__c_str_split":
         return HIR_TYPE_LIST
     if name in byte_names:
@@ -1338,9 +1328,7 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
                     let name_start = program.records[callee_record_offset + 3]
                     let name_end = program.records[callee_record_offset + 4]
                     let name = source[name_start:name_end]
-                    if hir_is_builtin_name(name):
-                        if name == "len":
-                            return HIR_TYPE_I32
+                    if name in prelude_all_names:
                         return HIR_TYPE_UNIT
                     let external_type = hir_external_type_for_name(name)
                     if external_type != HIR_TYPE_UNKNOWN:
@@ -1472,8 +1460,6 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
         return HIR_TYPE_TUPLE
     if opcode == HIR_OP_LAMBDA:
         return HIR_TYPE_CLOSURE
-    if opcode == HIR_OP_PRINT:
-        return HIR_TYPE_UNIT
     return program.records[offset + 2]
 
 def hir_infer_types(records: list[int], values: list[int], struct_decls: list[int], source: str,

@@ -170,8 +170,7 @@ let rec expression_type_hint = function
        | Some Str -> Some Str
        | Some Bytes -> Some Bytes
        | _ -> None)
-  | ECall (EVar ("len", _), _, _)
-  | ECall (EVar ("ord", _), _, _) -> Some I32
+  | ECall (EVar ("len", _), _, _) -> Some I32
   | ECall (EVar ("argc", _), _, _)
   | ECall (EVar ("__c_process_arg_count", _), _, _) -> Some I32
   | ECall (EVar ("arg", _), _, _)

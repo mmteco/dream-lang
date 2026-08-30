@@ -1,3 +1,4 @@
+from str import from_int
 from compiler_mir_model import (
     MirProgram,
     mir_record_count,
@@ -88,11 +89,11 @@ def lir_debug_checkpoint(label: str, previous_time: int) -> int:
     if not __c_debug_on():
         return previous_time
     let current_time = __c_time_ms()
-    __c_eprint_text("[timing] lir-")
-    __c_eprint_text(label)
-    __c_eprint_text(" ")
-    __c_debug_eprint_int(current_time - previous_time)
-    __c_eprint_text("ms\n")
+    eprint("[timing] lir-")
+    eprint(label)
+    eprint(" ")
+    eprint(from_int(current_time - previous_time))
+    eprintln("ms")
     return current_time
 
 const LIR_MODEL_VERSION: int = 1
@@ -721,11 +722,11 @@ def lir_infer_block_parameter_types(program: LirProgram):
     let probe_slot = 18 * lir_value_cache_width[0] + 287
 
 def lir_validation_error(record_id: int, reason: str) -> bool:
-    __c_eprint_text("LIR validation failed record=")
-    __c_debug_eprint_int(record_id)
-    __c_eprint_text(" reason=")
-    __c_eprint_text(reason)
-    __c_eprint_text("\n")
+    eprint("LIR validation failed record=")
+    eprint(from_int(record_id))
+    eprint(" reason=")
+    eprint(reason)
+    eprintln("")
     return false
 
 def lir_validate_model_program(program: LirProgram) -> bool:

@@ -1,14 +1,11 @@
-# UTF-8 字符串操作标准库
-# 提供基于 rune (Unicode codepoint) 的字符串操作
+# UTF-8 encoding and rune utilities
+# Convert between Unicode codepoints and UTF-8 bytes.
+
+def chr(value: int) -> rune:
+    return value
 
 def ord(r: rune) -> int:
     return __c_rune_to_int(r)
-
-def rune_at(s: str, index: int) -> rune:
-    return __c_utf8_rune_at(s, index)
-
-def rune_count(s: str) -> int:
-    return __c_utf8_rune_count(s)
 
 def byte_offset(s: str, rune_index: int) -> int:
     return __c_utf8_byte_offset(s, rune_index)
