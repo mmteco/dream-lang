@@ -27,17 +27,18 @@ def parse_module_name(
 ) -> str:
     if token_kind(kinds, start_index) != TOKEN_IDENTIFIER:
         return ""
-    let module_name = source[token_start(starts, start_index):token_end(ends, start_index)]
+    let module_name_buffer = Buffer{data: []}
+    append(module_name_buffer, source[token_start(starts, start_index):token_end(ends, start_index)])
     let module_index = start_index + 1
     while (
         token_kind(kinds, module_index) == TOKEN_DOT and
         token_kind(kinds, module_index + 1) == TOKEN_IDENTIFIER
     ):
         let component_index = module_index + 1
-        module_name = module_name + "."
-        module_name = module_name + source[token_start(starts, component_index):token_end(ends, component_index)]
+        append(module_name_buffer, ".")
+        append(module_name_buffer, source[token_start(starts, component_index):token_end(ends, component_index)])
         module_index = component_index + 1
-    return module_name
+    return module_name_buffer.to_str()
 
 def module_name_match_end(source: str, kinds: list[int], starts: list[int], ends: list[int], token_index: int,
     module_name: str) -> int:
@@ -114,14 +115,15 @@ def module_path(module_name: str) -> str:
             return "bootstrap/compiler_llvm_emit.dm"
         case "compiler_main":
             return "bootstrap/compiler_main.dm"
-    let relative_path = ""
+    let relative_buffer = Buffer{data: []}
     let path_index = 0
     while path_index < module_name.len():
         if module_name[path_index] == '.':
-            relative_path = relative_path + "/"
+            append(relative_buffer, "/")
         else:
-            relative_path = relative_path + module_name[path_index:path_index + 1]
+            append(relative_buffer, module_name[path_index:path_index + 1])
         path_index = path_index + 1
+    let relative_path = relative_buffer.to_str()
     let configured_paths = env("DREAM_MODULE_PATH")
     let path_start = 0
     let path_end = 0
@@ -130,15 +132,21 @@ def module_path(module_name: str) -> str:
         if path_end == path_length or configured_paths[path_end] == ':':
             if path_end > path_start:
                 let root = configured_paths[path_start:path_end]
-                let candidate = root + "/"
-                candidate = candidate + relative_path
-                candidate = candidate + ".dm"
+                let candidate_buffer = Buffer{data: []}
+                append(candidate_buffer, root)
+                append(candidate_buffer, "/")
+                append(candidate_buffer, relative_path)
+                append(candidate_buffer, ".dm")
+                let candidate = candidate_buffer.to_str()
                 if exists(candidate):
                     return candidate
             path_start = path_end + 1
         path_end = path_end + 1
-    let with_prefix = "runtime/stdlib/" + relative_path
-    return with_prefix + ".dm"
+    let prefix_buffer = Buffer{data: []}
+    append(prefix_buffer, "runtime/stdlib/")
+    append(prefix_buffer, relative_path)
+    append(prefix_buffer, ".dm")
+    return prefix_buffer.to_str()
 
 def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
     let module_start = 0
@@ -157,8 +165,11 @@ def add_imported_module(imported_source: str, module_name: str, file_packages: l
     let imported_path = module_path(module_name)
     let module_source = read(imported_path)
     let start_offset = imported_source.len()
-    let new_source = imported_source + module_source
-    new_source = new_source + "\n"
+    let source_buffer = Buffer{data: []}
+    append(source_buffer, imported_source)
+    append(source_buffer, module_source)
+    append(source_buffer, "\n")
+    let new_source = source_buffer.to_str()
     let end_offset = new_source.len()
     append(file_packages, classify_package(imported_path))
     append(file_starts, start_offset)
@@ -168,15 +179,15 @@ def add_imported_module(imported_source: str, module_name: str, file_packages: l
     return new_source
 
 def mask_source_range(source: str, start: int, end: int) -> str:
-    let masked = ""
+    let masked = Buffer{data: []}
     let index = 0
     while index < source.len():
         if index >= start and index < end and source[index] != '\n':
-            masked = masked + " "
+            append(masked, " ")
         else:
-            masked = masked + source[index:index + 1]
+            append(masked, source[index:index + 1])
         index = index + 1
-    return masked
+    return masked.to_str()
 
 def rewrite_module_namespace(source: str, module_names: str) -> str:
     let rewritten_source = source
@@ -220,7 +231,10 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     file_ends: list[int], file_paths: Buffer) -> str:
     let source_with_prelude = source
     if source_path != "runtime/stdlib/prelude.dm":
-        source_with_prelude = "from prelude import *\n" + source
+        let prelude_buffer = Buffer{data: []}
+        append(prelude_buffer, "from prelude import *\n")
+        append(prelude_buffer, source)
+        source_with_prelude = prelude_buffer.to_str()
     let imported_source = ""
     let loaded_modules = ""
     let namespace_modules = ""
@@ -251,8 +265,11 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
                     if not module_is_loaded(loaded_modules, module_name):
                         imported_source = add_imported_module(imported_source, module_name, file_packages,
                             file_starts, file_ends, file_paths)
-                        loaded_modules = loaded_modules + module_name
-                        loaded_modules = loaded_modules + "\n"
+                        let loaded_buffer = Buffer{data: []}
+                        append(loaded_buffer, loaded_modules)
+                        append(loaded_buffer, module_name)
+                        append(loaded_buffer, "\n")
+                        loaded_modules = loaded_buffer.to_str()
                         found_new_module = true
             if (
                 token_kind(import_kinds, token_index) == TOKEN_IDENTIFIER and
@@ -267,12 +284,18 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
                     if not module_is_loaded(loaded_modules, module_name):
                         imported_source = add_imported_module(imported_source, module_name, file_packages,
                             file_starts, file_ends, file_paths)
-                        loaded_modules = loaded_modules + module_name
-                        loaded_modules = loaded_modules + "\n"
+                        let loaded_buffer = Buffer{data: []}
+                        append(loaded_buffer, loaded_modules)
+                        append(loaded_buffer, module_name)
+                        append(loaded_buffer, "\n")
+                        loaded_modules = loaded_buffer.to_str()
                         found_new_module = true
                     if not module_is_loaded(namespace_modules, module_name):
-                        namespace_modules = namespace_modules + module_name
-                        namespace_modules = namespace_modules + "\n"
+                        let namespace_buffer = Buffer{data: []}
+                        append(namespace_buffer, namespace_modules)
+                        append(namespace_buffer, module_name)
+                        append(namespace_buffer, "\n")
+                        namespace_modules = namespace_buffer.to_str()
             token_index = token_index + 1
         if found_new_module:
             scan_source = imported_source
@@ -281,8 +304,11 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     if len(loaded_modules) != 0:
         user_source_start = user_source_start + 1
         let rewritten_source = rewrite_module_namespace(source, namespace_modules)
-        let final_source = imported_source + "\n"
-        final_source = final_source + rewritten_source
+        let final_buffer = Buffer{data: []}
+        append(final_buffer, imported_source)
+        append(final_buffer, "\n")
+        append(final_buffer, rewritten_source)
+        let final_source = final_buffer.to_str()
         append(file_packages, classify_package(source_path))
         append(file_starts, user_source_start)
         append(file_ends, final_source.len())
@@ -309,10 +335,21 @@ def compiler_temp_token(label: str) -> str:
     let sequence = compiler_temp_sequence[0]
     compiler_temp_sequence[0] = compiler_temp_sequence[0] + 1
     let label_hash = sha256(label)
-    return str(monotonic_ms()) + "_" + label_hash[0:16] + "_" + str(sequence)
+    let token = Buffer{data: []}
+    append(token, monotonic_ms())
+    append(token, "_")
+    append(token, label_hash[0:16])
+    append(token, "_")
+    append(token, sequence)
+    return token.to_str()
 
 def compiler_temp_path(label: str) -> str:
-    return "target/tmp/" + label + "_" + compiler_temp_token(label)
+    let path = Buffer{data: []}
+    append(path, "target/tmp/")
+    append(path, label)
+    append(path, "_")
+    append(path, compiler_temp_token(label))
+    return path.to_str()
 
 def write_text_atomic(path: str, content: str) -> bool:
     let temp_path = compiler_temp_path("text")
@@ -345,17 +382,33 @@ def copy_text_file(source_path: str, output_path: str) -> bool:
     return write_text_atomic(output_path, read(source_path))
 
 def compiler_cache_key(source_path: str, source: str, output_mode: int) -> str:
-    let key_source = COMPILER_CACHE_VERSION + "|" + source_path + "|" + str(output_mode) + "|" + source
-    return sha256(key_source)
+    let key_source = Buffer{data: []}
+    append(key_source, COMPILER_CACHE_VERSION)
+    append(key_source, "|")
+    append(key_source, source_path)
+    append(key_source, "|")
+    append(key_source, output_mode)
+    append(key_source, "|")
+    append(key_source, source)
+    return sha256(key_source.to_str())
 
 def compiler_cache_dir(cache_key: str) -> str:
-    return "target/cache/v1/" + cache_key
+    let path = Buffer{data: []}
+    append(path, "target/cache/v1/")
+    append(path, cache_key)
+    return path.to_str()
 
 def compiler_cache_artifact(cache_key: str) -> str:
-    return compiler_cache_dir(cache_key) + "/artifact"
+    let path = Buffer{data: []}
+    append(path, compiler_cache_dir(cache_key))
+    append(path, "/artifact")
+    return path.to_str()
 
 def compiler_cache_manifest(cache_key: str) -> str:
-    return compiler_cache_dir(cache_key) + "/manifest"
+    let path = Buffer{data: []}
+    append(path, compiler_cache_dir(cache_key))
+    append(path, "/manifest")
+    return path.to_str()
 
 def compiler_cache_hit(cache_key: str, output_path: str, output_mode: int) -> bool:
     if output_mode == COMPILE_OUTPUT_LLVM:
@@ -374,9 +427,15 @@ def compiler_cache_store(cache_key: str, output_path: str, output_mode: int, sou
         return false
     if not copy_text_file(output_path, compiler_cache_artifact(cache_key)):
         return false
-    let manifest = "schema=1\nversion=" + COMPILER_CACHE_VERSION + "\nmode=" + str(output_mode)
-    let manifest_with_length = manifest + "\nsource_length=" + str(source_length) + "\n"
-    return write_text_atomic(compiler_cache_manifest(cache_key), manifest_with_length)
+    let manifest = Buffer{data: []}
+    append(manifest, "schema=1\nversion=")
+    append(manifest, COMPILER_CACHE_VERSION)
+    append(manifest, "\nmode=")
+    append(manifest, output_mode)
+    append(manifest, "\nsource_length=")
+    append(manifest, source_length)
+    append(manifest, "\n")
+    return write_text_atomic(compiler_cache_manifest(cache_key), manifest.to_str())
 
 def compiler_debug_start() -> int:
     if __c_debug_on():
@@ -805,9 +864,19 @@ def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool
     if not ensure_compiler_dirs():
         eprintln("error: failed to create compiler target directories")
         return false
-    let build_token = compiler_temp_token("build_" + source_path)
-    let llvm_path = "target/tmp/llvm_" + build_token + ".ll"
-    let build_output_path = "target/tmp/output_" + build_token
+    let build_label = Buffer{data: []}
+    append(build_label, "build_")
+    append(build_label, source_path)
+    let build_token = compiler_temp_token(build_label.to_str())
+    let llvm_path_buffer = Buffer{data: []}
+    append(llvm_path_buffer, "target/tmp/llvm_")
+    append(llvm_path_buffer, build_token)
+    append(llvm_path_buffer, ".ll")
+    let llvm_path = llvm_path_buffer.to_str()
+    let build_output_buffer = Buffer{data: []}
+    append(build_output_buffer, "target/tmp/output_")
+    append(build_output_buffer, build_token)
+    let build_output_path = build_output_buffer.to_str()
     if not compile_source(source_path, llvm_path, COMPILE_OUTPUT_LLVM):
         remove_file(llvm_path)
         return false
@@ -835,13 +904,16 @@ def run_build_command(argument_count: int) -> bool:
         return false
     return build_source(BA_input_path, BA_output_path, BA_is_optimized)
 
+def print_usage(usage: str):
+    print("用法: " + arg(0) + usage)
+
 def main() -> int:
     let argument_count = argc()
     let usage = " build [--dev] <file.dm> [-o output] | ast/hir/mir/lir/llvm <input.dm> -o <output>"
     if argument_count == 2:
         let command_name = arg(1)
         if command_name in ["help", "--help"]:
-            print("用法: " + arg(0) + usage)
+            print_usage(usage)
             return 0
     if argument_count >= 4 and arg(1) == "build" and arg(3) == "-o":
         if build_source(arg(2), arg(4), true):
@@ -867,5 +939,5 @@ def main() -> int:
         if compile_source(arg(2), arg(4), output_mode):
             return 0
         return 1
-    print("用法: " + arg(0) + usage)
+    print_usage(usage)
     return 1

@@ -32,6 +32,11 @@ and llvm_function_ty parameter_types return_type =
   Printf.sprintf "%s (%s)" (llvm_ty return_type)
     (String.concat ", " ("i8*" :: List.map llvm_ty parameter_types))
 
+let is_dict_pointer_get name =
+  String.length name >= 17 &&
+  String.sub name 0 13 = "__c_dict_get_" &&
+  String.sub name (String.length name - 4) 4 = "_ptr"
+
 let llvm_env_value_ty field_types =
   "{" ^ String.concat ", " (List.map llvm_ty field_types) ^ "}"
 
@@ -261,6 +266,16 @@ let render_instruction string_literals value_types buffer _instruction_label ins
        Printf.bprintf buffer "  %s = %s %s %s %s, %s\n"
          (value_name value) comparison_instruction comparison_name
          (llvm_ty operand_type) (operand left) (operand right)
+   | Call (Some value, (Ref (Struct _) as result_type), name, argument_types, arguments)
+     when is_dict_pointer_get name ->
+       let rendered_arguments = String.concat ", " (List.map2 (fun argument_type argument ->
+         Printf.sprintf "%s %s" (llvm_ty argument_type) (operand argument)
+       ) argument_types arguments) in
+       let raw_name = Printf.sprintf "%%dir_dict_ptr_raw_%d" value in
+       Printf.bprintf buffer "  %s = call i8* @%s(%s)\n"
+         raw_name name rendered_arguments;
+       Printf.bprintf buffer "  %s = bitcast i8* %s to %s\n"
+         (value_name value) raw_name (llvm_ty result_type)
    | Call (Some value, result_type, name, argument_types, arguments) ->
        let rendered_arguments = String.concat ", " (List.map2 (fun argument_type argument ->
          Printf.sprintf "%s %s" (llvm_ty argument_type) (operand argument)

@@ -82,7 +82,7 @@ Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；�
 - 结构体：整数结构体构造/乱序初始化/字段访问、作为函数参数和返回值、模式匹配字段绑定
 - bytes 基础 ABI：`encode`/`decode`/`from_list`/`to_list`、索引、切片（链接用 `wrappers/bytes.c` 的 `__c_*` ABI）
 - 网络基础 ABI：`net.connect` 返回 `Connection`，支持 `connection.write(text)`、`connection.read()`、`connection.read_n(size)` 和 `connection.close()`；C 实现位于 `wrappers/net.c`，测试使用本地 loopback，不依赖公网
-- HTTP 基础：`http.get`、`http.post` 和 `http.request` 通过 libcurl 发送 HTTP/HTTPS 请求，返回 `Response{status, headers, body, error}`；headers 使用名称和值交替的 `list[str]`
+- HTTP 基础：`http.get`、`http.post` 和 `http.request` 通过 libcurl 发送 HTTP/HTTPS 请求，返回 `Response{status, headers, body, error}`；请求 headers 使用 `dict[str, str]`，响应 headers 使用 `dict[str, OrderedSet]`
 - match：`switch/case/default` 支持 int/bool/float/str；整数 `match`、通配符、`[tag, payload]` 基础 enum match（用户 enum + Some/None + Ok/Err）
 - 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/c/core/*.c` 和 `runtime/c/wrappers/*.c`
 - CLI 与格式：Stage 1/2 提供 `build`/`llvm`/`dir` CLI；宿主与 DM 统一输出正式 DreamIR 文本，typed record 仅为内部序列化 ABI，未映射指令以 `native llvm` 记录保留

@@ -305,6 +305,7 @@ let c_runtime_functions_table =
     ("__c_net_read", TyFunc ([TyInt; TyInt], TyStr));
     ("__c_net_close", TyFunc ([TyInt], TyBool));
     ("__c_http_request", TyFunc ([TyStr; TyStr; TyDict (TyStr, TyStr); TyStr; TyInt], TyStr));
+    ("__c_dict_has_str", TyFunc ([TyDict (TyStr, TyVar "V"); TyStr], TyBool));
 
     (* UTF-8 编解码 *)
     ("__c_utf8_decode_rune", TyFunc ([TyBytes; TyInt], TyTuple [TyRune; TyInt]));

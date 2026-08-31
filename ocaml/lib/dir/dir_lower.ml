@@ -89,6 +89,15 @@ let materialize_struct_receiver function_builder object_value position =
   | Enum _ -> object_value
   | _ -> fail_at position "method call requires a struct value"
 
+let box_dict_value function_builder value =
+  match value.ty with
+  | Struct _ ->
+      let boxed = fresh_value function_builder in
+      emit function_builder (InterfaceBox (boxed, value.ty, value.operand));
+      record_interface_box function_builder boxed;
+      Value boxed, ClosureEnv []
+  | _ -> value.operand, value.ty
+
 let rec lower_mutating_method_call context function_builder environment object_expression
     method_name arguments position =
   let object_value = lower_expr context function_builder environment object_expression in
@@ -333,17 +342,24 @@ and lower_dict_method context function_builder environment object_value method_n
       { operand = Value value; ty = Bool }
   | "get" ->
       expect_arguments [key_type];
+      let result_type = match value_type with
+        | Struct _ -> Ref value_type
+        | _ -> value_type
+      in
       let value = fresh_value function_builder in
-      emit function_builder (Call (Some value, value_type, get_name,
+      emit function_builder (Call (Some value, result_type, get_name,
         [Dict (key_type, value_type); key_type], [object_value.operand;
           (List.hd lowered_arguments).operand]));
-      { operand = Value value; ty = value_type }
+      { operand = Value value; ty = result_type }
   | "set" ->
       expect_arguments [key_type; value_type];
+      let value_operand, value_argument_type =
+        box_dict_value function_builder (List.nth lowered_arguments 1)
+      in
       emit function_builder (Call (None, Unit, set_name,
-        [Dict (key_type, value_type); key_type; value_type],
+        [Dict (key_type, value_type); key_type; value_argument_type],
         [object_value.operand; (List.nth lowered_arguments 0).operand;
-          (List.nth lowered_arguments 1).operand]));
+          value_operand]));
       object_value
   | _ -> fail_at position ("unsupported dictionary method " ^ method_name)
 
@@ -1266,6 +1282,35 @@ and lower_expr context function_builder environment expression =
               (Int 1) (String "") position
         | _ -> fail_at position (name ^ " has invalid arguments")
       end else begin
+        match Hashtbl.find_opt context.method_signatures (name ^ ".__init__") with
+        | Some constructor ->
+            let expected_types = constructor.signature.parameter_types in
+            if List.length arguments <> List.length expected_types then
+              fail_at position (Printf.sprintf "constructor %s expects %d arguments, got %d"
+                name (List.length expected_types) (List.length arguments));
+            let lowered_arguments = List.map2 (fun argument expected_type ->
+              lower_expr_expected context function_builder environment (Some expected_type) argument
+            ) arguments expected_types in
+            let lowered_arguments = List.map2 (fun argument expected_type ->
+              coerce_value context function_builder position expected_type argument
+            ) lowered_arguments expected_types in
+            List.iter2 (fun actual expected ->
+              expect_type position expected actual.ty ("argument to " ^ name)
+            ) lowered_arguments expected_types;
+            let result_value = match constructor.signature.return_type with
+              | Unit -> None
+              | _ -> Some (fresh_value function_builder)
+            in
+            emit function_builder (Call (result_value, constructor.signature.return_type,
+              constructor.function_name,
+              List.map (fun argument -> argument.ty) lowered_arguments,
+              List.map (fun argument -> argument.operand) lowered_arguments));
+            let operand = match result_value with
+              | Some value -> Value value
+              | None -> Int 0
+            in
+            { operand; ty = constructor.signature.return_type }
+        | None ->
         let actual_name, signature =
           match Hashtbl.find_opt context.signatures name with
           | Some signature -> (name, signature)
@@ -1388,10 +1433,14 @@ and lower_expr context function_builder environment expression =
              | _ -> fail_at position "DIR dict supports only int and str keys"
            in
            let value = fresh_value function_builder in
-           emit function_builder (Call (Some value, value_type, getter_name,
+           let result_type = match value_type with
+             | Struct _ -> Ref value_type
+             | _ -> value_type
+           in
+           emit function_builder (Call (Some value, result_type, getter_name,
              [Dict (key_type, value_type); key_type],
              [lowered_collection.operand; lowered_index.operand]));
-           { operand = Value value; ty = value_type }
+           { operand = Value value; ty = result_type }
        | Tuple element_types ->
            (match index with
             | EInt (index_value, _) when index_value >= 0 && index_value < List.length element_types ->
@@ -1486,9 +1535,10 @@ and lower_expr context function_builder environment expression =
         | _ -> fail_at position "DIR dict supports only int and str keys"
       in
       List.iter (fun (key, value) ->
+        let value_operand, value_argument_type = box_dict_value function_builder value in
         emit function_builder (Call (None, Unit, setter_name,
-          [dict_type; key_type; value_type],
-          [Value dictionary; key.operand; value.operand]))
+          [dict_type; key_type; value_argument_type],
+          [Value dictionary; key.operand; value_operand]))
       ) lowered_pairs;
       { operand = Value dictionary; ty = dict_type }
   | EMatch (scrutinee, cases, position) ->
@@ -1505,7 +1555,11 @@ and lower_expr context function_builder environment expression =
     when (match variable_type context environment variable_name with
           | Some (Struct (struct_name, _)) ->
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
+          | Some (Ref (Struct (struct_name, _))) ->
+              Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
           | Some (Enum (enum_name, _)) ->
+              Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
+          | Some (Ref (Enum (enum_name, _))) ->
               Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
           | Some (Interface _) -> true
           | Some Str -> true
@@ -1520,6 +1574,9 @@ and lower_expr context function_builder environment expression =
        | Struct _ ->
            lower_mutating_method_call context function_builder environment
              (EVar (variable_name, position)) method_name arguments position
+       | Ref _ ->
+           lower_method_call context function_builder environment object_value method_name
+             arguments position
        | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
@@ -1563,6 +1620,9 @@ and lower_expr context function_builder environment expression =
                      emit function_builder (StructGet (value, field_type,
                        object_value.operand, field_index));
                      { operand = Value value; ty = field_type })
+            | Ref _ ->
+                lower_method_call context function_builder environment object_value
+                  field_name [] position
             | Enum _ ->
                 lower_method_call context function_builder environment object_value
                   field_name [] position
@@ -1630,7 +1690,11 @@ and lower_expr context function_builder environment expression =
     when (match Hashtbl.find_opt environment variable_name with
           | Some { ty = Struct (struct_name, _); _ } ->
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
+          | Some { ty = Ref (Struct (struct_name, _)); _ } ->
+              Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
           | Some { ty = Enum (enum_name, _); _ } ->
+              Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
+          | Some { ty = Ref (Enum (enum_name, _)); _ } ->
               Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
           | Some { ty = Interface (_, _); _ } -> true
           | Some { ty = Str; _ } -> true
@@ -1645,6 +1709,9 @@ and lower_expr context function_builder environment expression =
        | Struct _ ->
            lower_mutating_method_call context function_builder environment
              (EVar (variable_name, position)) method_name arguments position
+       | Ref _ ->
+           lower_method_call context function_builder environment object_value method_name
+             arguments position
        | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
@@ -1662,7 +1729,11 @@ and lower_expr context function_builder environment expression =
     when (match variable_type context environment variable_name with
           | Some (Struct (struct_name, _)) ->
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
+          | Some (Ref (Struct (struct_name, _))) ->
+              Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
           | Some (Enum (enum_name, _)) ->
+              Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
+          | Some (Ref (Enum (enum_name, _))) ->
               Hashtbl.mem context.method_signatures (enum_name ^ "." ^ method_name)
           | Some (Interface _) -> true
           | Some Str -> true
@@ -1677,6 +1748,9 @@ and lower_expr context function_builder environment expression =
        | Struct _ ->
            lower_mutating_method_call context function_builder environment
              (EVar (variable_name, position)) method_name arguments position
+       | Ref _ ->
+           lower_method_call context function_builder environment object_value method_name
+             arguments position
        | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position

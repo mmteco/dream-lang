@@ -502,6 +502,14 @@ and lower_statement context function_builder environment statement =
        | Dir.Dict (key_type, value_type) ->
            expect_type position key_type lowered_index.ty "dict assignment key";
            expect_type position value_type lowered_value.ty "dict assignment value";
+           let value_operand, value_argument_type = match lowered_value.ty with
+             | Dir.Struct _ ->
+                 let boxed = fresh_value function_builder in
+                 emit function_builder (Dir.InterfaceBox (boxed, lowered_value.ty,
+                   lowered_value.operand));
+                 Dir.Value boxed, Dir.ClosureEnv []
+             | _ -> lowered_value.operand, lowered_value.ty
+           in
            let setter_name = match key_type, value_type with
              | Dir.I32, Dir.I32 -> "__c_dict_set_int_int"
              | Dir.I32, Dir.Str -> "__c_dict_set_int_str"
@@ -512,8 +520,8 @@ and lower_statement context function_builder environment statement =
              | _ -> fail_at position "DIR dict supports only int and str keys"
            in
            emit function_builder (Dir.Call (None, Dir.Unit, setter_name,
-             [lowered_collection.ty; key_type; value_type],
-             [lowered_collection.operand; lowered_index.operand; lowered_value.operand]))
+             [lowered_collection.ty; key_type; value_argument_type],
+             [lowered_collection.operand; lowered_index.operand; value_operand]))
        | _ -> fail_at position "index assignment requires a list or dict")
   | SImport _
   | SFromImport _ ->

@@ -62,18 +62,18 @@ def build(value: Url) -> str:
     let result = ""
     if value.scheme != "":
         result = value.scheme + "://"
-    result = result + value.host
+    result += value.host
     if value.port > 0:
-        result = result + ":" + str(value.port)
+        result += ":" + str(value.port)
     if value.path != "":
         if value.path[0] == '/':
-            result = result + value.path
+            result += value.path
         else:
-            result = result + "/" + value.path
+            result += "/" + value.path
     if value.query != "":
-        result = result + "?" + value.query
+        result += "?" + value.query
     if value.fragment != "":
-        result = result + "#" + value.fragment
+        result += "#" + value.fragment
     return result
 
 def is_unreserved(value: int) -> bool:
@@ -105,10 +105,12 @@ def quote(value: str) -> str:
     while index < len(value):
         let current = value[index]
         if is_unreserved(current):
-            result = result + value[index:index + 1]
+            result += value[index:index + 1]
         elif current < 128:
-            result = result + "%" + hex_digit(current / 16) + hex_digit(current % 16)
+            result += "%"
+            result += hex_digit(current / 16)
+            result += hex_digit(current % 16)
         else:
-            result = result + value[index:index + 1]
+            result += value[index:index + 1]
         index = index + 1
     return result

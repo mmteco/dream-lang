@@ -410,6 +410,8 @@ def lir_copy_operands(mir: MirProgram, record_offset: int, values: list[int]) ->
             target_kind = LIR_OPERAND_TYPE
         elif source_kind == MIR_OPERAND_SYMBOL:
             target_kind = LIR_OPERAND_SYMBOL
+        if source_kind == MIR_OPERAND_TYPE:
+            source_value = lir_type_from_mir(source_value)
         lir_append_value(values, target_kind, source_value)
         operand_index = operand_index + 1
     return lir_value_count(values)
@@ -442,7 +444,7 @@ def lir_lower_mir_record(mir: MirProgram, record_id: int, records: list[int], va
     let auxiliary_count = mir.records[source_offset + 9]
     if record_kind == MIR_RECORD_INSTRUCTION:
         target_opcode = lir_opcode_from_mir(mir.records[source_offset + 3])
-        if target_opcode == LIR_OP_BINARY or target_opcode == LIR_OP_UNARY or target_opcode == LIR_OP_CAST:
+        if target_opcode == LIR_OP_UNARY or target_opcode == LIR_OP_CAST:
             if target_type != LIR_TYPE_I1 and target_type != LIR_TYPE_I32 and target_type != LIR_TYPE_F64:
                 target_opcode = LIR_OP_RUNTIME_CALL
     elif record_kind == MIR_RECORD_TERMINATOR:
@@ -775,7 +777,7 @@ def lir_validate_model_program(program: LirProgram) -> bool:
         if kind == LIR_RECORD_INSTRUCTION and opcode == LIR_OP_SELECT and operand_count < 3:
             return lir_validation_error(record_id, "select operands")
         if kind == LIR_RECORD_INSTRUCTION and opcode == LIR_OP_BINARY:
-            if type_tag != LIR_TYPE_I1 and type_tag != LIR_TYPE_I32 and type_tag != LIR_TYPE_F64:
+            if type_tag not in [LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_STR, LIR_TYPE_LIST, LIR_TYPE_LIST_PTR]:
                 return lir_validation_error(record_id, "binary type")
         if kind == LIR_RECORD_TERMINATOR and (opcode < LIR_TERM_JUMP or opcode > LIR_TERM_MAX):
             return lir_validation_error(record_id, "terminator opcode")

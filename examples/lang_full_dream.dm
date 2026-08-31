@@ -140,7 +140,6 @@ def main():
         Status.Failed(_): -1
         Status.Idle: 0
     print(status_value)
-    let idle_status = Status.Idle
 
     # 全局变量、泛型、默认参数、函数值与元组返回
     shared_counter = shared_counter + 1
@@ -170,7 +169,6 @@ def main():
     identity(list_match)
     identity(cons_match)
     identity(struct_match)
-    identity(idle_status)
     identity(shared_snapshot)
     identity(generic_value)
     identity(default_value)
@@ -178,8 +176,10 @@ def main():
     identity(returned_pair)
 
     let optional = Some(7)
-    let no_optional = None
-    identity(no_optional)
+    let builtin_match = match None:
+        None: 1
+        _: 0
+    identity(builtin_match)
     let optional_value = match optional:
         Some(value): value
         None: 0

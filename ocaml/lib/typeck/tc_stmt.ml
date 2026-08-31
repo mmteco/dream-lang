@@ -951,7 +951,7 @@ let rec check_statement env = function
                         report_error err;
                         "_invalid_")
              in
-             (field_name, type_expr_to_ty field.field_type)
+             (field_name, resolve_type_expr env field.field_type)
            ) field_list in
 
            let struct_fields = List.fold_left (fun acc (name, ty) ->
@@ -975,7 +975,7 @@ let rec check_statement env = function
                        TyStruct (name, [])
                      else
                        match pty_opt with
-                       | Some t -> type_expr_to_ty t
+                       | Some t -> resolve_type_expr method_env_base t
                        | None -> fresh_type_var ()
                    in
                    (false, add_binding pname pty e))
@@ -989,12 +989,12 @@ let rec check_statement env = function
              let param_types = List.filter_map (fun (is_first, (pname, pty_opt, _)) ->
                if is_first && pname = "self" then None
                else Some (match pty_opt with
-                 | Some t -> type_expr_to_ty t
+                 | Some t -> resolve_type_expr method_env t
                  | None -> fresh_type_var ())
              ) (List.mapi (fun index param -> index = 0, param) params) in
 
              let ret_type = match ret_ty_opt with
-               | Some t -> type_expr_to_ty t
+               | Some t -> resolve_type_expr method_env t
                | None -> TyNone
              in
 

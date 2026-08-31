@@ -720,7 +720,7 @@ def external_llvm_name(external_id: int) -> str:
         return "@__c_append_i32"
     if external_id < EXTERNAL_ID_BASE or external_id >= EXTERNAL_ID_BASE + len(EXTERNAL_DEFS):
         return "@llvm.trap"
-    let name = EXTERNAL_DEFS[external_id - EXTERNAL_ID_BASE].name
+    let name: str = EXTERNAL_DEFS[external_id - EXTERNAL_ID_BASE].name
     if name == "":
         return "@llvm.trap"
     return "@" + name

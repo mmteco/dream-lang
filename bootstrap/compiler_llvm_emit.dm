@@ -606,6 +606,16 @@ def llvm_emit_dynamic_i64(program: LirProgram, record_offset: int, operand_index
 
 def llvm_emit_dynamic_membership(program: LirProgram, offset: int, left_type: int, right_type: int,
     output: Buffer, result_name: str) -> bool:
+    if right_type == LIR_TYPE_DICT and left_type == LIR_TYPE_STR:
+        append(output, "  ")
+        append(output, result_name)
+        append(output, " = call i1 @__c_dict_has_str(i8* ")
+        llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
+        append(output, ", i8* ")
+        llvm_emit_operand(program, offset, 1, LIR_TYPE_PTR, output)
+        append(output, ")\n")
+        return true
+
     if right_type in [LIR_TYPE_LIST, LIR_TYPE_BYTES]:
         if left_type == LIR_TYPE_F64:
             let match_name = llvm_lir_join_int("%dynamic_membership_match_", offset, "")
@@ -1042,9 +1052,17 @@ def llvm_emit_dict_create(program: LirProgram, offset: int, output: Buffer, resu
     let operand_count = program.records[offset + 7]
     let key_type = LIR_TYPE_I32
     let value_type = LIR_TYPE_I32
-    if operand_count > 1:
+    let has_type_markers = (
+        operand_count == 3 and
+        llvm_lir_operand_kind(program, offset, 1) == LIR_OPERAND_TYPE and
+        llvm_lir_operand_kind(program, offset, 2) == LIR_OPERAND_TYPE
+    )
+    if has_type_markers:
         key_type = llvm_lir_binary_operand_type(program, offset, 1)
-    if operand_count > 2:
+        value_type = llvm_lir_binary_operand_type(program, offset, 2)
+    elif operand_count > 1:
+        key_type = llvm_lir_binary_operand_type(program, offset, 1)
+    if not has_type_markers and operand_count > 2:
         value_type = llvm_lir_binary_operand_type(program, offset, 2)
     append(output, "  ")
     append(output, result_name)
@@ -1057,6 +1075,8 @@ def llvm_emit_dict_create(program: LirProgram, offset: int, output: Buffer, resu
         append(output, "0")
     append(output, ")\n")
     let operand_index = 1
+    if has_type_markers:
+        operand_index = operand_count
     while operand_index + 1 < operand_count:
         append(output, "  call void ")
         append(output, llvm_lir_dict_func_name(key_type, value_type, 2))
@@ -2164,7 +2184,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
         let runtime_name = llvm_lir_runtime_name(runtime_id, return_type)
         if runtime_id == LIR_RUNTIME_LIST_GET and program.records[offset + 7] > 1:
             let base_type = llvm_lir_binary_operand_type(program, offset, 0)
-            if base_type == LIR_TYPE_LIST_PTR:
+            if return_type != LIR_TYPE_I32 and base_type in [LIR_TYPE_LIST_PTR, LIR_TYPE_TUPLE]:
                 runtime_name = "@__c_get_dynarray_ptr"
             elif base_type == LIR_TYPE_DICT and result_value >= 0:
                 llvm_emit_dict_get(program, offset, output, result_name, return_type)

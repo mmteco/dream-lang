@@ -1,7 +1,7 @@
 # Path utilities
 
 def is_abs(value: str) -> bool:
-    return __c_str_starts_with(value, "/")
+    return value.startswith("/")
 
 def last_separator(value: str) -> int:
     let result = -1

@@ -1,13 +1,7 @@
-# Dictionary construction and common generic helpers.
+# Dictionary helpers.
 
-def dict() -> dict[str, int]:
-    return {}
-
-def has[V](values: dict[str, V], key: str) -> bool:
-    return __c_dict_has_str(values, key)
-
-def get[V](values: dict[str, V], key: str, fallback: V) -> V:
-    if has(values, key):
+def dict_get[V](values: dict[str, V], key: str, fallback: V) -> V:
+    if key in values:
         return values[key]
     return fallback
 

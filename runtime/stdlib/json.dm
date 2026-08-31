@@ -361,7 +361,9 @@ def escape(value: str) -> str:
         elif current == '\t':
             result += "\\t"
         elif code < 32:
-            result += "\\u00" + escape_hex_digit(code / 16) + escape_hex_digit(code % 16)
+            result += "\\u00"
+            result += escape_hex_digit(code / 16)
+            result += escape_hex_digit(code % 16)
         else:
             result += value[index:index + 1]
         index += 1
@@ -385,7 +387,10 @@ def encode_object(entries: dict[str, Json]) -> str:
         if index > 0:
             result += ","
         let pair = items[index]
-        result += "\"" + escape(pair[0]) + "\":" + dumps(pair[1])
+        result += "\""
+        result += escape(pair[0])
+        result += "\":"
+        result += dumps(pair[1])
         index += 1
     return result + "}"
 
@@ -403,7 +408,7 @@ impl JsonValue for Json:
     def get(self, key: str) -> Json:
         return match self:
             Json.Object(entries):
-                if entries.has(key): entries[key] else: Json.Null
+                if key in entries: entries[key] else: Json.Null
             _: Json.Null
 
     def at(self, index: int) -> Json:

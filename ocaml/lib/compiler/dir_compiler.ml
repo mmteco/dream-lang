@@ -170,6 +170,12 @@ let imported_definitions program =
   let definition_names = Hashtbl.create 32 in
   let type_definition_names = Hashtbl.create 32 in
   let visited_modules = Hashtbl.create 16 in
+  List.iter (function
+    | Ast.SDef definition -> Hashtbl.replace definition_names definition.Ast.def_name ()
+    | Ast.SConst const_info -> Hashtbl.replace definition_names const_info.Ast.const_name ()
+    | Ast.SLet let_info -> Hashtbl.replace definition_names let_info.Ast.let_name ()
+    | _ -> ()
+  ) program;
   let add_definition definitions definition =
     if Hashtbl.mem definition_names definition.Ast.def_name then
       definitions

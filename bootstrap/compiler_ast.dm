@@ -611,8 +611,11 @@ def ast_validate_node_children(ast: list[int], node: int) -> bool:
 
 def ast_validate_program(ast: list[int]) -> bool:
     if len(ast) == 0:
+        eprintln("AST validation empty pool")
         return false
     if ast[0] != 0:
+        eprintln("AST validation invalid pool header")
+        eprintln(ast[0])
         return false
     let node = 1
     while node < len(ast):
@@ -1904,6 +1907,9 @@ def ast_parse_match_expression(context: ParseContext, index: int, ast: list[int]
             if is_statement != 0:
                 if token_kind(kinds, body_start_index) == TOKEN_NEWLINE:
                     body_is_block = 1
+            let body_parse_index = body_start_index
+            if body_is_block == 0:
+                body_parse_index = skip_source_newlines(source, starts, body_start_index)
             let body_node = 0
             let body_next_index = body_start_index
             if body_is_block != 0:
@@ -1915,7 +1921,7 @@ def ast_parse_match_expression(context: ParseContext, index: int, ast: list[int]
                 body_node = case_block_node
                 body_next_index = case_block_end
             if body_is_block == 0:
-                let (body_expr_next_index, body_expr_node) = ast_parse_expression(context, body_start_index, ast)
+                let (body_expr_next_index, body_expr_node) = ast_parse_expression(context, body_parse_index, ast)
                 if body_expr_node == 0:
                     return (index, 0)
                 body_node = body_expr_node

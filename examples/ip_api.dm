@@ -3,17 +3,16 @@
 from http import get
 from json import Json, loads
 
-def format_location(document: Json) -> str:
+def print_info(document: Json):
     let status = document.get("status").as_str()
     if status != "success":
         return "ip-api error: " + document.get("message")
 
-    let result = "IP: " + document.get("query")
-    result += "\nCountry: " + document.get("country")
-    result += "\nRegion: " + document.get("regionName")
-    result += "\nCity: " + document.get("city")
-    result += "\nISP: " + document.get("isp")
-    return result
+    print("IP: " + document.get("query"))
+    print("Country: " + document.get("country"))
+    print("Region: " + document.get("regionName"))
+    print("City: " + document.get("city"))
+    print("ISP: " + document.get("isp"))
 
 def main():
     let response = get("http://ip-api.com/json/?fields=status,message,query,country,regionName,city,isp")
@@ -25,6 +24,6 @@ def main():
     if document.is_error():
         print("invalid JSON: " + document.error())
         return
-    print(format_location(document))
+    print_info(document)
 
 main()
