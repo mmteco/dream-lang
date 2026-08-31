@@ -156,6 +156,16 @@ let instruction value_types = function
   | StructGet (value, field_type, struct_value, index) ->
       Printf.sprintf "%%v%d = struct_get %s %d %s" value
         (ty field_type) index (operand struct_value)
+  | StructSet (_, struct_value, field_type, index, field_value) ->
+      Printf.sprintf "struct_set %s %d %s %s" (operand struct_value)
+        index (ty field_type) (operand field_value)
+  | Alloca (value, type_value) ->
+      Printf.sprintf "%%v%d = alloca %s" value (ty type_value)
+  | Load (value, type_value, pointer) ->
+      Printf.sprintf "%%v%d = load %s %s" value (ty type_value) (operand pointer)
+  | Store (type_value, stored_value, pointer) ->
+      Printf.sprintf "store %s %s, %s" (ty type_value)
+        (operand stored_value) (operand pointer)
   | EnumCreate (value, enum_type, tag, payload_type, payload) ->
       Printf.sprintf "%%v%d = enum_create %s %d %s %s" value
         (ty enum_type) tag (ty payload_type) (operand payload)

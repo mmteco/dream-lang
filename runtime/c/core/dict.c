@@ -37,6 +37,8 @@ dict_t* dict_create(dict_key_type key_type, dict_val_type val_type, int initial_
     dict->capacity = initial_capacity > 0 ? initial_capacity : 16;
     dict->buckets = NULL;
     dict->size = 0;
+    dict->order_head = NULL;
+    dict->order_tail = NULL;
     if ((size_t)dict->capacity > SIZE_MAX / sizeof(dict_entry_t*)) {
         gc_release(dict);
         return NULL;
@@ -111,6 +113,28 @@ static void free_value(dict_t* dict, void* value) {
     } else if (dict->val_type == DICT_VAL_PTR) {
         gc_release_if_managed(value);
     }
+}
+
+static void dict_unlink_order(dict_t* dict, dict_entry_t* target) {
+    if (dict == NULL || target == NULL) return;
+
+    dict_entry_t* previous = NULL;
+    dict_entry_t* entry = dict->order_head;
+    while (entry != NULL && entry != target) {
+        previous = entry;
+        entry = entry->order_next;
+    }
+    if (entry == NULL) return;
+
+    if (previous == NULL) {
+        dict->order_head = entry->order_next;
+    } else {
+        previous->order_next = entry->order_next;
+    }
+    if (dict->order_tail == entry) {
+        dict->order_tail = previous;
+    }
+    entry->order_next = NULL;
 }
 
 static bool dict_rehash(dict_t* dict, int new_capacity) {
@@ -203,7 +227,14 @@ static void dict_set_internal(dict_t* dict, void* key, void* value) {
         gc_retain_if_managed(new_entry->value);
     }
     new_entry->next = dict->buckets[index];
+    new_entry->order_next = NULL;
     dict->buckets[index] = new_entry;
+    if (dict->order_tail == NULL) {
+        dict->order_head = new_entry;
+    } else {
+        dict->order_tail->order_next = new_entry;
+    }
+    dict->order_tail = new_entry;
     dict->size++;
 }
 
@@ -360,6 +391,10 @@ bool dict_has_str(dict_t* dict, const char* key) {
     return found;
 }
 
+bool __c_dict_has_int(dict_t* dict, int key) {
+    return dict_has_int(dict, key);
+}
+
 bool __c_dict_has_str(dict_t* dict, const char* key) {
     return dict_has_str(dict, key);
 }
@@ -378,6 +413,7 @@ void dict_remove_int(dict_t* dict, int key) {
             } else {
                 dict->buckets[index] = entry->next;
             }
+            dict_unlink_order(dict, entry);
             free_key(dict, entry->key);
             free_value(dict, entry->value);
             free(entry);
@@ -403,6 +439,7 @@ void dict_remove_str(dict_t* dict, const char* key) {
             } else {
                 dict->buckets[index] = entry->next;
             }
+            dict_unlink_order(dict, entry);
             free_key(dict, entry->key);
             free_value(dict, entry->value);
             free(entry);
@@ -440,6 +477,8 @@ static void dict_destroy_contents_internal(dict_t* dict, int release_references)
     free(dict->buckets);
     dict->buckets = NULL;
     dict->size = 0;
+    dict->order_head = NULL;
+    dict->order_tail = NULL;
 }
 
 void dict_destroy_contents(dict_t* dict) {

@@ -1,4 +1,3 @@
-from str import from_int
 from utf8 import ord
 from compiler_lir_model import (
     LirProgram,
@@ -50,6 +49,21 @@ from compiler_lir_model import (
     LIR_OP_BOUNDS_CHECK,
     LIR_OP_GLOBAL_LOAD,
     LIR_OP_GLOBAL_STORE,
+    LIR_RUNTIME_FUNCTION_CALL,
+    LIR_RUNTIME_DISPLAY,
+    LIR_RUNTIME_NONE,
+    LIR_RUNTIME_PRINT,
+    LIR_RUNTIME_LIST_SET,
+    LIR_RUNTIME_LIST_SET_DYNAMIC,
+    LIR_RUNTIME_LIST_APPEND,
+    LIR_RUNTIME_LIST_NEW,
+    LIR_RUNTIME_LIST_GET,
+    LIR_RUNTIME_LIST_SLICE,
+    LIR_RUNTIME_DICT_NEW,
+    LIR_RUNTIME_TUPLE_NEW,
+    LIR_RUNTIME_TUPLE_GET,
+    LIR_RUNTIME_STRUCT_NEW,
+    LIR_RUNTIME_DYNAMIC,
     LIR_TERM_JUMP,
     LIR_TERM_BRANCH,
     LIR_TERM_SWITCH,
@@ -116,7 +130,7 @@ def llvm_lir_debug_checkpoint(label: str, previous_time: int) -> int:
     eprint("[timing] llvm-")
     eprint(label)
     eprint(" ")
-    eprint(from_int(current_time - previous_time))
+    eprint(current_time - previous_time)
     eprintln("ms")
     return current_time
 
@@ -246,7 +260,7 @@ def llvm_emit_hex_byte(value: int, output: Buffer):
     append(output, digits[value % 16:value % 16 + 1])
 
 def llvm_lir_is_string_literal(source_start: int, source_end: int) -> bool:
-    if source_start < 0 or source_end < source_start or source_end > len(llvm_lir_source):
+    if source_start < 0 or source_end < source_start or source_end > llvm_lir_source.len():
         return false
     return true
 
@@ -331,10 +345,17 @@ def llvm_emit_string_global(record_id: int, source_start: int, source_end: int, 
             index = index + 1
     append(output, "\\00\"\n")
 
-def llvm_emit_print_value(program: LirProgram, record_offset: int, output: Buffer):
+def llvm_emit_display_value(program: LirProgram, record_offset: int, output: Buffer, result_name: str):
     let value_type = LIR_TYPE_PTR
     if program.records[record_offset + 7] > 0:
         value_type = llvm_lir_binary_operand_type(program, record_offset, 0)
+    if value_type == LIR_TYPE_BYTES:
+        append(output, "  ")
+        append(output, result_name)
+        append(output, " = call i8* @__c_bytes_to_str(i8* ")
+        llvm_emit_operand(program, record_offset, 0, LIR_TYPE_PTR, output)
+        append(output, ")\n")
+        return
     let value_kind = 4
     if value_type == LIR_TYPE_I32:
         value_kind = 1
@@ -342,9 +363,8 @@ def llvm_emit_print_value(program: LirProgram, record_offset: int, output: Buffe
         value_kind = 2
     elif value_type == LIR_TYPE_I1:
         value_kind = 3
-    let text_name = llvm_lir_join_int("%print_text_", record_offset, "")
     append(output, "  ")
-    append(output, text_name)
+    append(output, result_name)
     append(output, " = call i8* @__c_value_to_str(i32 ")
     append(output, value_kind)
     append(output, ", i32 ")
@@ -368,6 +388,9 @@ def llvm_emit_print_value(program: LirProgram, record_offset: int, output: Buffe
     else:
         append(output, "null")
     append(output, ")\n")
+def llvm_emit_print_value(program: LirProgram, record_offset: int, output: Buffer):
+    let text_name = llvm_lir_join_int("%print_text_", record_offset, "")
+    llvm_emit_display_value(program, record_offset, output, text_name)
     append(output, "  call void @__c_io_write(i32 ")
     if program.records[record_offset + 7] > 1:
         llvm_emit_operand(program, record_offset, 1, LIR_TYPE_I32, output)
@@ -522,13 +545,13 @@ def llvm_emit_operand(program: LirProgram, record_offset: int, operand_index: in
     append(output, operand_value)
 
 def llvm_lir_runtime_name(runtime_id: int, result_type: int) -> str:
-    if runtime_id == 2:
+    if runtime_id == LIR_RUNTIME_LIST_NEW:
         return "@__c_create_dynarray_i32"
-    if runtime_id == 3:
+    if runtime_id == LIR_RUNTIME_LIST_GET:
         if result_type == LIR_TYPE_I32:
             return "@__c_get_dynarray_i32"
         return "@__c_get_pointer"
-    if runtime_id == 6:
+    if runtime_id == LIR_RUNTIME_LIST_SLICE:
         return "@__c_slice_dynarray_i32"
     return "@llvm.trap"
 
@@ -1178,6 +1201,8 @@ def llvm_emit_runtime_declarations(output: Buffer):
     append(output, "declare i32 @__c_contains_dynarray_f64(i8*, double)\n")
     append(output, "declare double @__c_get_f64(i8*, i32)\n")
     append(output, "declare void @__c_set_dynarray_i32(i8*, i32, i32)\n")
+    append(output, "declare void @__c_set_dynarray_f64(i8*, i32, double)\n")
+    append(output, "declare void @__c_set_dynarray_pointer(i8*, i32, i8*)\n")
     append(output, "declare i8* @__c_get_pointer(i8*, i32)\n")
     append(output, "declare i8* @__c_slice_dynarray_i32(i8*, i32, i32)\n")
     append(output, "declare i8* @__c_concat_dynarray_i32(i8*, i8*)\n")
@@ -1817,7 +1842,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
             llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
             append(output, " to i8*\n")
         elif result_type == LIR_TYPE_F64:
-            if string_start >= 0 and string_end > string_start and string_end <= len(llvm_lir_source):
+            if string_start >= 0 and string_end > string_start and string_end <= llvm_lir_source.len():
                 # 从源码区间取 float 文本（如 "1.5"），LLVM 无裸 double 赋值，用 fadd 0.0 构造
                 append(output, "fadd double ")
                 append(output, llvm_lir_source[string_start:string_end])
@@ -1925,9 +1950,9 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
     if opcode in [LIR_OP_RUNTIME_CALL, LIR_OP_CALL, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE,
         LIR_OP_BOUNDS_CHECK]:
         let runtime_id = program.records[offset + 8]
-        if runtime_id <= 0:
-            runtime_id = 31
-        if runtime_id == 15:
+        if runtime_id == LIR_RUNTIME_NONE:
+            runtime_id = LIR_RUNTIME_DYNAMIC
+        if runtime_id == LIR_RUNTIME_FUNCTION_CALL:
             # 函数值间接调用：operand0 = 函数索引，经函数指针表取地址后统一签名调用
             let operand_count = program.records[offset + 7]
             let fn_index_name = llvm_lir_join_int("%fn_idx_", offset, "")
@@ -1996,15 +2021,18 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 call_arg_index = call_arg_index + 1
             append(output, ")\n")
             return
-        if runtime_id == 1:
+        if runtime_id == LIR_RUNTIME_PRINT:
             llvm_emit_print_value(program, offset, output)
             return
-        if runtime_id == 7 and program.records[offset + 4] == LIR_TYPE_DICT:
-            # dict 字面量与 list append 共用 runtime id 7；按结果类型分派
+        if runtime_id == LIR_RUNTIME_DISPLAY:
+            llvm_emit_display_value(program, offset, output, result_name)
+            return
+        if runtime_id == LIR_RUNTIME_DICT_NEW and program.records[offset + 4] == LIR_TYPE_DICT:
+            # dict 字面量与 list append 共用 runtime 分派；按结果类型区分
             if result_value >= 0:
                 llvm_emit_dict_create(program, offset, output, result_name)
             return
-        if runtime_id == 7:
+        if runtime_id == LIR_RUNTIME_LIST_APPEND:
             # LIR_RUNTIME_LIST_APPEND（含 dict 外的追加）：按值类型选 __c_append_i32 /
             # __c_append_pointer / __c_append_ptr
             let append_type = llvm_lir_binary_operand_type(program, offset, 1)
@@ -2026,9 +2054,30 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
                 append(output, ")\n")
             return
-        if runtime_id in [4, 5]:
+        if runtime_id in [LIR_RUNTIME_LIST_SET, LIR_RUNTIME_LIST_SET_DYNAMIC]:
             let collection_type = llvm_lir_binary_operand_type(program, offset, 0)
-            if collection_type == LIR_TYPE_DICT and runtime_id in [4, 5]:
+            if collection_type == LIR_TYPE_STRUCT:
+                let field_type = llvm_lir_binary_operand_type(program, offset, 2)
+                if field_type == LIR_TYPE_F64:
+                    append(output, "  call void @__c_set_dynarray_f64(i8* ")
+                    llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                    append(output, ", i32 ")
+                    llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
+                    append(output, ", double ")
+                    llvm_emit_operand(program, offset, 2, LIR_TYPE_F64, output)
+                    append(output, ")\n")
+                    return
+                if llvm_lir_is_pointer_like(field_type):
+                    append(output, "  call void @__c_set_dynarray_pointer(i8* ")
+                    llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                    append(output, ", i32 ")
+                    llvm_emit_operand(program, offset, 1, LIR_TYPE_I32, output)
+                    append(output, ", i8* ")
+                    llvm_emit_operand(program, offset, 2, LIR_TYPE_PTR, output)
+                    append(output, ")\n")
+                    return
+            if collection_type == LIR_TYPE_DICT and runtime_id in [LIR_RUNTIME_LIST_SET,
+                LIR_RUNTIME_LIST_SET_DYNAMIC]:
                 let key_type = llvm_lir_binary_operand_type(program, offset, 1)
                 let value_type = llvm_lir_binary_operand_type(program, offset, 2)
                 let setter_name = llvm_lir_dict_func_name(key_type, value_type, 2)
@@ -2057,7 +2106,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 append(output, ")\n")
                 return
             let collection_name = ""
-            if runtime_id == 5 or collection_type == LIR_TYPE_DYNAMIC:
+            if runtime_id == LIR_RUNTIME_LIST_SET_DYNAMIC or collection_type == LIR_TYPE_DYNAMIC:
                 collection_name = llvm_lir_join_int("%list_set_collection_", offset, "")
                 append(output, "  ")
                 append(output, collection_name)
@@ -2100,20 +2149,20 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
             append(output, ")\n")
             return
         let return_type = result_type
-        if runtime_id in [2, 10]:
+        if runtime_id in [LIR_RUNTIME_LIST_NEW, LIR_RUNTIME_TUPLE_NEW]:
             if result_value >= 0:
                 llvm_emit_container_create(program, offset, output, result_name)
             return
-        if runtime_id == 12:
+        if runtime_id == LIR_RUNTIME_STRUCT_NEW:
             if result_value >= 0:
                 llvm_emit_struct_create(program, offset, output, result_name)
             return
-        if runtime_id == 11:
+        if runtime_id == LIR_RUNTIME_TUPLE_GET:
             if result_value >= 0:
                 llvm_emit_tuple_get(program, offset, output, result_name, return_type)
             return
         let runtime_name = llvm_lir_runtime_name(runtime_id, return_type)
-        if runtime_id == 3 and program.records[offset + 7] > 1:
+        if runtime_id == LIR_RUNTIME_LIST_GET and program.records[offset + 7] > 1:
             let base_type = llvm_lir_binary_operand_type(program, offset, 0)
             if base_type == LIR_TYPE_LIST_PTR:
                 runtime_name = "@__c_get_dynarray_ptr"
@@ -2122,19 +2171,19 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 return
             elif llvm_lir_is_string(base_type):
                 runtime_name = "@__c_utf8_rune_at"
-        elif runtime_id == 6 and program.records[offset + 7] > 2:
+        elif runtime_id == LIR_RUNTIME_LIST_SLICE and program.records[offset + 7] > 2:
             let base_type = llvm_lir_binary_operand_type(program, offset, 0)
             if base_type == LIR_TYPE_LIST_PTR:
                 runtime_name = "@__c_slice_dynarray_ptr"
             elif llvm_lir_is_string(base_type) or base_type in [LIR_TYPE_DYNAMIC, LIR_TYPE_PTR]:
                 runtime_name = "@__c_str_substring"
-        if runtime_id == 31 and program.records[offset + 7] == 2:
+        if runtime_id == LIR_RUNTIME_DYNAMIC and program.records[offset + 7] == 2:
             llvm_emit_dynamic_unary(program, offset, output, result_name, return_type)
             return
-        if runtime_id == 31 and program.records[offset + 7] >= 3:
+        if runtime_id == LIR_RUNTIME_DYNAMIC and program.records[offset + 7] >= 3:
             llvm_emit_dynamic_binary(program, offset, output, result_name, return_type)
             return
-        if runtime_id == 31:
+        if runtime_id == LIR_RUNTIME_DYNAMIC:
             if return_type == LIR_TYPE_VOID or result_value < 0:
                 return
             let operand_count = program.records[offset + 7]

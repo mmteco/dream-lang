@@ -433,7 +433,11 @@ and lower_statement context function_builder environment statement =
            else
              terminate function_builder (default_return function_builder.return_type)
        | Some value_expression ->
-           let value = lower_expr context function_builder environment value_expression in
+           let value = match value_expression with
+             | EDict ([], _) -> lower_expr_expected context function_builder environment
+                 (Some function_builder.return_type) value_expression
+             | _ -> lower_expr context function_builder environment value_expression
+           in
            let value = coerce_value context function_builder position
              function_builder.return_type value in
            mark_interface_box_escaped function_builder value.operand;
@@ -555,7 +559,8 @@ and lower_statement context function_builder environment statement =
   | SFieldAssign (object_expression, field_name, expression, position) ->
       let object_value = lower_expr context function_builder environment object_expression in
       let fields = match object_value.ty with
-        | Struct (_, fields) -> fields
+        | Struct (_, fields)
+        | Ref (Struct (_, fields)) -> fields
         | _ -> fail_at position "field assignment requires a struct value"
       in
       let field_index, field_type = match List.find_index
@@ -565,24 +570,31 @@ and lower_statement context function_builder environment statement =
       in
       let lowered_value = lower_expr context function_builder environment expression in
       expect_type position field_type lowered_value.ty ("struct field " ^ field_name);
-      let field_values = List.mapi (fun index (_, current_type) ->
-        if index = field_index then lowered_value.operand
-        else
-          let current = fresh_value function_builder in
-          emit function_builder (Dir.StructGet (current, current_type,
-            object_value.operand, index));
-          Value current
-      ) fields in
-      let struct_name = match object_value.ty with
-        | Struct (name, _) -> name
-        | _ -> assert false
-      in
-      let updated_value = fresh_value function_builder in
-      emit function_builder (Dir.StructCreate (updated_value, struct_name, fields, field_values));
-      (match object_expression with
-       | EVar (name, _) -> Hashtbl.replace environment name
-           { operand = Dir.Value updated_value; ty = object_value.ty }
-       | _ -> fail_at position "DIR field assignment requires a local struct variable")
+      (match object_value.ty with
+       | Ref (Struct _) ->
+           let set_id = fresh_value function_builder in
+           emit function_builder (Dir.StructSet (set_id, object_value.operand,
+             field_type, field_index, lowered_value.operand))
+       | Struct _ ->
+           let field_values = List.mapi (fun index (_, current_type) ->
+             if index = field_index then lowered_value.operand
+             else
+               let current = fresh_value function_builder in
+               emit function_builder (Dir.StructGet (current, current_type,
+                 object_value.operand, index));
+               Value current
+           ) fields in
+           let struct_name = match object_value.ty with
+             | Struct (name, _) -> name
+             | _ -> assert false
+           in
+           let updated_value = fresh_value function_builder in
+           emit function_builder (Dir.StructCreate (updated_value, struct_name, fields, field_values));
+           (match object_expression with
+            | EVar (name, _) -> Hashtbl.replace environment name
+                { operand = Dir.Value updated_value; ty = object_value.ty }
+            | _ -> fail_at position "DIR field assignment requires a local struct variable")
+       | _ -> fail_at position "field assignment requires a struct value")
   | SImpl (_, position) ->
       fail_at position "DIR does not support impl statements yet"
   | SStruct struct_info ->

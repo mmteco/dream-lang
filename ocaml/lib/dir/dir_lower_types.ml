@@ -239,7 +239,7 @@ let signature_of_def resolve_struct def_info =
   in
   { parameter_types; return_type }
 
-let signature_of_method resolve_struct struct_name method_info =
+let signature_of_method resolve_struct struct_name reference_receiver method_info =
   let _, _, parameters, return_type_expression, body, _ = method_info in
   let resolve_method_type type_expression =
     match type_expression with
@@ -248,6 +248,7 @@ let signature_of_method resolve_struct struct_name method_info =
   in
   let parameter_types = List.mapi (fun index (name, type_expression, _) ->
     match index, name, type_expression with
+    | 0, "self", _ when reference_receiver -> Ref (resolve_struct struct_name)
     | 0, "self", _ -> resolve_struct struct_name
     | _, _, Some type_expression -> resolve_method_type type_expression
     | _, _, None ->
@@ -373,6 +374,7 @@ let default_return return_type =
   | Bool -> Return (Some (Bool false))
   | ClosureEnv _ -> raise (Lower_error "closure environments require an explicit return")
   | Func _ -> raise (Lower_error "DIR function values require an explicit return")
+  | Ref _ -> raise (Lower_error "DIR reference values require an explicit return")
   | Str | Bytes | Dict _ | List _ | Tuple _ | Struct _ | Enum _ | Interface _ | Union _ ->
       raise (Lower_error "DIR subset cannot synthesize a default reference return")
 

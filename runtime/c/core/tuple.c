@@ -80,20 +80,18 @@ dynarray_ptr* dict_items(dict_t* dict) {
     dynarray_ptr* items = __c_create_dynarray_ptr(dict->size);
     if (items == NULL) return NULL;
 
-    for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
-        dict_entry_t* entry = dict->buckets[bucket_index];
-        while (entry != NULL) {
-            intptr_t key = (intptr_t)entry->key;
-            intptr_t value = (intptr_t)entry->value;
+    dict_entry_t* entry = dict->order_head;
+    while (entry != NULL) {
+        intptr_t key = (intptr_t)entry->key;
+        intptr_t value = (intptr_t)entry->value;
 
-            tuple2_ptr* pair = (tuple2_ptr*)create_tuple2_ptr(key, value);
-            if (pair == NULL) {
-                __c_free_dynarray_ptr(items);
-                return NULL;
-            }
-            __c_append_ptr(items, (intptr_t)pair);
-            entry = entry->next;
+        tuple2_ptr* pair = (tuple2_ptr*)create_tuple2_ptr(key, value);
+        if (pair == NULL) {
+            __c_free_dynarray_ptr(items);
+            return NULL;
         }
+        __c_append_ptr(items, (intptr_t)pair);
+        entry = entry->order_next;
     }
 
     return items;
@@ -106,19 +104,17 @@ dynarray_ptr* __c_dict_items_tuples(dict_t* dict) {
     dynarray_ptr* items = __c_create_dynarray_ptr(dict->size);
     if (items == NULL) return NULL;
 
-    for (int bucket_index = 0; bucket_index < dict->capacity; bucket_index++) {
-        dict_entry_t* entry = dict->buckets[bucket_index];
-        while (entry != NULL) {
-            dynarray_ptr* pair = __c_create_dynarray_ptr(2);
-            if (pair == NULL) {
-                __c_free_dynarray_ptr(items);
-                return NULL;
-            }
-            __c_append_ptr(pair, (intptr_t)entry->key);
-            __c_append_ptr(pair, (intptr_t)entry->value);
-            __c_append_ptr(items, (intptr_t)pair);
-            entry = entry->next;
+    dict_entry_t* entry = dict->order_head;
+    while (entry != NULL) {
+        dynarray_ptr* pair = __c_create_dynarray_ptr(2);
+        if (pair == NULL) {
+            __c_free_dynarray_ptr(items);
+            return NULL;
         }
+        __c_append_ptr(pair, (intptr_t)entry->key);
+        __c_append_ptr(pair, (intptr_t)entry->value);
+        __c_append_ptr(items, (intptr_t)pair);
+        entry = entry->order_next;
     }
 
     return items;

@@ -32,6 +32,8 @@ int __c_contains_dynarray_f64(dynarray_i32* arr, double value);
 double __c_get_f64(dynarray_i32* arr, int index);
 const void* __c_get_pointer(dynarray_i32* arr, int index);
 void __c_set_dynarray_i32(dynarray_i32* arr, int index, int value);
+void __c_set_dynarray_f64(dynarray_i32* arr, int index, double value);
+void __c_set_dynarray_pointer(dynarray_i32* arr, int index, const void* value);
 int __c_len_dynarray_i32(dynarray_i32* arr);
 int __c_capacity_dynarray_i32(dynarray_i32* arr);
 

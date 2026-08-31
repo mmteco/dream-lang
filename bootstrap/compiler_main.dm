@@ -2,7 +2,6 @@ from buffer import Buffer
 from io import read, write
 from fs import exists, remove_file, mkdir, rename
 from compiler import build
-from str import from_int
 from utf8 import ord
 from crypto import sha256
 from sys import argc, arg, env
@@ -19,7 +18,7 @@ let compiler_temp_sequence: list[int] = [0]
 
 def module_name_component_end(module_name: str, start: int) -> int:
     let end = start
-    while end < len(module_name) and module_name[end] != '.':
+    while end < module_name.len() and module_name[end] != '.':
         end = end + 1
     return end
 
@@ -42,11 +41,11 @@ def parse_module_name(
 
 def module_name_match_end(source: str, kinds: list[int], starts: list[int], ends: list[int], token_index: int,
     module_name: str) -> int:
-    if len(module_name) == 0:
+    if module_name.len() == 0:
         return -1
     let component_start = 0
     let current_index = token_index
-    while component_start < len(module_name):
+    while component_start < module_name.len():
         let component_end = module_name_component_end(module_name, component_start)
         if token_kind(kinds, current_index) != TOKEN_IDENTIFIER:
             return -1
@@ -55,7 +54,7 @@ def module_name_match_end(source: str, kinds: list[int], starts: list[int], ends
             module_name[component_start:component_end]
         ):
             return -1
-        if component_end == len(module_name):
+        if component_end == module_name.len():
             return current_index
         if (
             token_kind(kinds, current_index + 1) != TOKEN_DOT or
@@ -117,7 +116,7 @@ def module_path(module_name: str) -> str:
             return "bootstrap/compiler_main.dm"
     let relative_path = ""
     let path_index = 0
-    while path_index < len(module_name):
+    while path_index < module_name.len():
         if module_name[path_index] == '.':
             relative_path = relative_path + "/"
         else:
@@ -126,7 +125,7 @@ def module_path(module_name: str) -> str:
     let configured_paths = env("DREAM_MODULE_PATH")
     let path_start = 0
     let path_end = 0
-    let path_length = len(configured_paths)
+    let path_length = configured_paths.len()
     while path_end <= path_length:
         if path_end == path_length or configured_paths[path_end] == ':':
             if path_end > path_start:
@@ -143,7 +142,7 @@ def module_path(module_name: str) -> str:
 
 def module_is_loaded(loaded_modules: str, module_name: str) -> bool:
     let module_start = 0
-    let loaded_length = len(loaded_modules)
+    let loaded_length = loaded_modules.len()
     while module_start < loaded_length:
         let module_end = module_start
         while module_end < loaded_length and ord(loaded_modules[module_end]) != 10:
@@ -157,10 +156,10 @@ def add_imported_module(imported_source: str, module_name: str, file_packages: l
     file_ends: list[int], file_paths: Buffer) -> str:
     let imported_path = module_path(module_name)
     let module_source = read(imported_path)
-    let start_offset = len(imported_source)
+    let start_offset = imported_source.len()
     let new_source = imported_source + module_source
     new_source = new_source + "\n"
-    let end_offset = len(new_source)
+    let end_offset = new_source.len()
     append(file_packages, classify_package(imported_path))
     append(file_starts, start_offset)
     append(file_ends, end_offset)
@@ -171,7 +170,7 @@ def add_imported_module(imported_source: str, module_name: str, file_packages: l
 def mask_source_range(source: str, start: int, end: int) -> str:
     let masked = ""
     let index = 0
-    while index < len(source):
+    while index < source.len():
         if index >= start and index < end and source[index] != '\n':
             masked = masked + " "
         else:
@@ -192,7 +191,7 @@ def rewrite_module_namespace(source: str, module_names: str) -> str:
     }
     lex(tokens)
     let module_start = 0
-    let module_length = len(module_names)
+    let module_length = module_names.len()
     while module_start < module_length:
         let module_end = module_start
         while module_end < module_length and module_names[module_end] != '\n':
@@ -278,7 +277,7 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         if found_new_module:
             scan_source = imported_source
         scan_round = scan_round + 1
-    let user_source_start = len(imported_source)
+    let user_source_start = imported_source.len()
     if len(loaded_modules) != 0:
         user_source_start = user_source_start + 1
         let rewritten_source = rewrite_module_namespace(source, namespace_modules)
@@ -286,13 +285,13 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         final_source = final_source + rewritten_source
         append(file_packages, classify_package(source_path))
         append(file_starts, user_source_start)
-        append(file_ends, len(final_source))
+        append(file_ends, final_source.len())
         append(file_paths, source_path)
         append(file_paths, "\n")
         return final_source
     append(file_packages, classify_package(source_path))
     append(file_starts, 0)
-    append(file_ends, len(source))
+    append(file_ends, source.len())
     append(file_paths, source_path)
     append(file_paths, "\n")
     return rewrite_module_namespace(source, namespace_modules)
@@ -310,7 +309,7 @@ def compiler_temp_token(label: str) -> str:
     let sequence = compiler_temp_sequence[0]
     compiler_temp_sequence[0] = compiler_temp_sequence[0] + 1
     let label_hash = sha256(label)
-    return from_int(monotonic_ms()) + "_" + label_hash[0:16] + "_" + from_int(sequence)
+    return str(monotonic_ms()) + "_" + label_hash[0:16] + "_" + str(sequence)
 
 def compiler_temp_path(label: str) -> str:
     return "target/tmp/" + label + "_" + compiler_temp_token(label)
@@ -346,7 +345,7 @@ def copy_text_file(source_path: str, output_path: str) -> bool:
     return write_text_atomic(output_path, read(source_path))
 
 def compiler_cache_key(source_path: str, source: str, output_mode: int) -> str:
-    let key_source = COMPILER_CACHE_VERSION + "|" + source_path + "|" + from_int(output_mode) + "|" + source
+    let key_source = COMPILER_CACHE_VERSION + "|" + source_path + "|" + str(output_mode) + "|" + source
     return sha256(key_source)
 
 def compiler_cache_dir(cache_key: str) -> str:
@@ -375,8 +374,8 @@ def compiler_cache_store(cache_key: str, output_path: str, output_mode: int, sou
         return false
     if not copy_text_file(output_path, compiler_cache_artifact(cache_key)):
         return false
-    let manifest = "schema=1\nversion=" + COMPILER_CACHE_VERSION + "\nmode=" + from_int(output_mode)
-    let manifest_with_length = manifest + "\nsource_length=" + from_int(source_length) + "\n"
+    let manifest = "schema=1\nversion=" + COMPILER_CACHE_VERSION + "\nmode=" + str(output_mode)
+    let manifest_with_length = manifest + "\nsource_length=" + str(source_length) + "\n"
     return write_text_atomic(compiler_cache_manifest(cache_key), manifest_with_length)
 
 def compiler_debug_start() -> int:
@@ -391,7 +390,7 @@ def compiler_debug_checkpoint(label: str, previous_time: int) -> int:
     eprint("[timing] ")
     eprint(label)
     eprint(" ")
-    eprint(from_int(current_time - previous_time))
+    eprint(current_time - previous_time)
     eprintln("ms")
     return current_time
 
@@ -606,7 +605,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not write_ast_output(output_path, source, func_starts, func_ends, ast_nodes, ast_func_nodes_start,
             ast_func_nodes_end):
             return false
-        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+        if not compiler_cache_store(cache_key, output_path, output_mode, source.len()):
             eprintln("warning: failed to store compiler cache")
         return true
     let hir_records: list[int] = []
@@ -674,7 +673,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
             return false
         if not write_buffer(output_path, hir_output):
             return false
-        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+        if not compiler_cache_store(cache_key, output_path, output_mode, source.len()):
             eprintln("warning: failed to store compiler cache")
         compiler_debug_checkpoint("hir-dump", phase_time)
         return true
@@ -718,7 +717,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
             return false
         if not write_buffer(output_path, mir_output):
             return false
-        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+        if not compiler_cache_store(cache_key, output_path, output_mode, source.len()):
             eprintln("warning: failed to store compiler cache")
         return true
     elif output_mode == COMPILE_OUTPUT_LIR:
@@ -738,7 +737,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
             return false
         if not write_buffer(output_path, lir_output):
             return false
-        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+        if not compiler_cache_store(cache_key, output_path, output_mode, source.len()):
             eprintln("warning: failed to store compiler cache")
         return true
     elif output_mode == COMPILE_OUTPUT_LLVM:
@@ -761,7 +760,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         if not write_buffer(output_path, llvm_output):
             return false
         phase_time = compiler_debug_checkpoint("llvm-write", phase_time)
-        if not compiler_cache_store(cache_key, output_path, output_mode, len(source)):
+        if not compiler_cache_store(cache_key, output_path, output_mode, source.len()):
             eprintln("warning: failed to store compiler cache")
         phase_time = compiler_debug_checkpoint("llvm-cache-store", phase_time)
         return true
@@ -775,7 +774,7 @@ struct BuildArguments:
     is_valid: bool
 
 def remove_source_extension(source_path: str) -> str:
-    let index = len(source_path) - 1
+    let index = source_path.len() - 1
     while index >= 0:
         if source_path[index] == '.':
             if index > 0:
@@ -795,7 +794,7 @@ def parse_build_arguments(argument_count: int):
         output_path = arg(4)
     elif argument_count >= 4:
         output_path = arg(3)
-    if len(input_path) < 3:
+    if input_path.len() < 3:
         is_valid = false
     BA_input_path = input_path
     BA_output_path = output_path
@@ -830,7 +829,7 @@ def run_build_command(argument_count: int) -> bool:
     if not BA_is_valid:
         eprintln("error: build accepts [--dev] <file.dm> [-o output]")
         return false
-    let input_length = len(BA_input_path)
+    let input_length = BA_input_path.len()
     if input_length < 3 or BA_input_path[input_length - 3:input_length] != ".dm":
         eprintln("error: input file must have .dm extension")
         return false

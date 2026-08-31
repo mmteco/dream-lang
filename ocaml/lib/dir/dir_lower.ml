@@ -78,10 +78,37 @@ let lower_empty_list function_builder expected_type =
   emit function_builder (ListCreate (value, element_type, []));
   { operand = Value value; ty = List element_type }
 
-let rec lower_method_call context function_builder environment object_value method_name
+let materialize_struct_receiver function_builder object_value position =
+  match object_value.ty with
+  | Ref _ -> object_value
+  | Struct _ ->
+      let pointer = fresh_value function_builder in
+      emit function_builder (Alloca (pointer, object_value.ty));
+      emit function_builder (Store (object_value.ty, object_value.operand, Value pointer));
+      { operand = Value pointer; ty = Ref object_value.ty }
+  | Enum _ -> object_value
+  | _ -> fail_at position "method call requires a struct value"
+
+let rec lower_mutating_method_call context function_builder environment object_expression
+    method_name arguments position =
+  let object_value = lower_expr context function_builder environment object_expression in
+  let receiver = materialize_struct_receiver function_builder object_value position in
+  let result = lower_method_call context function_builder environment receiver method_name
+    arguments position in
+  (match object_expression, object_value.ty with
+   | EVar (name, _), Struct _ ->
+       let updated_value = fresh_value function_builder in
+       emit function_builder (Load (updated_value, object_value.ty, receiver.operand));
+       Hashtbl.replace environment name { operand = Value updated_value; ty = object_value.ty }
+   | _ -> ());
+  result
+
+and lower_method_call context function_builder environment object_value method_name
     arguments position =
-  let struct_name = match object_value.ty with
-    | Struct (name, _) -> name
+  let receiver = materialize_struct_receiver function_builder object_value position in
+  let struct_name = match receiver.ty with
+    | Ref (Struct (name, _)) -> name
+    | Ref (Enum (name, _)) -> name
     | Enum (name, _) -> name
     | _ -> fail_at position "method call requires a struct value"
   in
@@ -110,9 +137,9 @@ let rec lower_method_call context function_builder environment object_value meth
   let coerced_arguments = List.map2 (fun actual expected ->
     coerce_value context function_builder position expected actual
   ) lowered_arguments expected_argument_types in
-  let argument_types = object_value.ty ::
+  let argument_types = receiver.ty ::
     List.map (fun argument -> argument.ty) coerced_arguments in
-  let argument_operands = object_value.operand ::
+  let argument_operands = receiver.operand ::
     List.map (fun argument -> argument.operand) coerced_arguments in
   let result_value = match method_binding.signature.return_type with
     | Unit -> None
@@ -160,6 +187,12 @@ and lower_display_value context function_builder environment value position =
   | actual_type -> fail_at position (Printf.sprintf
       "print does not support %s" (Dir.ty_to_string actual_type))
 
+and lower_io_write context function_builder environment argument stream end_ position =
+  let text = lower_display_value context function_builder environment argument position in
+  emit function_builder (Call (None, Unit, "__c_io_write",
+    [I32; Str; Str], [stream; text.operand; end_]));
+  { operand = Int 0; ty = Unit }
+
 and lower_string_method context function_builder environment object_value method_name
     arguments position =
   let lowered_arguments = List.map
@@ -194,7 +227,7 @@ and lower_string_method context function_builder environment object_value method
     | _ -> fail_at position (method_name ^ " expects one argument")
   in
   match method_name with
-  | "length" -> unary_str_call "__c_str_len" I32
+  | "length" | "len" -> unary_str_call "__c_str_len" I32
   | "upper" -> unary_str_call "__c_str_upper" Str
   | "lower" -> unary_str_call "__c_str_lower" Str
   | "strip" -> unary_str_call "__c_str_strip" Str
@@ -234,7 +267,85 @@ and lower_string_method context function_builder environment object_value method
              [List Str; Str], [items.operand; object_value.operand]));
            { operand = Value value; ty = Str }
        | _ -> fail_at position "join expects one argument")
-  | _ -> fail_at position ("unsupported string method " ^ method_name)
+       | _ -> fail_at position ("unsupported string method " ^ method_name)
+
+and lower_dict_method context function_builder environment object_value method_name
+    arguments position =
+  let dict_type = match object_value.ty with
+    | Dict (key_type, value_type) -> key_type, value_type
+    | _ -> fail_at position "dictionary method requires a dictionary value"
+  in
+  let key_type, value_type = dict_type in
+  let lowered_arguments = List.map
+    (lower_expr context function_builder environment) arguments in
+  let expect_arguments expected_types =
+    if List.length lowered_arguments <> List.length expected_types then
+      fail_at position (method_name ^ " has invalid argument count");
+    List.iter2 (fun actual expected ->
+      expect_type position expected actual.ty (method_name ^ " argument")
+    ) lowered_arguments expected_types
+  in
+  let size_name = match key_type, value_type with
+    | I32, I32 -> "__c_dict_size_int_int"
+    | I32, Str -> "__c_dict_size_int_str"
+    | Str, I32 -> "__c_dict_size_str_int"
+    | Str, Str -> "__c_dict_size_str_str"
+    | I32, _ -> "__c_dict_size_int_ptr"
+    | Str, _ -> "__c_dict_size_str_ptr"
+    | _ -> fail_at position "DIR dict supports only int and str keys"
+  in
+  let get_name = match key_type, value_type with
+    | I32, I32 -> "__c_dict_get_int_int"
+    | I32, Str -> "__c_dict_get_int_str"
+    | Str, I32 -> "__c_dict_get_str_int"
+    | Str, Str -> "__c_dict_get_str_str"
+    | I32, _ -> "__c_dict_get_int_ptr"
+    | Str, _ -> "__c_dict_get_str_ptr"
+    | _ -> fail_at position "DIR dict supports only int and str keys"
+  in
+  let set_name = match key_type, value_type with
+    | I32, I32 -> "__c_dict_set_int_int"
+    | I32, Str -> "__c_dict_set_int_str"
+    | Str, I32 -> "__c_dict_set_str_int"
+    | Str, Str -> "__c_dict_set_str_str"
+    | I32, _ -> "__c_dict_set_int_ptr"
+    | Str, _ -> "__c_dict_set_str_ptr"
+    | _ -> fail_at position "DIR dict supports only int and str keys"
+  in
+  match method_name with
+  | "len" | "length" ->
+      expect_arguments [];
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, I32, size_name,
+        [Dict (key_type, value_type)], [object_value.operand]));
+      { operand = Value value; ty = I32 }
+  | "has" ->
+      expect_arguments [key_type];
+      let function_name = match key_type with
+        | I32 -> "__c_dict_has_int"
+        | Str -> "__c_dict_has_str"
+        | _ -> fail_at position "DIR dict supports only int and str keys"
+      in
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Bool, function_name,
+        [Dict (key_type, value_type); key_type], [object_value.operand;
+          (List.hd lowered_arguments).operand]));
+      { operand = Value value; ty = Bool }
+  | "get" ->
+      expect_arguments [key_type];
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, value_type, get_name,
+        [Dict (key_type, value_type); key_type], [object_value.operand;
+          (List.hd lowered_arguments).operand]));
+      { operand = Value value; ty = value_type }
+  | "set" ->
+      expect_arguments [key_type; value_type];
+      emit function_builder (Call (None, Unit, set_name,
+        [Dict (key_type, value_type); key_type; value_type],
+        [object_value.operand; (List.nth lowered_arguments 0).operand;
+          (List.nth lowered_arguments 1).operand]));
+      object_value
+  | _ -> fail_at position ("unsupported dictionary method " ^ method_name)
 
 and lower_bytes_method context function_builder environment object_value method_name
     arguments position =
@@ -307,6 +418,15 @@ and coerce_value context function_builder position expected_type value =
     value
   else
     match expected_type, value.ty with
+    | expected_type, Ref actual_type when Dir.equal_ty expected_type actual_type ->
+        let loaded_value = fresh_value function_builder in
+        emit function_builder (Load (loaded_value, actual_type, value.operand));
+        { operand = Value loaded_value; ty = actual_type }
+    | Ref expected_type, actual_type when Dir.equal_ty expected_type actual_type ->
+        let pointer = fresh_value function_builder in
+        emit function_builder (Alloca (pointer, actual_type));
+        emit function_builder (Store (actual_type, value.operand, Value pointer));
+        { operand = Value pointer; ty = Ref actual_type }
     | Union element_types, actual_type ->
         if not (List.exists (Dir.equal_ty actual_type) element_types) then
           fail_at position (Printf.sprintf
@@ -644,6 +764,16 @@ and lower_expr context function_builder environment expression =
                 lower_list_contains function_builder right left element_type position
             | (I32 | Bool), Bytes ->
                 lower_bytes_contains function_builder right left position
+            | I32, Dict (I32, _) ->
+                let value = fresh_value function_builder in
+                emit function_builder (Call (Some value, Bool, "__c_dict_has_int",
+                  [Dict (I32, ClosureEnv []); I32], [right.operand; left.operand]));
+                { operand = Value value; ty = Bool }
+            | Str, Dict (Str, _) ->
+                let value = fresh_value function_builder in
+                emit function_builder (Call (Some value, Bool, "__c_dict_has_str",
+                  [Dict (Str, ClosureEnv []); Str], [right.operand; left.operand]));
+                { operand = Value value; ty = Bool }
             | _, Interface ("Iterator", methods) ->
                 let element_type = match List.find_opt
                     (fun (name, _, _) -> name = "next") methods with
@@ -966,7 +1096,8 @@ and lower_expr context function_builder environment expression =
   | EStructAccess (object_expression, field_name, position) ->
       let object_value = lower_expr context function_builder environment object_expression in
       let fields = match object_value.ty with
-        | Struct (_, fields) -> fields
+        | Struct (_, fields)
+        | Ref (Struct (_, fields)) -> fields
         | _ -> fail_at position "field access requires a struct value"
       in
       let field_index, field_type = match List.find_index
@@ -1109,32 +1240,30 @@ and lower_expr context function_builder environment expression =
       let callee = lookup_value position environment name in
       lower_call_indirect context function_builder environment callee arguments position
   | ECall (EVar (name, _), arguments, position) ->
-      if name = "print" || name = "eprintln" || name = "eprint" then begin
+      if name = "str" then begin
+        match arguments with
+        | [argument] ->
+            let value = lower_expr context function_builder environment argument in
+            lower_display_value context function_builder environment value position
+        | _ -> fail_at position "str expects exactly one argument"
+      end else if name = "print" || name = "eprintln" || name = "eprint" then begin
         let lowered_arguments = List.map
           (lower_expr context function_builder environment) arguments in
         match name, lowered_arguments with
         | "print", [argument] ->
-            let text = lower_display_value context function_builder environment argument position in
-            emit function_builder (Call (None, Unit, "__c_io_write",
-              [I32; Str; Str], [Int 0; text.operand; String "\n"]));
-            { operand = Int 0; ty = Unit }
+            lower_io_write context function_builder environment argument
+              (Int 0) (String "\n") position
         | "print", [argument; file; end_] ->
-            let text = lower_display_value context function_builder environment argument position in
             expect_type position I32 file.ty "print file";
             expect_type position Str end_.ty "print end";
-            emit function_builder (Call (None, Unit, "__c_io_write",
-              [I32; Str; Str], [file.operand; text.operand; end_.operand]));
-            { operand = Int 0; ty = Unit }
+            lower_io_write context function_builder environment argument
+              file.operand end_.operand position
         | "eprintln", [argument] ->
-            let text = lower_display_value context function_builder environment argument position in
-            emit function_builder (Call (None, Unit, "__c_io_write",
-              [I32; Str; Str], [Int 1; text.operand; String "\n"]));
-            { operand = Int 0; ty = Unit }
+            lower_io_write context function_builder environment argument
+              (Int 1) (String "\n") position
         | "eprint", [argument] ->
-            let text = lower_display_value context function_builder environment argument position in
-            emit function_builder (Call (None, Unit, "__c_io_write",
-              [I32; Str; Str], [Int 1; text.operand; String ""]));
-            { operand = Int 0; ty = Unit }
+            lower_io_write context function_builder environment argument
+              (Int 1) (String "") position
         | _ -> fail_at position (name ^ " has invalid arguments")
       end else begin
         let actual_name, signature =
@@ -1176,6 +1305,9 @@ and lower_expr context function_builder environment expression =
            lower_interface_call context function_builder environment object_value
              method_name arguments position
        | Struct _ ->
+           lower_mutating_method_call context function_builder environment object_expression
+             method_name arguments position
+       | Ref _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
        | Enum _ ->
@@ -1183,6 +1315,9 @@ and lower_expr context function_builder environment expression =
              arguments position
        | Str ->
            lower_string_method context function_builder environment object_value
+             method_name arguments position
+       | Dict _ ->
+           lower_dict_method context function_builder environment object_value
              method_name arguments position
        | Bytes ->
            lower_bytes_method context function_builder environment object_value
@@ -1375,6 +1510,7 @@ and lower_expr context function_builder environment expression =
           | Some (Interface _) -> true
           | Some Str -> true
           | Some Bytes -> true
+          | Some (Dict _) -> true
           | _ -> false) ->
       let object_value = load_variable context function_builder environment variable_name in
       (match object_value.ty with
@@ -1382,8 +1518,8 @@ and lower_expr context function_builder environment expression =
            lower_interface_call context function_builder environment object_value
              method_name arguments position
        | Struct _ ->
-           lower_method_call context function_builder environment object_value method_name
-             arguments position
+           lower_mutating_method_call context function_builder environment
+             (EVar (variable_name, position)) method_name arguments position
        | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
@@ -1392,6 +1528,9 @@ and lower_expr context function_builder environment expression =
              method_name arguments position
        | Bytes ->
            lower_bytes_method context function_builder environment object_value
+             method_name arguments position
+       | Dict _ ->
+           lower_dict_method context function_builder environment object_value
              method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | ECall (callee, arguments, position) ->
@@ -1412,8 +1551,8 @@ and lower_expr context function_builder environment expression =
                 let method_key = struct_name ^ "." ^ field_name in
                 (match Hashtbl.find_opt context.method_signatures method_key with
                  | Some _ ->
-                     lower_method_call context function_builder environment object_value
-                       field_name [] position
+                     lower_mutating_method_call context function_builder environment
+                       (EVar (variable_name, position)) field_name [] position
                  | None ->
                      let field_index, field_type = match List.find_index
                          (fun (name, _) -> name = field_name) fields with
@@ -1435,6 +1574,9 @@ and lower_expr context function_builder environment expression =
                   field_name [] position
             | Bytes ->
                 lower_bytes_method context function_builder environment object_value
+                  field_name [] position
+            | Dict _ ->
+                lower_dict_method context function_builder environment object_value
                   field_name [] position
             | actual_type -> fail_at position (Printf.sprintf
                 "DIR does not support enum variant %s.%s on %s"
@@ -1493,6 +1635,7 @@ and lower_expr context function_builder environment expression =
           | Some { ty = Interface (_, _); _ } -> true
           | Some { ty = Str; _ } -> true
           | Some { ty = Bytes; _ } -> true
+          | Some { ty = Dict _; _ } -> true
           | _ -> false) ->
       let object_value = Hashtbl.find environment variable_name in
       (match object_value.ty with
@@ -1500,8 +1643,8 @@ and lower_expr context function_builder environment expression =
            lower_interface_call context function_builder environment object_value
              method_name arguments position
        | Struct _ ->
-           lower_method_call context function_builder environment object_value method_name
-             arguments position
+           lower_mutating_method_call context function_builder environment
+             (EVar (variable_name, position)) method_name arguments position
        | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
@@ -1510,6 +1653,9 @@ and lower_expr context function_builder environment expression =
              method_name arguments position
        | Bytes ->
            lower_bytes_method context function_builder environment object_value
+             method_name arguments position
+       | Dict _ ->
+           lower_dict_method context function_builder environment object_value
              method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | EEnumVariant (variable_name, method_name, arguments, position)
@@ -1521,6 +1667,7 @@ and lower_expr context function_builder environment expression =
           | Some (Interface _) -> true
           | Some Str -> true
           | Some Bytes -> true
+          | Some (Dict _) -> true
           | _ -> false) ->
       let object_value = load_variable context function_builder environment variable_name in
       (match object_value.ty with
@@ -1528,8 +1675,8 @@ and lower_expr context function_builder environment expression =
            lower_interface_call context function_builder environment object_value
              method_name arguments position
        | Struct _ ->
-           lower_method_call context function_builder environment object_value method_name
-             arguments position
+           lower_mutating_method_call context function_builder environment
+             (EVar (variable_name, position)) method_name arguments position
        | Enum _ ->
            lower_method_call context function_builder environment object_value method_name
              arguments position
@@ -1538,6 +1685,9 @@ and lower_expr context function_builder environment expression =
              method_name arguments position
        | Bytes ->
            lower_bytes_method context function_builder environment object_value
+             method_name arguments position
+       | Dict _ ->
+           lower_dict_method context function_builder environment object_value
              method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | EEnumVariant (enum_name, variant_name, arguments, position) ->
@@ -1657,6 +1807,9 @@ and lower_expr_expected context function_builder environment expected_type expre
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, dict_type, create_name, [I32], [Int 8]));
       { operand = Value value; ty = dict_type }
+  | ECall (EVar ("dict", _), [], position) ->
+      lower_expr_expected context function_builder environment expected_type
+        (EDict ([], position))
   | _ -> lower_expr context function_builder environment expression
 
 and lower_lambda context enclosing_builder outer_environment parameters body position =
@@ -2534,6 +2687,7 @@ let runtime_externs = [
   { name = "__c_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
   { name = "__c_dict_size_int_ptr"; parameters = [Dict (I32, ClosureEnv [])]; return_type = I32 };
   { name = "__c_dict_size_str_ptr"; parameters = [Dict (Str, ClosureEnv [])]; return_type = I32 };
+  { name = "__c_dict_has_int"; parameters = [Dict (I32, ClosureEnv []); I32]; return_type = Bool };
   { name = "__c_dict_has_str"; parameters = [Dict (Str, ClosureEnv []); Str]; return_type = Bool };
   { name = "__c_utf8_rune_count"; parameters = [Str]; return_type = I32 };
   { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
@@ -2708,7 +2862,7 @@ let lower_program program =
                     struct_info.struct_name ^ "." ^ method_name));
                 let function_name = "__dir_method_" ^ struct_info.struct_name ^
                   "_" ^ method_name in
-                Some (struct_info.struct_name, method_name, function_name, {
+                Some (struct_info.struct_name, method_name, function_name, true, {
                   def_name = function_name;
                   def_name_pos = position;
                   def_type_params = [];
@@ -2746,7 +2900,8 @@ let lower_program program =
                   in
                   let function_name = "__dir_impl_" ^ interface_name ^ "_" ^
                     target_name ^ "_" ^ method_name ^ type_suffix in
-                  Some (target_name, method_name, function_name, {
+                  Some (target_name, method_name, function_name,
+                    Hashtbl.mem struct_definitions target_name, {
                     def_name = function_name;
                     def_name_pos = position;
                     def_type_params = [];
@@ -2763,8 +2918,8 @@ let lower_program program =
     List.iter (fun def_info ->
       add_signature signatures def_info.def_name (signature_of_def resolve_named def_info)
     ) function_definitions;
-    List.iter (fun (struct_name, method_name, function_name, def_info) ->
-      let signature = signature_of_method resolve_named struct_name
+    List.iter (fun (struct_name, method_name, function_name, reference_receiver, def_info) ->
+      let signature = signature_of_method resolve_named struct_name reference_receiver
         (method_name, def_info.def_type_params, def_info.def_params,
          def_info.def_return_type, def_info.def_body, def_info.def_pos) in
       add_signature signatures function_name signature;
@@ -2782,10 +2937,10 @@ let lower_program program =
                let interface_type = resolve_interface interface_name in
                let method_names = match interface_type with
                  | Interface (_, methods) -> List.map (fun (method_name, _, _) ->
-                     match List.find_opt (fun (target_name, target_method, _, _) ->
+                     match List.find_opt (fun (target_name, target_method, _, _, _) ->
                        target_name = struct_name && target_method = method_name
                      ) method_definitions with
-                     | Some (_, _, function_name, _) -> function_name
+                     | Some (_, _, function_name, _, _) -> function_name
                      | None -> raise (Lower_error (Printf.sprintf
                          "interface %s implementation for %s is missing method %s"
                          interface_name struct_name method_name))
@@ -2876,7 +3031,7 @@ let lower_program program =
       | Some main_function -> [main_function]
       | None -> [] in
     let other_functions = List.map (lower_function context constant_bindings)
-      (other_definitions @ List.map (fun (_, _, _, definition) -> definition)
+      (other_definitions @ List.map (fun (_, _, _, _, definition) -> definition)
         method_definitions) in
     let functions = main_functions @ other_functions in
     let functions = match lower_main with

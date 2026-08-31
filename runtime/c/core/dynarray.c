@@ -196,6 +196,19 @@ void __c_set_dynarray_i32(dynarray_i32* arr, int index, int value) {
     arr->data[index] = value;
 }
 
+void __c_set_dynarray_f64(dynarray_i32* arr, int index, double value) {
+    uint64_t bits = 0;
+    memcpy(&bits, &value, sizeof(bits));
+    __c_set_dynarray_i32(arr, index, (int)(bits & UINT32_MAX));
+    __c_set_dynarray_i32(arr, index + 1, (int)(bits >> 32));
+}
+
+void __c_set_dynarray_pointer(dynarray_i32* arr, int index, const void* value) {
+    uintptr_t bits = (uintptr_t)value;
+    __c_set_dynarray_i32(arr, index, (int)(bits & UINT32_MAX));
+    __c_set_dynarray_i32(arr, index + 1, (int)(bits >> 32));
+}
+
 // 获取数组长度
 int __c_len_dynarray_i32(dynarray_i32* arr) {
     if (arr == NULL) return 0;

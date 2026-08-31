@@ -8,7 +8,7 @@ Dream 是一门语法类似Python，包含丰富的类型，支持模式匹配�
 - **静态类型系统** - 类型推导
 - **LLVM 后端** - 编译为高性能机器码
 
-- [项目总览](docs/overview.md)
+- [项目总览](docs/OVERVIEW.md)
 
 ## OCaml 正式编译器的流程
 

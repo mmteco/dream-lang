@@ -2,4 +2,4 @@
 
 from io import STDOUT, STDERR, print, eprintln, eprint
 
-let prelude_all_names: list[str] = ["print", "eprintln", "eprint"]
+let prelude_all_names: list[str] = ["print", "eprintln", "eprint", "str"]

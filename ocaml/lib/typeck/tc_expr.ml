@@ -123,7 +123,7 @@ let find_interface_method_type env interface_name interface_params method_name =
 (* 字符串内置方法类型表，EAttr 与 EEnumVariant 共用 *)
 let string_method_type method_name =
   match method_name with
-  | "length" -> Some (TyFunc ([], TyInt))
+  | "length" | "len" -> Some (TyFunc ([], TyInt))
   | "upper" | "lower" | "strip" -> Some (TyFunc ([], TyStr))
   | "find" -> Some (TyFunc ([TyStr], TyInt))
   | "startswith" | "endswith" -> Some (TyFunc ([TyStr], TyBool))
@@ -140,6 +140,14 @@ let bytes_method_type method_name =
   | "get" -> Some (TyFunc ([TyInt], TyByte))
   | "slice" -> Some (TyFunc ([TyInt; TyInt], TyBytes))
   | "decode" -> Some (TyFunc ([], TyStr))
+  | _ -> None
+
+let dict_method_type key_type value_type method_name =
+  match method_name with
+  | "len" | "length" -> Some (TyFunc ([], TyInt))
+  | "has" -> Some (TyFunc ([key_type], TyBool))
+  | "get" -> Some (TyFunc ([key_type], value_type))
+  | "set" -> Some (TyFunc ([key_type; value_type], TyDict (key_type, value_type)))
   | _ -> None
 
 (* 表达式类型推导 *)
@@ -205,6 +213,11 @@ let rec infer_expr env = function
        | In ->
            (match t1', t2' with
             | TyStr, TyStr -> Some (TyBool, s3)
+            | actual_key_type, TyDict (key_type, _) ->
+                (try
+                   let s4 = unify key_type actual_key_type in
+                   Some (TyBool, compose_subst s4 s3)
+                 with Failure _ -> None)
             | actual_type, TyList element_type ->
                 (try
                    let s4 = unify actual_type element_type in
@@ -498,7 +511,12 @@ let rec infer_expr env = function
                 report_error err;
                 (TyUnknown, combined_subst))
        | EVar (func_name, func_pos) ->
-           if Env.is_c_runtime_function func_name && not (is_stdlib_file ()) then begin
+           if func_name = "dict" && args = [] then begin
+             (TyDict (fresh_type_var (), fresh_type_var ()), empty_subst)
+           end else if func_name = "str" && List.length args = 1 then begin
+             let (_, arg_subst) = infer_expr env (List.hd args) in
+             (TyStr, arg_subst)
+           end else if Env.is_c_runtime_function func_name && not (is_stdlib_file ()) then begin
              let err = make_error (NameError func_name) func_pos
                (Printf.sprintf "Cannot call internal C function '%s' directly. Use the Dream API instead." func_name) in
              report_error err;
@@ -732,6 +750,14 @@ let rec infer_expr env = function
             | None ->
                 let err = make_error (TypeError "Unknown bytes method") pos
                   (Printf.sprintf "Bytes type has no method '%s'" attr) in
+                report_error err;
+                (TyUnknown, obj_subst))
+       | TyDict (key_type, value_type) ->
+           (match dict_method_type key_type value_type attr with
+            | Some method_type -> (method_type, obj_subst)
+            | None ->
+                let err = make_error (TypeError "Unknown dict method") pos
+                  (Printf.sprintf "Dictionary type has no method '%s'" attr) in
                 report_error err;
                 (TyUnknown, obj_subst))
        | TyStruct (struct_name, _) ->

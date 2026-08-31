@@ -1,4 +1,3 @@
-from str import from_int
 from utf8 import ord
 from compiler_operator import (
     IR_OPERATOR_EQ,
@@ -138,11 +137,26 @@ const MIR_OP_CLOSURE: int = 19
 const MIR_OP_RUNTIME: int = 20
 const MIR_OP_GLOBAL_LOAD: int = 21
 const MIR_OP_GLOBAL_STORE: int = 22
-const MIR_OP_MAX: int = MIR_OP_GLOBAL_STORE
-const MIR_RUNTIME_LIST_SET: int = 4
-const MIR_RUNTIME_LIST_SET_DYNAMIC: int = 5
+const MIR_OP_DISPLAY: int = 23
+const MIR_OP_MAX: int = MIR_OP_DISPLAY
+const MIR_RUNTIME_NONE: int = 0
+const MIR_RUNTIME_PRINT: int = 1
+const MIR_RUNTIME_DISPLAY: int = 2
+const MIR_RUNTIME_LIST_NEW: int = 3
+const MIR_RUNTIME_LIST_GET: int = 4
+const MIR_RUNTIME_LIST_SET: int = 5
+const MIR_RUNTIME_LIST_SET_DYNAMIC: int = 6
 const MIR_RUNTIME_LIST_APPEND: int = 7
-const MIR_RUNTIME_FUNCTION_CALL: int = 15
+const MIR_RUNTIME_LIST_SLICE: int = 8
+const MIR_RUNTIME_DICT_NEW: int = 9
+const MIR_RUNTIME_DICT_GET: int = 10
+const MIR_RUNTIME_DICT_SET: int = 11
+const MIR_RUNTIME_TUPLE_NEW: int = 12
+const MIR_RUNTIME_TUPLE_GET: int = 13
+const MIR_RUNTIME_STRUCT_NEW: int = 14
+const MIR_RUNTIME_ENUM_NEW: int = 15
+const MIR_RUNTIME_INDEX_CHECK: int = 16
+const MIR_RUNTIME_FUNCTION_CALL: int = 17
 
 const MIR_TERM_JUMP: int = 1
 const MIR_TERM_BRANCH: int = 2
@@ -752,7 +766,7 @@ def mir_literal_form(hir: HirProgram, state: MirLowerState, node_id: int) -> int
     if hir.records[offset + 1] != HIR_OP_LITERAL:
         return 0
     let source_start = hir.records[offset + 3]
-    if source_start >= 0 and source_start < len(state.source):
+    if source_start >= 0 and source_start < state.source.len():
         if state.source[source_start:source_start + 1] == "'":
             return 2
     return 1
@@ -775,7 +789,7 @@ def mir_impl_interface_accepts(interface_type: int, value_type: int, literal_for
 
 def mir_find_function(state: MirLowerState, source_start: int, source_end: int) -> int:
     let name = state.source[source_start:source_end]
-    if name in prelude_all_names or external_id_from_name(name) >= 0:
+    if name == "str" or name in prelude_all_names or external_id_from_name(name) >= 0:
         return -1
     let func_index = 0
     while func_index < len(state.functions.starts):
@@ -965,7 +979,7 @@ def mir_find_struct_init(state: MirLowerState, declaration_index: int) -> int:
     if declaration_index < 0 or declaration_index >= len(STRUCT_DECLARATION_STARTS):
         return -1
     let struct_start = STRUCT_DECLARATION_ENDS[declaration_index]
-    let next_struct = len(state.source)
+    let next_struct = state.source.len()
     let next_index = declaration_index + 1
     if next_index < len(STRUCT_DECLARATION_STARTS):
         next_struct = STRUCT_DECLARATION_STARTS[next_index]
@@ -1253,7 +1267,7 @@ def mir_lower_tuple_let(hir: HirProgram, node_id: int, state: MirLowerState) -> 
     let source_start = hir.records[offset + 3]
     let source_end = hir.records[offset + 4]
     let cursor = source_start
-    let source_length = len(state.source)
+    let source_length = state.source.len()
     while cursor < source_end and cursor < source_length and state.source[cursor] != '(':
         cursor = cursor + 1
     if cursor >= source_end or cursor >= source_length:
@@ -1417,7 +1431,7 @@ def mir_func_return_dict_value_declaration(state: MirLowerState, function_index:
     if function_index < 0 or function_index >= len(state.functions.ends):
         return -1
     let cursor = mir_int_list_get(state.functions.ends, function_index)
-    let source_end = len(state.source)
+    let source_end = state.source.len()
     while cursor + 1 < source_end and state.source[cursor] != '\n':
         if state.source[cursor] == '-' and state.source[cursor + 1] == '>':
             let type_start = cursor + 2
@@ -1534,7 +1548,6 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
                 # bytes（encode 结果）元素为 int；list 取定义元素类型
                 return mir_list_element_type(state, local_value)
             if base_type == MIR_TYPE_TUPLE:
-                # tuple 底层为 dynarray_i32，元素为 int
                 return MIR_TYPE_I32
         return result_type
     if hir.records[base_node_offset + 1] == HIR_OP_FIELD:
@@ -2017,7 +2030,10 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
         let is_local_assignment = false
         if payload_count > 2:
             let target_kind_offset = hir_value_offset(payload_start + 2)
-            if hir.values[target_kind_offset] == HIR_VALUE_INT and hir.values[target_kind_offset + 1] == 0:
+            if (
+                hir.values[target_kind_offset] == HIR_VALUE_INT and
+                hir.values[target_kind_offset + 1] == ASSIGNMENT_FORM_LOCAL
+            ):
                 is_local_assignment = true
         if payload_count > 0:
             let value_index = payload_start + payload_count - 1
@@ -2042,12 +2058,12 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
             else:
                 mir_bind_symbol(state, hir.values[name_start_offset + 1], hir.values[name_end_offset + 1],
                     assigned_value)
-        let assignment_form = 0
+        let assignment_form = ASSIGNMENT_FORM_LOCAL
         if payload_count > 2:
             let assignment_form_offset = hir_value_offset(payload_start + 2)
             if hir.values[assignment_form_offset] == HIR_VALUE_INT:
                 assignment_form = hir.values[assignment_form_offset + 1]
-        if assignment_form == 1 and payload_count >= 5 and assigned_value >= 0:
+        if assignment_form == ASSIGNMENT_FORM_INDEX and payload_count >= 5 and assigned_value >= 0:
             let index_offset = hir_value_offset(payload_start + 3)
             let collection_start_offset = hir_value_offset(payload_start)
             let collection_end_offset = hir_value_offset(payload_start + 1)
@@ -2083,7 +2099,38 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                 mir_state_append_runtime(state, runtime_id, operand_start, 3)
                 mir_int_list_set(state.hir_value_map, node_id, -1)
                 return -1
-        if assignment_form == 3 and payload_count >= 5 and assigned_value >= 0:
+        if assignment_form == ASSIGNMENT_FORM_FIELD and payload_count >= 5 and assigned_value >= 0:
+            let target_offset = hir_value_offset(payload_start + 3)
+            if hir.values[target_offset] == HIR_VALUE_NODE:
+                let target_node_id = hir.values[target_offset + 1]
+                let target_node_offset = hir_record_offset(target_node_id)
+                if hir.records[target_node_offset + 1] == HIR_OP_FIELD and hir.records[target_node_offset + 6] >= 3:
+                    let field_payload_start = hir.records[target_node_offset + 5]
+                    let base_offset = hir_value_offset(field_payload_start)
+                    let field_start_offset = hir_value_offset(field_payload_start + 1)
+                    let field_end_offset = hir_value_offset(field_payload_start + 2)
+                    if (
+                        hir.values[base_offset] == HIR_VALUE_NODE and
+                        hir.values[field_start_offset] == HIR_VALUE_INT and
+                        hir.values[field_end_offset] == HIR_VALUE_INT
+                    ):
+                        let base_node_id = hir.values[base_offset + 1]
+                        let base_value = mir_lower_hir_node(hir, base_node_id, state)
+                        let field_declaration = mir_hir_node_struct_declaration(hir, base_node_id)
+                        if field_declaration < 0:
+                            field_declaration = mir_state_struct_declaration(state, base_value)
+                        let field_start = hir.values[field_start_offset + 1]
+                        let field_end = hir.values[field_end_offset + 1]
+                        let field_slot = mir_struct_field_slot(state, field_declaration, field_start, field_end)
+                        if base_value >= 0 and field_slot >= 0:
+                            let operand_start = mir_value_count(state.values)
+                            mir_append_operand(state.values, MIR_OPERAND_VALUE, base_value)
+                            mir_append_operand(state.values, MIR_OPERAND_INT, field_slot)
+                            mir_append_operand(state.values, MIR_OPERAND_VALUE, assigned_value)
+                            mir_state_append_runtime(state, MIR_RUNTIME_LIST_SET, operand_start, 3)
+                            mir_int_list_set(state.hir_value_map, node_id, -1)
+                            return -1
+        if assignment_form == ASSIGNMENT_FORM_INDEX_TARGET and payload_count >= 5 and assigned_value >= 0:
             let target_offset = hir_value_offset(payload_start + 3)
             if hir.values[target_offset] == HIR_VALUE_NODE:
                 let target_node_id = hir.values[target_offset + 1]
@@ -2183,6 +2230,9 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
         if direct_function < 0 and callee_name_text == "len":
             external_function = MIR_EXTERNAL_BASE + EXTERNAL_ID_LEN
             call_type = MIR_TYPE_I32
+        if direct_function < 0 and callee_name_text == "dict_items":
+            external_function = MIR_EXTERNAL_BASE + EXTERNAL_ID_DICT_ITEMS_TUPLES
+            call_type = MIR_TYPE_LIST_PTR
         let constructor_declaration = -1
         let constructor_function = -1
         if method_target_id < 0 and callee_name_start >= 0:
@@ -2266,6 +2316,32 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                     append(argument_values, argument_value)
                     append(argument_node_ids, argument_node_id)
             argument_index = argument_index + 1
+        if method_target_id < 0 and callee_name_text == "str":
+            if len(argument_values) == 1:
+                let display_value = mir_int_list_get(argument_values, 0)
+                let display_declaration = mir_state_struct_declaration(state, display_value)
+                let display_function = -1
+                if display_declaration >= 0:
+                    display_function = mir_find_struct_method(state, display_declaration, "to_string")
+                if display_function >= 0:
+                    let display_start = mir_value_count(state.values)
+                    mir_append_operand(state.values, MIR_OPERAND_SYMBOL, display_function)
+                    mir_append_operand(state.values, MIR_OPERAND_VALUE, display_value)
+                    let display_result = mir_int_list_get(state.next_value, 0)
+                    mir_int_list_set(state.next_value, 0, display_result + 1)
+                    mir_state_append_instruction(state, MIR_OP_CALL, MIR_TYPE_STR, display_result, display_start, 2)
+                    mir_int_list_set(state.hir_value_map, node_id, display_result)
+                    return display_result
+                let display_start = mir_value_count(state.values)
+                mir_append_operand(state.values, MIR_OPERAND_VALUE, display_value)
+                let display_result = mir_int_list_get(state.next_value, 0)
+                mir_int_list_set(state.next_value, 0, display_result + 1)
+                mir_state_set_value_type(state, display_result, MIR_TYPE_STR)
+                mir_state_append_instruction(state, MIR_OP_DISPLAY, MIR_TYPE_STR, display_result, display_start, 1)
+                mir_int_list_set(state.hir_value_map, node_id, display_result)
+                return display_result
+            mir_int_list_set(state.hir_value_map, node_id, -1)
+            return -1
         if method_target_id < 0 and callee_name_text in prelude_all_names:
             let valid_arguments = len(argument_values) == 1
             if callee_name_text == "print":
@@ -4880,7 +4956,7 @@ def mir_model_build_program(hir_records: list[int], hir_values: list[int], hir_s
 
 def mir_validation_error(record_id: int, reason: str) -> bool:
     eprint("MIR validation failed record=")
-    eprint(from_int(record_id))
+    eprint(record_id)
     eprint(" reason=")
     eprint(reason)
     eprintln("")
@@ -5104,22 +5180,22 @@ def mir_validate_model_program(program: MirProgram) -> bool:
                 return mir_validation_error(record_id, "unknown jump block")
             let parameter_count = mir_block_parameter_count(index, func_index, target_block)
             if operand_count != parameter_count + 1:
-                eprint(from_int(record_id))
+                eprint(record_id)
                 eprint(" fn=")
-                eprint(from_int(func_index))
+                eprint(func_index)
                 eprint(" opc=")
-                eprint(from_int(operand_count))
+                eprint(operand_count)
                 eprint(" tgt=")
-                eprint(from_int(target_block))
+                eprint(target_block)
                 eprint(" pc=")
-                eprint(from_int(parameter_count))
+                eprint(parameter_count)
                 let debug_index = 0
                 while debug_index < operand_count:
                     let debug_offset = mir_value_offset(operand_start + debug_index)
                     eprint(" v")
-                    eprint(from_int(mir_int_list_get(values, debug_offset)))
+                    eprint(mir_int_list_get(values, debug_offset))
                     eprint(":")
-                    eprint(from_int(mir_int_list_get(values, debug_offset + 1)))
+                    eprint(mir_int_list_get(values, debug_offset + 1))
                     debug_index = debug_index + 1
                 eprintln("")
                 return mir_validation_error(record_id, "jump argument count")
@@ -5155,15 +5231,15 @@ def mir_validate_model_program(program: MirProgram) -> bool:
                     expected_argument_count = false_argument_count
                 if mir_block_parameter_count(index, func_index,
                     values[target_offset + 1]) != expected_argument_count:
-                    eprint(from_int(record_id))
+                    eprint(record_id)
                     eprint(" tgt=")
-                    eprint(from_int(branch_target_index))
+                    eprint(branch_target_index)
                     eprint(" blk=")
-                    eprint(from_int(values[target_offset + 1]))
+                    eprint(values[target_offset + 1])
                     eprint(" exp=")
-                    eprint(from_int(expected_argument_count))
+                    eprint(expected_argument_count)
                     eprint(" got=")
-                    eprint(from_int(mir_block_parameter_count(index, func_index, values[target_offset + 1])))
+                    eprint(mir_block_parameter_count(index, func_index, values[target_offset + 1]))
                     eprintln("")
                     return mir_validation_error(record_id, "branch arguments")
                 branch_target_index = branch_target_index + 1

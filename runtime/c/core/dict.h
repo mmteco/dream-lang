@@ -19,6 +19,7 @@ typedef struct dict_entry {
     void* key;
     void* value;
     struct dict_entry* next;
+    struct dict_entry* order_next;
 } dict_entry_t;
 
 typedef struct {
@@ -27,6 +28,8 @@ typedef struct {
     int capacity;
     int size;
     dict_entry_t** buckets;
+    dict_entry_t* order_head;
+    dict_entry_t* order_tail;
 } dict_t;
 
 dict_t* dict_create(dict_key_type key_type, dict_val_type val_type, int initial_capacity);
@@ -68,6 +71,7 @@ int __c_dict_size_str_ptr(dict_t* dict);
 
 bool dict_has_int(dict_t* dict, int key);
 bool dict_has_str(dict_t* dict, const char* key);
+bool __c_dict_has_int(dict_t* dict, int key);
 bool __c_dict_has_str(dict_t* dict, const char* key);
 
 void dict_remove_int(dict_t* dict, int key);

@@ -3,13 +3,13 @@
 const STDOUT: int = 0
 const STDERR: int = 1
 
-def print(value: str, file: int = STDOUT, end: str = "\n"):
-    __c_io_write(file, value, end)
+def print[T](value: T, file: int = STDOUT, end: str = "\n"):
+    __c_io_write(file, str(value), end)
 
-def eprintln(value: str):
+def eprintln[T](value: T):
     print(value, STDERR, "\n")
 
-def eprint(value: str):
+def eprint[T](value: T):
     print(value, STDERR, "")
 
 def read(path: str) -> str:

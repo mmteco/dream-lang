@@ -2,7 +2,6 @@
 # 节点索引 = 池中 kind 字段的下标;池首 dummy 节点(kind=0),真实节点 >= 1,0 表示"无节点"
 # 子节点区间 [child_start, child_end) 可走查:从 child_start 循环 ast_next_node 直到 child_end
 
-from str import from_int
 from compiler_lex import (
     parse_integer,
     TOKEN_EOF,
@@ -619,19 +618,19 @@ def ast_validate_program(ast: list[int]) -> bool:
     while node < len(ast):
         if not ast_validate_node_children(ast, node):
             eprint("AST validation failed node=")
-            eprint(from_int(node))
+            eprint(node)
             eprint(" kind=")
-            eprint(from_int(ast_node_kind(ast, node)))
+            eprint(ast_node_kind(ast, node))
             eprint(" start=")
-            eprint(from_int(ast_node_start(ast, node)))
+            eprint(ast_node_start(ast, node))
             eprint(" end=")
-            eprint(from_int(ast_node_end(ast, node)))
+            eprint(ast_node_end(ast, node))
             eprint(" args=")
             let diagnostic_argument_index = 0
             while diagnostic_argument_index < ast_node_size(ast, node) - AST_HEADER_SIZE:
                 if diagnostic_argument_index > 0:
                     eprint(",")
-                eprint(from_int(ast_node_arg(ast, node, diagnostic_argument_index)))
+                eprint(ast_node_arg(ast, node, diagnostic_argument_index))
                 diagnostic_argument_index = diagnostic_argument_index + 1
             eprintln("")
             return false
@@ -1090,7 +1089,7 @@ def ast_parse_assign_statement(context: ParseContext, index: int, ast: list[int]
         return (index, 0)
     ast_set_arg(ast, node, 0, name_start)
     ast_set_arg(ast, node, 1, name_end)
-    ast_set_arg(ast, node, 2, 0)
+    ast_set_arg(ast, node, 2, ASSIGNMENT_FORM_LOCAL)
     ast_set_arg(ast, node, 3, 0)
     ast_set_arg(ast, node, 4, value_node)
     ast_set_arg(ast, node, 5, len(ast))
@@ -1110,7 +1109,7 @@ def ast_parse_compound_assign_statement(context: ParseContext, index: int, ast: 
     let assign_node = ast_append_node(ast, AST_STMT_ASSIGN, name_start, name_end, ARGS_STMT_ASSIGN)
     ast_set_arg(ast, assign_node, 0, name_start)
     ast_set_arg(ast, assign_node, 1, name_end)
-    ast_set_arg(ast, assign_node, 2, 0)
+    ast_set_arg(ast, assign_node, 2, ASSIGNMENT_FORM_LOCAL)
     ast_set_arg(ast, assign_node, 3, 0)
     ast_set_arg(ast, assign_node, 4, binary_node)
     ast_set_arg(ast, assign_node, 5, len(ast))
@@ -1130,7 +1129,7 @@ def ast_parse_attribute_assign_statement(context: ParseContext, index: int, ast:
         ARGS_STMT_ASSIGN)
     ast_set_arg(ast, node, 0, token_start(starts, index))
     ast_set_arg(ast, node, 1, token_end(ends, index))
-    ast_set_arg(ast, node, 2, 2)
+    ast_set_arg(ast, node, 2, ASSIGNMENT_FORM_FIELD)
     ast_set_arg(ast, node, 3, target_node)
     ast_set_arg(ast, node, 4, value_node)
     ast_set_arg(ast, node, 5, len(ast))
@@ -1150,7 +1149,7 @@ def ast_parse_attribute_element_assign_statement(context: ParseContext, index: i
         ARGS_STMT_ASSIGN)
     ast_set_arg(ast, node, 0, token_start(starts, index))
     ast_set_arg(ast, node, 1, token_end(ends, index))
-    ast_set_arg(ast, node, 2, 3)
+    ast_set_arg(ast, node, 2, ASSIGNMENT_FORM_INDEX_TARGET)
     ast_set_arg(ast, node, 3, target_node)
     ast_set_arg(ast, node, 4, value_node)
     ast_set_arg(ast, node, 5, len(ast))
@@ -1168,7 +1167,7 @@ def ast_parse_element_assign_statement(context: ParseContext, index: int, ast: l
     if key_node == 0:
         return (index, 0)
     let assign_next_index = key_next_index
-    let assign_form = 1
+    let assign_form = ASSIGNMENT_FORM_INDEX
     while token_kind(kinds, assign_next_index) not in [TOKEN_CLOSE_BRACKET, TOKEN_NEWLINE, TOKEN_EOF]:
         assign_next_index = assign_next_index + 1
     if token_kind(kinds, assign_next_index) != TOKEN_CLOSE_BRACKET:

@@ -1,4 +1,3 @@
-from str import from_int
 from compiler_mir_model import (
     MirProgram,
     mir_record_count,
@@ -60,6 +59,7 @@ from compiler_mir_model import (
     MIR_OP_ASSIGN,
     MIR_OP_CLOSURE,
     MIR_OP_RUNTIME,
+    MIR_OP_DISPLAY,
     MIR_OP_MAX,
     MIR_TERM_JUMP,
     MIR_TERM_BRANCH,
@@ -92,7 +92,7 @@ def lir_debug_checkpoint(label: str, previous_time: int) -> int:
     eprint("[timing] lir-")
     eprint(label)
     eprint(" ")
-    eprint(from_int(current_time - previous_time))
+    eprint(current_time - previous_time)
     eprintln("ms")
     return current_time
 
@@ -164,20 +164,24 @@ const LIR_OP_MAX: int = LIR_OP_GLOBAL_STORE
 
 const LIR_RUNTIME_NONE: int = 0
 const LIR_RUNTIME_PRINT: int = 1
-const LIR_RUNTIME_LIST_NEW: int = 2
-const LIR_RUNTIME_LIST_GET: int = 3
-const LIR_RUNTIME_LIST_SET: int = 4
-const LIR_RUNTIME_LIST_APPEND: int = 5
-const LIR_RUNTIME_LIST_SLICE: int = 6
-const LIR_RUNTIME_DICT_NEW: int = 7
-const LIR_RUNTIME_DICT_GET: int = 8
-const LIR_RUNTIME_DICT_SET: int = 9
-const LIR_RUNTIME_TUPLE_NEW: int = 10
-const LIR_RUNTIME_TUPLE_GET: int = 11
-const LIR_RUNTIME_STRUCT_NEW: int = 12
-const LIR_RUNTIME_ENUM_NEW: int = 13
-const LIR_RUNTIME_INDEX_CHECK: int = 14
-const LIR_RUNTIME_MAX: int = LIR_RUNTIME_INDEX_CHECK
+const LIR_RUNTIME_DISPLAY: int = 2
+const LIR_RUNTIME_LIST_NEW: int = 3
+const LIR_RUNTIME_LIST_GET: int = 4
+const LIR_RUNTIME_LIST_SET: int = 5
+const LIR_RUNTIME_LIST_SET_DYNAMIC: int = 6
+const LIR_RUNTIME_LIST_APPEND: int = 7
+const LIR_RUNTIME_LIST_SLICE: int = 8
+const LIR_RUNTIME_DICT_NEW: int = 9
+const LIR_RUNTIME_DICT_GET: int = 10
+const LIR_RUNTIME_DICT_SET: int = 11
+const LIR_RUNTIME_TUPLE_NEW: int = 12
+const LIR_RUNTIME_TUPLE_GET: int = 13
+const LIR_RUNTIME_STRUCT_NEW: int = 14
+const LIR_RUNTIME_ENUM_NEW: int = 15
+const LIR_RUNTIME_INDEX_CHECK: int = 16
+const LIR_RUNTIME_FUNCTION_CALL: int = 17
+const LIR_RUNTIME_DYNAMIC: int = 18
+const LIR_RUNTIME_MAX: int = LIR_RUNTIME_DYNAMIC
 
 const LIR_TERM_JUMP: int = 1
 const LIR_TERM_BRANCH: int = 2
@@ -367,6 +371,8 @@ def lir_runtime_from_mir(opcode: int) -> int:
         return LIR_RUNTIME_LIST_SLICE
     if opcode == MIR_OP_PRINT:
         return LIR_RUNTIME_PRINT
+    if opcode == MIR_OP_DISPLAY:
+        return LIR_RUNTIME_DISPLAY
     return LIR_RUNTIME_NONE
 
 def lir_record_kind_from_mir(record_kind: int) -> int:
@@ -723,7 +729,7 @@ def lir_infer_block_parameter_types(program: LirProgram):
 
 def lir_validation_error(record_id: int, reason: str) -> bool:
     eprint("LIR validation failed record=")
-    eprint(from_int(record_id))
+    eprint(record_id)
     eprint(" reason=")
     eprint(reason)
     eprintln("")

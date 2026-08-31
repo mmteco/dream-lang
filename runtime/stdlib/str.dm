@@ -1,42 +1,37 @@
-# 字符串操作标准库
+# String helpers with a small, Python-like surface.
 
-def from_int(value: int) -> str:
-    if value == 0:
-        return "0"
+def len(value: str) -> int:
+    return __c_str_len(value)
 
-    let is_negative = value < 0
-    if is_negative:
-        value = 0 - value
+def char_at(value: str, index: int) -> rune:
+    return __c_utf8_rune_at(value, index)
 
-    let digits: list[int] = []
-    while value > 0:
-        append(digits, value % 10)
-        value = value / 10
+def upper(value: str) -> str:
+    return __c_str_upper(value)
 
-    let result = ""
-    if is_negative:
-        result = "-"
+def lower(value: str) -> str:
+    return __c_str_lower(value)
 
-    let index = len(digits) - 1
-    while index >= 0:
-        let digit_text = match digits[index]:
-            0: "0"
-            1: "1"
-            2: "2"
-            3: "3"
-            4: "4"
-            5: "5"
-            6: "6"
-            7: "7"
-            8: "8"
-            9: "9"
-            _: "0"
-        result = result + digit_text
-        index = index - 1
-    return result
+def strip(value: str) -> str:
+    return __c_str_strip(value)
+
+def find(value: str, sub: str) -> int:
+    return __c_str_find(value, sub)
+
+def startswith(value: str, prefix: str) -> bool:
+    return __c_str_starts_with(value, prefix)
+
+def endswith(value: str, suffix: str) -> bool:
+    return __c_str_ends_with(value, suffix)
+
+def replace(value: str, old: str, new: str) -> str:
+    return __c_str_replace(value, old, new)
+
+def encode(value: str) -> bytes:
+    return __c_str_to_bytes(value)
 
 def rune_at(value: str, index: int) -> rune:
-    return __c_utf8_rune_at(value, index)
+    return char_at(value, index)
 
 def rune_count(value: str) -> int:
     return __c_utf8_rune_count(value)

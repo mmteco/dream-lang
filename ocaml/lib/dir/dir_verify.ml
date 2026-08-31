@@ -292,7 +292,11 @@ let verify module_ =
                   | None -> add_error (Printf.sprintf
                       "make_interface target %s is undefined" function_name)
                   | Some (declared_parameters, declared_return) ->
-                      let expected_parameters = concrete_type :: parameter_types in
+                      let receiver_type = match concrete_type with
+                        | Struct _ -> Ref concrete_type
+                        | _ -> concrete_type
+                      in
+                      let expected_parameters = receiver_type :: parameter_types in
                       if List.length declared_parameters <> List.length expected_parameters ||
                          not (List.for_all2 equal_ty declared_parameters expected_parameters) ||
                          not (equal_ty declared_return return_type) then
@@ -450,7 +454,12 @@ let verify module_ =
                    let actual_type = snd (List.nth fields index) in
                    if not (equal_ty actual_type field_type) then
                      add_error "struct_get result type does not match struct field"
+               | Some (Ref (Struct (_, fields))) when index >= 0 && index < List.length fields ->
+                   let actual_type = snd (List.nth fields index) in
+                   if not (equal_ty actual_type field_type) then
+                     add_error "struct_get result type does not match struct field"
                | Some (Struct _) -> add_error "struct_get index is out of bounds"
+               | Some (Ref (Struct _)) -> add_error "struct_get index is out of bounds"
                | Some _ -> add_error "struct_get requires a struct value"
                | None -> add_error "struct_get uses an undefined struct value")
           | _ -> add_error "struct_get requires an SSA struct value");
@@ -458,6 +467,33 @@ let verify module_ =
            add_error (Printf.sprintf "duplicate value %%v%d" value)
          else
            Hashtbl.add value_types value field_type
+     | StructSet (_, struct_value, field_type, index, field_value) ->
+         (match struct_value with
+          | Value struct_value_id ->
+              (match Hashtbl.find_opt value_types struct_value_id with
+               | Some (Ref (Struct (_, fields))) when index >= 0 && index < List.length fields ->
+                   let actual_type = snd (List.nth fields index) in
+                   if not (equal_ty actual_type field_type) then
+                     add_error "struct_set field type does not match struct field"
+               | Some (Ref (Struct _)) -> add_error "struct_set index is out of bounds"
+               | Some _ -> add_error "struct_set requires a struct reference"
+               | None -> add_error "struct_set uses an undefined struct reference")
+          | _ -> add_error "struct_set requires an SSA struct reference");
+         verify_operand value_types field_value field_type "struct_set value"
+     | Alloca (value, type_value) ->
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value (Ref type_value)
+     | Load (value, type_value, pointer) ->
+         verify_operand value_types pointer (Ref type_value) "load pointer";
+         if Hashtbl.mem value_types value then
+           add_error (Printf.sprintf "duplicate value %%v%d" value)
+         else
+           Hashtbl.add value_types value type_value
+     | Store (type_value, stored_value, pointer) ->
+         verify_operand value_types stored_value type_value "store value";
+         verify_operand value_types pointer (Ref type_value) "store pointer"
      | EnumCreate (value, enum_type, tag, payload_type, payload) ->
          (match enum_type with
           | Enum (_, variants) when tag >= 0 && tag < List.length variants ->

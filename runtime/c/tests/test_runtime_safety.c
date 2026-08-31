@@ -154,9 +154,8 @@ static void test_dict_and_tuple(void) {
     for (int index = 0; index < __c_len_dynarray_ptr(items); index++) {
         tuple2_ptr* pair = (tuple2_ptr*)__c_get_dynarray_ptr(items, index);
         assert(pair != NULL);
-        if (index == 0) {
-            assert((int)tuple2_ptr_get(pair, 0) >= 0);
-        }
+        assert((int)tuple2_ptr_get(pair, 0) == index);
+        assert((int)tuple2_ptr_get(pair, 1) == index * 2);
         tuple2_ptr_free(pair);
     }
     __c_free_dynarray_ptr(items);

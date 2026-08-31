@@ -1,4 +1,3 @@
-from str import from_int
 from utf8 import ord
 
 const TOKEN_EOF: int = 0
@@ -72,6 +71,11 @@ const TOKEN_SHL_ASSIGN: int = 69
 const TOKEN_SHR_ASSIGN: int = 70
 const TOKEN_PIPE: int = 71
 const TOKEN_FLOORDIVIDE_ASSIGN: int = 72
+
+const ASSIGNMENT_FORM_LOCAL: int = 0
+const ASSIGNMENT_FORM_INDEX: int = 1
+const ASSIGNMENT_FORM_FIELD: int = 2
+const ASSIGNMENT_FORM_INDEX_TARGET: int = 3
 
 struct ParseContext:
     src: str
@@ -225,9 +229,9 @@ struct GlobalTable:
     expression_indexes: list[int]
 
 def classify_package(file_path: str) -> int:
-    if __c_str_starts_with(file_path, "runtime/stdlib/"):
+    if file_path.startswith("runtime/stdlib/"):
         return PACKAGE_STDLIB
-    if __c_str_starts_with(file_path, "bootstrap/"):
+    if file_path.startswith("bootstrap/"):
         return PACKAGE_BOOTSTRAP
     return PACKAGE_USER
 
@@ -255,7 +259,7 @@ def is_trusted_package(package_id: int) -> bool:
     return package_id == PACKAGE_STDLIB or package_id == PACKAGE_BOOTSTRAP
 
 def is_private_symbol(name: str) -> bool:
-    if len(name) == 0:
+    if name.len() == 0:
         return false
     return ord(name[0]) == ASCII_UNDERSCORE
 
@@ -630,7 +634,7 @@ def lex(tokens: TokenStream) -> int:
     let starts = tokens.starts
     let ends = tokens.ends
     let index = 0
-    let source_length = len(source)
+    let source_length = source.len()
     let bracket_depth = 0
     while index < source_length:
         let code = ord(source[index])
@@ -1072,7 +1076,7 @@ def enclosing_self_struct_declaration(tokens: TokenStream, func_name_start: int)
 def func_symbol_name(tokens: TokenStream, func_name_start: int, func_name_end: int) -> str:
     let source = tokens.src
     let method_prefix = enclosing_method_prefix(tokens, func_name_start)
-    if len(method_prefix) == 0:
+    if method_prefix.len() == 0:
         return source[func_name_start:func_name_end]
     let func_name = source[func_name_start:func_name_end]
     return method_prefix + func_name
@@ -1221,8 +1225,8 @@ def collect_interfaces(tokens: TokenStream, functions: FunctionTable, interfaces
                 let interface_end = interface_name_ends[interface_index]
                 let interface_prefix = "__dir_impl_" + source[interface_start:interface_end] + "_"
                 if (
-                    len(method_prefix) >= len(interface_prefix) and
-                    method_prefix[:len(interface_prefix)] == interface_prefix
+                    method_prefix.len() >= interface_prefix.len() and
+                    method_prefix[:interface_prefix.len()] == interface_prefix
                 ):
                     append(impl_func_indexes, func_index)
                     append(impl_decl_indexes, declaration_index)
@@ -1278,7 +1282,7 @@ def find_method_func_index(tokens: TokenStream, struct_name: str, method_name: s
             let struct_prefix = "__dir_method_" + struct_suffix
             if candidate_prefix == struct_prefix:
                 return func_index
-            if len(candidate_prefix) > 0:
+            if candidate_prefix.len() > 0:
                 return func_index
         func_index = func_index + 1
     return -1
@@ -1400,7 +1404,7 @@ def find_interface_declaration_func_index(tokens: TokenStream, method_name: str,
         let candidate_name = source[func_starts[func_index]:func_ends[func_index]]
         if candidate_name == method_name:
             let candidate_prefix = enclosing_method_prefix(tokens, func_starts[func_index])
-            if len(candidate_prefix) == 0 and not func_has_body(tokens, 0, 0, func_starts[func_index]):
+            if candidate_prefix.len() == 0 and not func_has_body(tokens, 0, 0, func_starts[func_index]):
                 return func_index
         func_index = func_index + 1
     return -1
@@ -1801,7 +1805,7 @@ def parameter_type_from_declaration(tokens: TokenStream, name_start: int, name_e
     let source = tokens.src
     if source_equals(source, name_start, name_end, "self"):
         return VALUE_TYPE_STRUCT
-    let source_length = len(source)
+    let source_length = source.len()
     let type_start = name_end
     while type_start < source_length and source[type_start] != ':':
         type_start = type_start + 1

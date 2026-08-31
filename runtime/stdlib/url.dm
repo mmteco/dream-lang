@@ -1,7 +1,5 @@
 # URL 解析与构建标准库
 
-from str import from_int
-
 struct Url:
     scheme: str
     host: str
@@ -66,7 +64,7 @@ def build(value: Url) -> str:
         result = value.scheme + "://"
     result = result + value.host
     if value.port > 0:
-        result = result + ":" + from_int(value.port)
+        result = result + ":" + str(value.port)
     if value.path != "":
         if value.path[0] == '/':
             result = result + value.path

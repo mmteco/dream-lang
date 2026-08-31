@@ -13,6 +13,7 @@ let rec llvm_ty = function
   | Tuple _ -> "%dynarray_ptr*"
   | Struct (_, fields) ->
       "{" ^ String.concat ", " (List.map (fun (_, field_type) -> llvm_ty field_type) fields) ^ "}"
+  | Ref type_value -> llvm_ty type_value ^ "*"
   | Enum (_, []) -> "%enum_t*"
   | Enum (_, variants) when List.exists (fun (_, payload_types) -> payload_types <> []) variants ->
       "%enum_t*"
@@ -54,6 +55,7 @@ let rec llvm_size (type_value : ty) = match type_value with
       align_to size (List.fold_left (fun offset (_, field_type) ->
         offset + llvm_size field_type
       ) 0 fields)
+  | Ref _ -> 8
 
 let llvm_env_size field_types =
   llvm_size (Struct ("closure_env", List.mapi (fun index field_type ->
@@ -240,7 +242,7 @@ let tuple_element_load buffer result_name element_type raw_name =
         result_name raw_name (llvm_ty element_type)
 
 let is_pointer_payload = function
-  | Bytes | Dict _ | List _ | Enum _ | Interface _ | Union _ | ClosureEnv _ | Func _ -> true
+  | Bytes | Dict _ | List _ | Enum _ | Interface _ | Union _ | ClosureEnv _ | Func _ | Ref _ -> true
   | _ -> false
 
 let render_instruction string_literals value_types buffer _instruction_label instruction =
@@ -508,8 +510,46 @@ let render_instruction string_literals value_types buffer _instruction_label ins
         | _ -> failwith "DIR struct field count does not match value count")
    | StructGet (value, _, struct_value, index) ->
        let struct_type = operand_type value_types struct_value in
-       Printf.bprintf buffer "  %s = extractvalue %s %s, %d\n"
-         (value_name value) (llvm_ty struct_type) (operand struct_value) index
+       (match struct_type with
+        | Ref aggregate_type ->
+            let fields = match aggregate_type with
+              | Struct (_, fields) -> fields
+              | _ -> failwith "DIR struct_get requires a struct reference"
+            in
+            let field_type = snd (List.nth fields index) in
+            let field_pointer = Printf.sprintf "%%dir_ref_field_%d" value in
+            Printf.bprintf buffer "  %s = getelementptr %s, %s* %s, i32 0, i32 %d\n"
+              field_pointer (llvm_ty aggregate_type) (llvm_ty aggregate_type)
+              (operand struct_value) index;
+            Printf.bprintf buffer "  %s = load %s, %s* %s\n"
+              (value_name value) (llvm_ty field_type) (llvm_ty field_type) field_pointer
+        | _ ->
+            Printf.bprintf buffer "  %s = extractvalue %s %s, %d\n"
+              (value_name value) (llvm_ty struct_type) (operand struct_value) index)
+   | StructSet (value, struct_value, field_type, index, field_value) ->
+       let struct_type = operand_type value_types struct_value in
+       (match struct_type with
+        | Ref (Struct (_, _)) ->
+            let aggregate_type = match struct_type with
+              | Ref aggregate_type -> aggregate_type
+              | _ -> assert false
+            in
+            let field_pointer = Printf.sprintf "%%dir_set_ref_field_%d" value in
+            Printf.bprintf buffer "  %s = getelementptr %s, %s* %s, i32 0, i32 %d\n"
+              field_pointer (llvm_ty aggregate_type) (llvm_ty aggregate_type)
+              (operand struct_value) index;
+            Printf.bprintf buffer "  store %s %s, %s* %s\n"
+              (llvm_ty field_type) (operand field_value) (llvm_ty field_type) field_pointer
+        | _ -> failwith "DIR struct_set requires a struct reference")
+   | Alloca (value, type_value) ->
+       Printf.bprintf buffer "  %s = alloca %s\n"
+         (value_name value) (llvm_ty type_value)
+   | Load (value, type_value, pointer) ->
+       Printf.bprintf buffer "  %s = load %s, %s* %s\n"
+         (value_name value) (llvm_ty type_value) (llvm_ty type_value) (operand pointer)
+   | Store (type_value, stored_value, pointer) ->
+       Printf.bprintf buffer "  store %s %s, %s* %s\n"
+         (llvm_ty type_value) (operand stored_value) (llvm_ty type_value) (operand pointer)
    | EnumCreate (value, enum_type, tag, payload_type, payload) ->
        let create_name = match payload_type with
          | I32 -> "__c_enum_create_int"
@@ -843,11 +883,20 @@ let render_interface_artifact (interface_name, methods, concrete_type, method_na
       (if parameters = [] then "" else ", " ^ String.concat ", " parameters);
     Printf.bprintf buffer "entry:\n  %%dir_interface_typed_object = bitcast i8* %%dir_interface_object to %s*\n"
       concrete_llvm_type;
-    (* 枚举解引用得到 %enum_t*，结构体解引用得到聚合值 *)
-    Printf.bprintf buffer "  %%dir_interface_receiver = load %s, %s* %%dir_interface_typed_object\n"
-      concrete_llvm_type concrete_llvm_type;
+    let receiver_type = match concrete_type with
+      | Struct _ -> Ref concrete_type
+      | _ -> concrete_type
+    in
+    (match concrete_type with
+     | Struct _ ->
+         Printf.bprintf buffer "  %%dir_interface_receiver = bitcast %s %%dir_interface_typed_object to %s\n"
+           (llvm_ty concrete_type ^ "*") (llvm_ty receiver_type)
+     | _ ->
+         (* 枚举解引用得到 %enum_t*。*)
+         Printf.bprintf buffer "  %%dir_interface_receiver = load %s, %s* %%dir_interface_typed_object\n"
+           concrete_llvm_type concrete_llvm_type);
     let rendered_arguments = String.concat ", " (
-      (Printf.sprintf "%s %%dir_interface_receiver" concrete_llvm_type) ::
+      (Printf.sprintf "%s %%dir_interface_receiver" (llvm_ty receiver_type)) ::
       List.mapi (fun index parameter_type ->
         Printf.sprintf "%s %%dir_interface_argument_%d" (llvm_ty parameter_type) index
       ) parameter_types) in

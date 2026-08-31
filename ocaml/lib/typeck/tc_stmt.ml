@@ -958,9 +958,16 @@ let rec check_statement env = function
              Env.StringMap.add name ty acc
            ) Env.StringMap.empty struct_fields_list in
 
+           let method_env_base = Env.add_struct name {
+             Env.struct_name = name;
+             Env.struct_type_params = type_params;
+             Env.struct_fields;
+             Env.struct_methods = Env.StringMap.empty;
+           } env in
+
            let struct_methods = List.fold_left (fun methods_map (method_name, _type_params, params, ret_ty_opt, body) ->
              let method_env =
-               let base_env = create_child_env env in
+               let base_env = create_child_env method_env_base in
                let (_, final_env) = List.fold_left
                  (fun (is_first, e) (pname, pty_opt, _) ->
                    let pty =

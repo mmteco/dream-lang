@@ -18,6 +18,7 @@ type ty =
   | List of ty
   | Tuple of ty list
   | Struct of string * (string * ty) list
+  | Ref of ty
   | Enum of string * (string * ty list) list
   | Interface of string * (string * ty list * ty) list
   | Union of ty list
@@ -80,6 +81,10 @@ type instruction =
   | TupleGet of value * ty * operand * int
   | StructCreate of value * string * (string * ty) list * operand list
   | StructGet of value * ty * operand * int
+  | StructSet of value * operand * ty * int * operand
+  | Alloca of value * ty
+  | Load of value * ty * operand
+  | Store of ty * operand * operand
   | EnumCreate of value * ty * int * ty * operand
   | EnumCreateMulti of value * ty * int * ty list * operand list
   | EnumCreateSimple of value * ty * int
@@ -156,6 +161,7 @@ let rec equal_ty left right =
       List.for_all2 (fun (left_field, left_type) (right_field, right_type) ->
         left_field = right_field && equal_ty left_type right_type
       ) left_fields right_fields
+  | Ref left_type, Ref right_type -> equal_ty left_type right_type
   | Union left_elements, Union right_elements ->
       List.length left_elements = List.length right_elements &&
       List.for_all2 equal_ty left_elements right_elements
@@ -190,6 +196,7 @@ let rec ty_to_string = function
   | Tuple elements ->
       "(" ^ String.concat ", " (List.map ty_to_string elements) ^ ")"
   | Struct (name, _) -> name
+  | Ref type_value -> "ref<" ^ ty_to_string type_value ^ ">"
   | Enum (name, _) -> name
   | Interface (name, _) -> "interface " ^ name
   | Union elements ->
@@ -218,6 +225,8 @@ let instruction_result = function
   | TupleGet (value, element_type, _, _) -> Some (value, element_type)
   | StructCreate (value, name, fields, _) -> Some (value, Struct (name, fields))
   | StructGet (value, field_type, _, _) -> Some (value, field_type)
+  | Alloca (value, type_value) -> Some (value, Ref type_value)
+  | Load (value, type_value, _) -> Some (value, type_value)
   | EnumCreate (value, enum_type, _, _, _) -> Some (value, enum_type)
   | EnumCreateMulti (value, enum_type, _, _, _) -> Some (value, enum_type)
   | EnumCreateSimple (value, enum_type, _) -> Some (value, enum_type)
@@ -238,6 +247,8 @@ let instruction_result = function
   | CallIndirect (None, _, _, _, _)
   | InterfaceCall (None, _, _, _, _, _, _, _)
   | InterfaceRelease _
+  | StructSet _
+  | Store _
   | ListAppend _
   | ListSet _
   | GlobalStore _ -> None
@@ -267,6 +278,10 @@ let instruction_operands = function
   | TupleGet (_, _, tuple_value, _) -> [tuple_value]
   | StructCreate (_, _, _, values) -> values
   | StructGet (_, _, struct_value, _) -> [struct_value]
+  | StructSet (_, struct_value, _, _, field_value) -> [struct_value; field_value]
+  | Alloca _ -> []
+  | Load (_, _, pointer) -> [pointer]
+  | Store (_, stored_value, pointer) -> [stored_value; pointer]
   | EnumCreate (_, _, _, _, payload) -> [payload]
   | EnumCreateMulti (_, _, _, _, payloads) -> payloads
   | EnumCreateSimple _ -> []
