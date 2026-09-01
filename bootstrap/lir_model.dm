@@ -740,6 +740,7 @@ def lir_validation_error(record_id: int, reason: str) -> bool:
     eprintln("")
     return false
 
+
 def lir_validate_model_program(program: LirProgram) -> bool:
     let records = program.records
     let values = program.values
@@ -780,7 +781,7 @@ def lir_validate_model_program(program: LirProgram) -> bool:
         if kind == LIR_RECORD_INSTRUCTION and opcode == LIR_OP_SELECT and operand_count < 3:
             return lir_validation_error(record_id, "select operands")
         if kind == LIR_RECORD_INSTRUCTION and opcode == LIR_OP_BINARY:
-            if type_tag not in [LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_STR, LIR_TYPE_LIST, LIR_TYPE_LIST_PTR]:
+            if type_tag not in [LIR_TYPE_I1, LIR_TYPE_I32, LIR_TYPE_F64, LIR_TYPE_STR, LIR_TYPE_LIST, LIR_TYPE_LIST_PTR, LIR_TYPE_STRUCT]:
                 return lir_validation_error(record_id, "binary type")
         if kind == LIR_RECORD_TERMINATOR and (opcode < LIR_TERM_JUMP or opcode > LIR_TERM_MAX):
             return lir_validation_error(record_id, "terminator opcode")

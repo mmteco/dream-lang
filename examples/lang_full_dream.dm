@@ -3,7 +3,6 @@
 from bytes import encode, decode
 from io import open
 from fs import exists, remove_file
-from path import join, normalize, basename, dirname, ext, stem
 from time import monotonic_ms, elapsed_ms
 from http import parse_response
 from utf8 import chr, ord
@@ -289,14 +288,7 @@ def main():
     print(exists(io_path))
     print(remove_file(io_path))
 
-    # 路径、时间、JSON 与 HTTP 响应解析
-    print(normalize("a/./b/../c.txt"))
-    print(join("/tmp/data", "item.json"))
-    print(basename("/tmp/data/item.json"))
-    print(dirname("/tmp/data/item.json"))
-    print(ext("/tmp/data/item.json"))
-    print(stem("/tmp/data/item.json"))
-
+    # 时间、JSON 与 HTTP 响应解析
     let start_ms = monotonic_ms()
     print(elapsed_ms(start_ms) >= 0)
 

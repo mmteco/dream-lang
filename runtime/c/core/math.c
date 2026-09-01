@@ -24,3 +24,11 @@ int __c_int_pow(int base, int exponent) {
 double __c_float_pow(double base, double exponent) {
     return pow(base, exponent);
 }
+
+double __c_int_to_float(int value) {
+    return (double)value;
+}
+
+int __c_float_to_int(double value) {
+    return (int)value;
+}

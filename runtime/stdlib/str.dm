@@ -30,6 +30,9 @@ def rstrip(value: str) -> str:
 def find(value: str, sub: str) -> int:
     return __c_str_find(value, sub)
 
+def contains(value: str, sub: str) -> bool:
+    return __c_str_find(value, sub) >= 0
+
 def startswith(value: str, prefix: str) -> bool:
     return __c_str_starts_with(value, prefix)
 
@@ -149,4 +152,10 @@ def partition(value: str, sep: str) -> (str, str, str):
     if idx < 0:
         return (value, "", "")
     return (value[:idx], sep, value[idx + len(sep):])
+
+def parse_int(value: str, fallback: int) -> int:
+    return __c_str_to_int(value, fallback)
+
+def parse_float(value: str, fallback: float) -> float:
+    return __c_str_to_float(value, fallback)
 

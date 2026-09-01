@@ -647,7 +647,9 @@ let render_instruction string_literals value_types buffer _instruction_label ins
         | Str | Tuple _ | Struct _ | Enum _ | List _ | Bytes | Dict _ | Interface _ | Union _ ->
             let elem_int_name = match value with
               | Value n -> Printf.sprintf "%%dir_append_elem_v%d" n
-              | _ -> Printf.sprintf "%%dir_append_elem_lit_%d" (abs (Hashtbl.hash (operand value))) in
+              | _ ->
+                  Printf.sprintf "%%dir_append_elem_lit_%d_%d"
+                    (abs (Hashtbl.hash (operand value))) (Buffer.length buffer) in
             tuple_element_store buffer elem_int_name element_type (operand value);
             Printf.bprintf buffer "  call void @__c_append_ptr(%%dynarray_ptr* %s, i64 %s)\n"
               (operand collection) elem_int_name

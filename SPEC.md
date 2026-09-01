@@ -237,6 +237,18 @@ let inferred = [1, 2, 3]    # 推导为 [int]
 
 **限制**: 当前实现中，数组大小必须在编译时确定
 
+#### 泛型列表元素
+
+`list[T]` 的 `T` 可以是基础类型或用户定义结构体。结构体指针元素在字段、函数参数、全局变量、索引、`for` 循环和列表推导中保留元素类型声明，因此索引结果可以继续进行静态字段访问：
+
+```python
+struct Item:
+    name: str
+
+let items: list[Item] = [Item{name: "dream"}]
+print(items[0].name)
+```
+
 #### 元组 ✅
 ```python
 let pair: (int, str) = (1, "one")

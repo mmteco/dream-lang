@@ -1371,35 +1371,68 @@ and lower_expr context function_builder environment expression =
       end
   | ECall ((EAttr (object_expression, method_name, _)
            | EStructAccess (object_expression, method_name, _)), arguments, position) ->
-      let object_value = lower_expr context function_builder environment object_expression in
-      (match object_value.ty with
-       | Interface _ ->
-           lower_interface_call context function_builder environment object_value
-             method_name arguments position
-       | Struct _ ->
-           lower_mutating_method_call context function_builder environment object_expression
-             method_name arguments position
-       | Ref _ ->
-           lower_method_call context function_builder environment object_value method_name
-             arguments position
-       | Enum _ ->
-           lower_method_call context function_builder environment object_value method_name
-             arguments position
-       | Str ->
-           lower_string_method context function_builder environment object_value
-             method_name arguments position
-       | Dict _ ->
-           lower_dict_method context function_builder environment object_value
-             method_name arguments position
-       | Bytes ->
-           lower_bytes_method context function_builder environment object_value
-             method_name arguments position
-       | List element_type ->
-           lower_list_method context function_builder environment object_value
-             element_type method_name arguments position
-       | actual_type -> fail_at position (Printf.sprintf
-           "method call requires a struct, interface, string or bytes value, got %s"
-           (Dir.ty_to_string actual_type)))
+      (match object_expression with
+       | EVar (target_name, _)
+         when not (Hashtbl.mem environment target_name) &&
+              Hashtbl.mem context.method_signatures (target_name ^ "." ^ method_name) ->
+           let binding = Hashtbl.find context.method_signatures (target_name ^ "." ^ method_name) in
+           let signature = binding.signature in
+           if List.length arguments <> List.length signature.parameter_types then
+             fail_at position (Printf.sprintf "method %s.%s expects %d arguments, got %d"
+               target_name method_name (List.length signature.parameter_types)
+               (List.length arguments));
+           let lowered_arguments = List.map2 (fun argument expected_type ->
+             lower_expr_expected context function_builder environment (Some expected_type) argument
+           ) arguments signature.parameter_types in
+           let lowered_arguments = List.map2 (fun argument expected_type ->
+             coerce_value context function_builder position expected_type argument
+           ) lowered_arguments signature.parameter_types in
+           List.iter2 (fun actual expected ->
+             expect_type position expected actual.ty ("argument to " ^ target_name ^ "." ^ method_name)
+           ) lowered_arguments signature.parameter_types;
+           let result_value = match signature.return_type with
+             | Unit -> None
+             | _ -> Some (fresh_value function_builder)
+           in
+           emit function_builder (Call (result_value, signature.return_type,
+             binding.function_name,
+             List.map (fun argument -> argument.ty) lowered_arguments,
+             List.map (fun argument -> argument.operand) lowered_arguments));
+           let operand = match result_value with
+             | Some value -> Value value
+             | None -> Int 0
+           in
+           { operand; ty = signature.return_type }
+       | _ ->
+           let object_value = lower_expr context function_builder environment object_expression in
+           (match object_value.ty with
+            | Interface _ ->
+                lower_interface_call context function_builder environment object_value
+                  method_name arguments position
+            | Struct _ ->
+                lower_mutating_method_call context function_builder environment object_expression
+                  method_name arguments position
+            | Ref _ ->
+                lower_method_call context function_builder environment object_value method_name
+                  arguments position
+            | Enum _ ->
+                lower_method_call context function_builder environment object_value method_name
+                  arguments position
+            | Str ->
+                lower_string_method context function_builder environment object_value
+                  method_name arguments position
+            | Dict _ ->
+                lower_dict_method context function_builder environment object_value
+                  method_name arguments position
+            | Bytes ->
+                lower_bytes_method context function_builder environment object_value
+                  method_name arguments position
+            | List element_type ->
+                lower_list_method context function_builder environment object_value
+                  element_type method_name arguments position
+            | actual_type -> fail_at position (Printf.sprintf
+                "method call requires a struct, interface, string or bytes value, got %s"
+                (Dir.ty_to_string actual_type))))
   | EList (elements, position) ->
       (match elements with
        | [] ->
@@ -1582,6 +1615,37 @@ and lower_expr context function_builder environment expression =
       lower_conditional_expression context function_builder environment
         condition true_expression false_expression position
   | ECall (EEnumVariant (variable_name, method_name, [], _), arguments, position)
+    when not (Hashtbl.mem environment variable_name) &&
+         Hashtbl.mem context.method_signatures (variable_name ^ "." ^ method_name) ->
+      let binding = Hashtbl.find context.method_signatures (variable_name ^ "." ^ method_name) in
+      let signature = binding.signature in
+      if List.length arguments <> List.length signature.parameter_types then
+        fail_at position (Printf.sprintf "method %s.%s expects %d arguments, got %d"
+          variable_name method_name (List.length signature.parameter_types)
+          (List.length arguments));
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        lower_expr_expected context function_builder environment (Some expected_type) argument
+      ) arguments signature.parameter_types in
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        coerce_value context function_builder position expected_type argument
+      ) lowered_arguments signature.parameter_types in
+      List.iter2 (fun actual expected ->
+        expect_type position expected actual.ty ("argument to " ^ variable_name ^ "." ^ method_name)
+      ) lowered_arguments signature.parameter_types;
+      let result_value = match signature.return_type with
+        | Unit -> None
+        | _ -> Some (fresh_value function_builder)
+      in
+      emit function_builder (Call (result_value, signature.return_type,
+        binding.function_name,
+        List.map (fun argument -> argument.ty) lowered_arguments,
+        List.map (fun argument -> argument.operand) lowered_arguments));
+      let operand = match result_value with
+        | Some value -> Value value
+        | None -> Int 0
+      in
+      { operand; ty = signature.return_type }
+  | ECall (EEnumVariant (variable_name, method_name, [], _), arguments, position)
     when (match variable_type context environment variable_name with
           | Some (Struct (struct_name, _)) ->
               Hashtbl.mem context.method_signatures (struct_name ^ "." ^ method_name)
@@ -1678,6 +1742,23 @@ and lower_expr context function_builder environment expression =
             | actual_type -> fail_at position (Printf.sprintf
                 "DIR does not support enum variant %s.%s on %s"
                 variable_name field_name (Dir.ty_to_string actual_type)))
+       | None when Hashtbl.mem context.method_signatures (variable_name ^ "." ^ field_name) ->
+           let binding = Hashtbl.find context.method_signatures (variable_name ^ "." ^ field_name) in
+           let signature = binding.signature in
+           if signature.parameter_types <> [] then
+             fail_at position (Printf.sprintf "method %s.%s expects %d arguments, got 0"
+               variable_name field_name (List.length signature.parameter_types));
+           let result_value = match signature.return_type with
+             | Unit -> None
+             | _ -> Some (fresh_value function_builder)
+           in
+           emit function_builder (Call (result_value, signature.return_type,
+             binding.function_name, [], []));
+           let operand = match result_value with
+             | Some value -> Value value
+             | None -> Int 0
+           in
+           { operand; ty = signature.return_type }
        | None ->
            let enum_type = context.resolve_enum variable_name in
            let variants = match enum_type with
@@ -1809,6 +1890,37 @@ and lower_expr context function_builder environment expression =
            lower_list_method context function_builder environment object_value
              elem_type method_name arguments position
        | _ -> fail_at position "invalid method receiver")
+  | EEnumVariant (target_name, method_name, arguments, position)
+    when not (Hashtbl.mem environment target_name) &&
+         Hashtbl.mem context.method_signatures (target_name ^ "." ^ method_name) ->
+      let binding = Hashtbl.find context.method_signatures (target_name ^ "." ^ method_name) in
+      let signature = binding.signature in
+      if List.length arguments <> List.length signature.parameter_types then
+        fail_at position (Printf.sprintf "method %s.%s expects %d arguments, got %d"
+          target_name method_name (List.length signature.parameter_types)
+          (List.length arguments));
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        lower_expr_expected context function_builder environment (Some expected_type) argument
+      ) arguments signature.parameter_types in
+      let lowered_arguments = List.map2 (fun argument expected_type ->
+        coerce_value context function_builder position expected_type argument
+      ) lowered_arguments signature.parameter_types in
+      List.iter2 (fun actual expected ->
+        expect_type position expected actual.ty ("argument to " ^ target_name ^ "." ^ method_name)
+      ) lowered_arguments signature.parameter_types;
+      let result_value = match signature.return_type with
+        | Unit -> None
+        | _ -> Some (fresh_value function_builder)
+      in
+      emit function_builder (Call (result_value, signature.return_type,
+        binding.function_name,
+        List.map (fun argument -> argument.ty) lowered_arguments,
+        List.map (fun argument -> argument.operand) lowered_arguments));
+      let operand = match result_value with
+        | Some value -> Value value
+        | None -> Int 0
+      in
+      { operand; ty = signature.return_type }
   | EEnumVariant (enum_name, variant_name, arguments, position) ->
       let resolved_enum_type = context.resolve_enum enum_name in
       let variants = match resolved_enum_type with
@@ -2837,6 +2949,10 @@ let runtime_externs = [
   { name = "__c_float_floordiv"; parameters = [F64; F64]; return_type = F64 };
   { name = "__c_int_pow"; parameters = [I32; I32]; return_type = I32 };
   { name = "__c_float_pow"; parameters = [F64; F64]; return_type = F64 };
+  { name = "__c_int_to_float"; parameters = [I32]; return_type = F64 };
+  { name = "__c_float_to_int"; parameters = [F64]; return_type = I32 };
+  { name = "__c_str_to_int"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_str_to_float"; parameters = [Str; F64]; return_type = F64 };
   { name = "__c_time_ms"; parameters = []; return_type = I32 };
   { name = "__c_debug_on"; parameters = []; return_type = Bool };
 ]

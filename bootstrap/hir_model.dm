@@ -208,6 +208,7 @@ struct HirFuncTable:
     ends: list[int]
     files: list[int]
     offsets: list[int]
+    owner_decls: list[int]
 
 struct HirConstantTable:
     index_map: HashIndex
@@ -1078,7 +1079,7 @@ def hir_node_type(program: HirProgram, value_kind: int, value: int) -> int:
         return HIR_TYPE_UNKNOWN
     return hir_int_list_get(records, hir_record_offset(value) + 2)
 
-def hir_collect_func_table(records: list[int], source: str) -> HirFuncTable:
+def hir_collect_func_table(records: list[int], source: str, owner_decls: list[int]) -> HirFuncTable:
     let starts: list[int] = []
     let ends: list[int] = []
     let files: list[int] = []
@@ -1101,8 +1102,23 @@ def hir_collect_func_table(records: list[int], source: str) -> HirFuncTable:
         starts: starts,
         ends: ends,
         files: files,
-        offsets: offsets
+        offsets: offsets,
+        owner_decls: owner_decls
     }
+
+def hir_find_top_level_function(source: str, name_start: int, name_end: int, caller_offset: int,
+    func_table: HirFuncTable) -> int:
+    let function_index = 0
+    while function_index < len(func_table.starts):
+        if function_index >= len(func_table.owner_decls) or func_table.owner_decls[function_index] < 0:
+            let candidate_start = func_table.starts[function_index]
+            let candidate_end = func_table.ends[function_index]
+            if source_ranges_equal(source, name_start, name_end, candidate_start, candidate_end):
+                let definition_file = func_table.files[function_index]
+                if hir_file_visible(caller_offset, source, name_start, name_end, definition_file):
+                    return function_index
+        function_index += 1
+    return -1
 
 def hir_collect_scope_maps(records: list[int], scope_records: list[int]):
     let current_caller = 0
@@ -1166,8 +1182,7 @@ def hir_find_func_return_type(
     caller_offset: int,
     func_table: HirFuncTable
 ) -> int:
-    let func_idx = func_table.index_map.find(source, name_start, name_end,
-        func_table.starts, func_table.ends, func_table.files, caller_offset)
+    let func_idx = hir_find_top_level_function(source, name_start, name_end, caller_offset, func_table)
     if func_idx >= 0 and func_idx < len(func_table.offsets):
         let offset = hir_int_list_get(func_table.offsets, func_idx)
         return hir_signature_int(records, values, offset, HIR_SIGNATURE_RETURN_TYPE)
@@ -1344,8 +1359,8 @@ def hir_tuple_element_type(records: list[int], values: list[int], source: str, v
                 if hir_int_list_get(records, callee_record_offset + 1) == HIR_OP_LOCAL:
                     let callee_name_start = hir_int_list_get(records, callee_record_offset + 3)
                     let callee_name_end = hir_int_list_get(records, callee_record_offset + 4)
-                    let func_idx = func_table.index_map.find(source, callee_name_start,
-                        callee_name_end, func_table.starts, func_table.ends, func_table.files, caller_offset)
+                    let func_idx = hir_find_top_level_function(source, callee_name_start, callee_name_end,
+                        caller_offset, func_table)
                     if func_idx >= 0 and func_idx < len(func_table.offsets):
                         let rec_offset = hir_int_list_get(func_table.offsets, func_idx)
                         return hir_func_return_element_type(records, source, rec_offset, ordinal)
@@ -1889,6 +1904,13 @@ def hir_record_struct_declaration(
             return find_struct_declaration_index(source, hir_int_list_get(values, name_start_offset + 1),
                 hir_int_list_get(values, name_end_offset + 1), hir_int_list_get(values, name_start_offset + 1))
         return -1
+    if opcode == HIR_OP_LIST and payload_count > 1:
+        let first_value_offset = hir_value_offset(payload_start + 1)
+        if hir_int_list_get(values, first_value_offset) == HIR_VALUE_NODE:
+            let first_node = hir_int_list_get(values, first_value_offset + 1)
+            if first_node >= 0 and first_node < len(struct_decls):
+                return hir_int_list_get(struct_decls, first_node)
+        return -1
     if opcode == HIR_OP_FIELD and payload_count >= 3:
         let base_offset = hir_value_offset(payload_start)
         let base_declaration = -1
@@ -2021,7 +2043,7 @@ def hir_func_signatures_equal(records: list[int], values: list[int], source: str
 
 def hir_validate_semantics(records: list[int], values: list[int], struct_decls: list[int], source: str,
     constant_starts: list[int], constant_ends: list[int], constant_types: list[int],
-    validated_records: list[int], validated_struct_decls: list[int]) -> bool:
+    func_owner_decls: list[int], validated_records: list[int], validated_struct_decls: list[int]) -> bool:
     let initial_program = HirProgram{records: records, values: values, struct_decls: struct_decls}
     let phase_time = 0
     if __c_debug_on():
@@ -2031,7 +2053,7 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
     phase_time = hir_debug_checkpoint("model", phase_time)
     let scope_records: list[int] = []
     hir_collect_scope_maps(records, scope_records)
-    let func_table = hir_collect_func_table(records, source)
+    let func_table = hir_collect_func_table(records, source, func_owner_decls)
     let constant_table = HirConstantTable{
         index_map: hash_index_build(source, constant_starts, constant_ends),
         starts: constant_starts,

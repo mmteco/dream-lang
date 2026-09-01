@@ -4,8 +4,9 @@ from fs import exists, remove_file, mkdir, rename
 from compiler import build_llvm
 from utf8 import ord
 from crypto import sha256
-from sys import argc, arg, env
+from sys import env
 from time import monotonic_ms
+from argparse import create_parser, ArgParser
 from lex import (
     lex,
     parse_integer,
@@ -330,6 +331,8 @@ def module_path(module_name: str, importer_path: str, relative_depth: int) -> st
             return "runtime/stdlib/prelude.dm"
         case "compiler":
             return "runtime/stdlib/compiler.dm"
+        case "argparse":
+            return "runtime/stdlib/argparse.dm"
         case "lex":
             return "bootstrap/lex.dm"
         case "operator":
@@ -1061,6 +1064,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let parameter_default_indexes = []
     let parameter_annotation_starts: list[int] = []
     let parameter_annotation_ends: list[int] = []
+    let func_owner_decls: list[int] = []
     let functions = FunctionTable{
         starts: func_starts,
         ends: func_ends,
@@ -1076,7 +1080,8 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         return_struct_decls: func_return_struct_decls,
         default_indexes: parameter_default_indexes,
         annotation_starts: parameter_annotation_starts,
-        annotation_ends: parameter_annotation_ends
+        annotation_ends: parameter_annotation_ends,
+        owner_decls: func_owner_decls
     }
     let constants = ConstantTable{
         starts: constant_starts,
@@ -1214,7 +1219,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     let validated_hir_records: list[int] = []
     let validated_hir_struct_decls: list[int] = []
     if not hir_validate_semantics(hir_records, hir_values, hir_struct_decls, source,
-        constant_starts, constant_ends, constant_types, validated_hir_records,
+        constant_starts, constant_ends, constant_types, func_owner_decls, validated_hir_records,
         validated_hir_struct_decls):
         eprintln("error: HIR semantic validation failed")
         return false
@@ -1260,6 +1265,7 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
         parameter_default_indexes,
         parameter_annotation_starts,
         parameter_annotation_ends,
+        func_owner_decls,
         impl_func_indexes,
         impl_func_decls,
         impl_func_interface_types,
@@ -1336,12 +1342,6 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     eprintln("error: only ast, hir, mir, lir, and llvm outputs are supported")
     return false
 
-struct BuildArguments:
-    input_path: str
-    output_path: str
-    is_optimized: bool
-    is_valid: bool
-
 def remove_source_extension(source_path: str) -> str:
     let index = source_path.len() - 1
     while index >= 0:
@@ -1351,24 +1351,6 @@ def remove_source_extension(source_path: str) -> str:
             return source_path
         index = index - 1
     return source_path
-
-def parse_build_arguments(argument_count: int):
-    let input_path = ""
-    let output_path = ""
-    let is_optimized = true
-    let is_valid = true
-    if argument_count >= 3:
-        input_path = arg(2)
-    if argument_count >= 5 and arg(3) == "-o":
-        output_path = arg(4)
-    elif argument_count >= 4:
-        output_path = arg(3)
-    if input_path.len() < 3:
-        is_valid = false
-    BA_input_path = input_path
-    BA_output_path = output_path
-    BA_is_optimized = is_optimized
-    BA_is_valid = is_valid
 
 def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool:
     if not ensure_compiler_dirs():
@@ -1403,51 +1385,96 @@ def build_source(source_path: str, output_path: str, is_optimized: bool) -> bool
     remove_file(llvm_path)
     return true
 
-def run_build_command(argument_count: int) -> bool:
-    parse_build_arguments(argument_count)
-    if not BA_is_valid:
-        eprintln("error: build accepts [--dev] <file.dm> [-o output]")
-        return false
-    let input_length = BA_input_path.len()
-    if input_length < 3 or BA_input_path[input_length - 3:input_length] != ".dm":
-        eprintln("error: input file must have .dm extension")
-        return false
-    return build_source(BA_input_path, BA_output_path, BA_is_optimized)
+def create_compiler_parser() -> ArgParser:
+    let parser = create_parser("dream", "0.1.0", "The Dream Programming Language Compiler")
 
-def print_usage(usage: str):
-    print("用法: " + arg(0) + usage)
+    let build_cmd = parser.subcommand("build", "Compile a .dm file to an executable binary")
+    build_cmd.flag("dev", "", "Disable optimizations for faster compilation")
+    build_cmd.option("output", "-o", "", "Output executable path")
+    build_cmd.arg("input", "Source .dm file", true)
+
+    let ast_cmd = parser.subcommand("ast", "Dump Abstract Syntax Tree (AST)")
+    ast_cmd.required_option("output", "-o", "Output AST file")
+    ast_cmd.arg("input", "Source .dm file", true)
+
+    let hir_cmd = parser.subcommand("hir", "Dump High-level Intermediate Representation (HIR)")
+    hir_cmd.required_option("output", "-o", "Output HIR file")
+    hir_cmd.arg("input", "Source .dm file", true)
+
+    let mir_cmd = parser.subcommand("mir", "Dump Mid-level Intermediate Representation (MIR)")
+    mir_cmd.required_option("output", "-o", "Output MIR file")
+    mir_cmd.arg("input", "Source .dm file", true)
+
+    let lir_cmd = parser.subcommand("lir", "Dump Low-level Intermediate Representation (LIR)")
+    lir_cmd.required_option("output", "-o", "Output LIR file")
+    lir_cmd.arg("input", "Source .dm file", true)
+
+    let llvm_cmd = parser.subcommand("llvm", "Emit LLVM IR (.ll)")
+    llvm_cmd.required_option("output", "-o", "Output LLVM IR file")
+    llvm_cmd.arg("input", "Source .dm file", true)
+
+    parser.subcommand("help", "Print help information")
+    return parser
 
 def main() -> int:
-    let argument_count = argc()
-    let usage = " build [--dev] <file.dm> [-o output] | ast/hir/mir/lir/llvm <input.dm> -o <output>"
-    if argument_count == 2:
-        let command_name = arg(1)
-        if command_name in ["help", "--help"]:
-            print_usage(usage)
-            return 0
-    if argument_count >= 4 and arg(1) == "build" and arg(3) == "-o":
-        if build_source(arg(2), arg(4), true):
+    let parser = create_compiler_parser()
+    let args = parser.parse_sys()
+
+    if args.is_help:
+        parser.print_help()
+        return 0
+
+    if args.is_version:
+        parser.print_version()
+        return 0
+
+    if not args.is_valid:
+        if args.error != "":
+            eprintln(args.error)
+        parser.print_help()
+        return 1
+
+    if not args.has_subcommand():
+        parser.print_help()
+        return 1
+
+    let command_name = args.subcommand
+    if command_name == "help":
+        parser.print_help()
+        return 0
+
+    let input_path = args.pos(0)
+    let input_length = input_path.len()
+    if input_length < 3 or input_path[input_length - 3:input_length] != ".dm":
+        eprintln("error: input file must have .dm extension")
+        return 1
+
+    if command_name == "build":
+        let output_path = args.get("output")
+        if output_path == "":
+            output_path = remove_source_extension(input_path)
+        let is_optimized = not args.has_flag("dev")
+        if build_source(input_path, output_path, is_optimized):
             return 0
         return 1
-    if argument_count == 5 and arg(3) == "-o":
-        let command_name = arg(1)
-        let output_mode = -1
-        switch command_name:
-            case "ast":
-                output_mode = COMPILE_OUTPUT_AST
-            case "hir":
-                output_mode = COMPILE_OUTPUT_HIR
-            case "mir":
-                output_mode = COMPILE_OUTPUT_MIR
-            case "lir":
-                output_mode = COMPILE_OUTPUT_LIR
-            case "llvm":
-                output_mode = COMPILE_OUTPUT_LLVM
-            default:
-                eprintln("error: use ast, hir, mir, lir, or llvm")
-                return 1
-        if compile_source(arg(2), arg(4), output_mode):
-            return 0
-        return 1
-    print_usage(usage)
+
+    let output_path = args.get("output")
+    let output_mode = -1
+    switch command_name:
+        case "ast":
+            output_mode = COMPILE_OUTPUT_AST
+        case "hir":
+            output_mode = COMPILE_OUTPUT_HIR
+        case "mir":
+            output_mode = COMPILE_OUTPUT_MIR
+        case "lir":
+            output_mode = COMPILE_OUTPUT_LIR
+        case "llvm":
+            output_mode = COMPILE_OUTPUT_LLVM
+        default:
+            eprintln("error: unknown subcommand: " + command_name)
+            return 1
+
+    if compile_source(input_path, output_path, output_mode):
+        return 0
     return 1

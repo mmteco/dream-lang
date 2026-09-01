@@ -76,7 +76,7 @@ let read_file filename =
   s
 
 (* 共享的词法适配器：将源码解析为 AST *)
-let parse_source source =
+let parse_source ?(file_path="") source =
   let tokens_with_pos = Lexer.tokenize_string_with_pos source in
   let token_array = Array.of_list tokens_with_pos in
   let token_pos = ref 0 in
@@ -91,7 +91,17 @@ let parse_source source =
       Parser.EOF
   in
   let lexbuf = Lexing.from_string source in
-  Parser.program next_token lexbuf
+  try
+    Parser.program next_token lexbuf
+  with Parser.Error ->
+    let pos_info =
+      if !token_pos > 0 && !token_pos <= Array.length token_array then
+        let (_, p, _) = token_array.(!token_pos - 1) in
+        Printf.sprintf "line %d, column %d" p.Lexing.pos_lnum (p.Lexing.pos_cnum - p.Lexing.pos_bol)
+      else "unknown position"
+    in
+    let file_info = if file_path <> "" then file_path ^ ":" else "" in
+    failwith (Printf.sprintf "Parse error at %s%s" file_info pos_info)
 
 (* 内置枚举定义：Option 和 Result *)
 let builtin_enums = [
@@ -126,13 +136,15 @@ let parse_module module_path =
   | Some file_path ->
       try
         let source = read_file file_path in
-        let ast = parse_source source in
+        let ast = parse_source ~file_path source in
         Ok (file_path, ast)
       with
       | Lexer.LexError msg ->
           Error (Printf.sprintf "Lexical error in module: %s" msg)
+      | Failure msg ->
+          Error msg
       | Parser.Error ->
-          Error (Printf.sprintf "Parse error in module")
+          Error (Printf.sprintf "Parse error in module %s" file_path)
       | Sys_error msg ->
           Error (Printf.sprintf "System error: %s" msg)
 
@@ -151,12 +163,13 @@ let load_module ?importer_file module_path =
   | None ->
       (try
         let source = read_file file_path in
-        let ast = parse_source source in
+        let ast = parse_source ~file_path source in
         Hashtbl.add module_cache file_path ast;
         Ok (file_path, ast)
       with
       | Lexer.LexError msg -> Error (Printf.sprintf "Lexical error in module: %s" msg)
-      | Parser.Error -> Error "Parse error in module"
+      | Failure msg -> Error msg
+      | Parser.Error -> Error (Printf.sprintf "Parse error in module %s" file_path)
       | Sys_error msg -> Error (Printf.sprintf "System error: %s" msg))
 
 (* 导出的符号类型 *)

@@ -40,6 +40,7 @@ Stage 0: OCaml compiler
 - 标准库网络基础已接入：`runtime/stdlib/net.dm` 的 `Connection` 支持阻塞式 TCP 连接、`write`、`read`、`read_n` 和 `close`，Stage 2 可直接编译运行。
 - `runtime/stdlib/http.dm` 已接入基于 libcurl 的 HTTP/HTTPS GET/POST、状态码、headers 和 body 解析；运行时支持超时、重定向、压缩和自定义请求头，回归测试使用不联网的错误路径。
 - bootstrap 模块解析已按文件建立可见性环境：支持 `import module.name`、显式 `from module import name`、星号导入和 `from .module import name` 相对导入；入口文件目录自动优先加入搜索路径，`DREAM_MODULE_PATH` 仅作为可选的后备搜索路径。跨模块同名符号允许，同一作用域导入歧义和依赖循环会在编译期报错。
+- bootstrap 编译器 CLI 已使用完整 `runtime/stdlib/argparse.dm`；`list[Struct]` 的元素声明会贯穿字段、参数、全局列表、索引和循环，Stage 1/2/3 固定点验证通过。
 
 本次自举打通修复的关键问题：
 
@@ -82,14 +83,14 @@ Stage 1 和 Stage 2 的首要目标是编译 `bootstrap/compiler.dm` 自身；�
 **Stage 1/2 已支持能力**（综合回归见 `make bootstrap`，单项回归见 `make test` 或 `make bootstrap-build FILE=...`）：
 
 - 基础：整数、变量、四则运算、`let`、函数声明/参数/`return`/调用、`print`、字符串、列表、循环、`switch/case/default`
-- 集合：整数列表字面量/索引/赋值/推导式、`for value in list[int]`、整数 tuple 字面量/解包、一元负号
+- 集合：整数列表字面量/索引/赋值/推导式、`for value in list[int]`、`list[Struct]` 指针元素的字段访问、整数 tuple 字面量/解包、一元负号
 - 结构体：整数结构体构造/乱序初始化/字段访问、作为函数参数和返回值、模式匹配字段绑定
 - bytes 基础 ABI：`encode`/`decode`/`from_list`/`to_list`、索引、切片（链接用 `wrappers/bytes.c` 的 `__c_*` ABI）
 - 网络基础 ABI：`net.connect` 返回 `Connection`，支持 `connection.write(text)`、`connection.read()`、`connection.read_n(size)` 和 `connection.close()`；C 实现位于 `wrappers/net.c`，测试使用本地 loopback，不依赖公网
 - HTTP 基础：`http.get`、`http.post` 和 `http.request` 通过 libcurl 发送 HTTP/HTTPS 请求，返回 `Response{status, headers, body, error}`；请求 headers 使用 `dict[str, str]`，响应 headers 使用 `dict[str, OrderedSet]`
 - match：`switch/case/default` 支持 int/bool/float/str；整数 `match`、通配符、`[tag, payload]` 基础 enum match（用户 enum + Some/None + Ok/Err）
 - 其他：`str + str` 统一 lowering 到 `string_concat`；DIR records 用 `DmDirRecord` 结构体字面量构造，`list[int]` 仅作为固定 12 槽序列化 ABI；`bootstrap_build.fish` 通过 Stage 2 `build` CLI 构建子集，runtime linker 动态扫描 `runtime/c/core/*.c` 和 `runtime/c/wrappers/*.c`
-- CLI 与格式：Stage 1/2 提供 `build`/`llvm`/`dir` CLI；宿主与 DM 统一输出正式 DreamIR 文本，typed record 仅为内部序列化 ABI，未映射指令以 `native llvm` 记录保留
+- CLI 与格式：Stage 1/2 提供 `build`/`ast`/`hir`/`mir`/`lir`/`llvm` CLI；宿主与 DM 统一输出正式 DreamIR 文本，typed record 仅为内部序列化 ABI，未映射指令以 `native llvm` 记录保留
 - 固定点：Stage 0 → 1 → 2 → 3 字节一致固定点，Stage 3 独立执行 `lang_full_dream.dm` 综合 `dir`/`build` 回归；其他 DIR 和语法样例不在自举主流程中重复执行。
 
 **待接入**：

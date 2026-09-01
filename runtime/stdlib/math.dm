@@ -84,3 +84,9 @@ def pow(base: float, exponent: float) -> float:
 
 def powi(base: int, exponent: int) -> int:
     return base ** exponent
+
+def to_float(x: int) -> float:
+    return __c_int_to_float(x)
+
+def to_int(x: float) -> int:
+    return __c_float_to_int(x)

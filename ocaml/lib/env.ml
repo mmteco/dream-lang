@@ -326,6 +326,12 @@ let c_runtime_functions_table =
     ("__c_bytes_from_array", TyFunc ([TyList TyByte], TyBytes));
     ("__c_str_to_bytes", TyFunc ([TyStr], TyBytes));
     ("__c_bytes_to_str", TyFunc ([TyBytes], TyStr));
+
+    (* 高性能数值转换 *)
+    ("__c_int_to_float", TyFunc ([TyInt], TyFloat));
+    ("__c_float_to_int", TyFunc ([TyFloat], TyInt));
+    ("__c_str_to_int", TyFunc ([TyStr; TyInt], TyInt));
+    ("__c_str_to_float", TyFunc ([TyStr; TyFloat], TyFloat));
   ] in
   List.iter (fun (name, ty) -> Hashtbl.add tbl name ty) funcs;
   tbl

@@ -83,3 +83,21 @@ uint32_t __c_fnv_hash_range(const char* str, int start, int end) {
     }
     return hash;
 }
+
+#include <stdlib.h>
+
+int __c_str_to_int(const char* str, int fallback) {
+    if (str == NULL || *str == '\0') return fallback;
+    char* endptr = NULL;
+    long val = strtol(str, &endptr, 10);
+    if (endptr == str) return fallback;
+    return (int)val;
+}
+
+double __c_str_to_float(const char* str, double fallback) {
+    if (str == NULL || *str == '\0') return fallback;
+    char* endptr = NULL;
+    double val = strtod(str, &endptr);
+    if (endptr == str) return fallback;
+    return val;
+}

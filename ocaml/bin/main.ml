@@ -27,10 +27,14 @@ let compile_program_to_ir input_file =
   Module_loader.set_entry_file input_file;
   let ast =
     try
-      Module_loader.parse_source source
-    with Parser.Error ->
-      Printf.eprintf "Parse error\n";
-      exit 1
+      Module_loader.parse_source ~file_path:input_file source
+    with
+    | Failure msg ->
+        Printf.eprintf "%s\n" msg;
+        exit 1
+    | Parser.Error ->
+        Printf.eprintf "Parse error in %s\n" input_file;
+        exit 1
   in
 
   let is_prelude = Filename.basename input_file = "prelude.dm" in

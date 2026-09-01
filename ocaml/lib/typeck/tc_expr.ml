@@ -1099,7 +1099,17 @@ let rec infer_expr env = function
          (TyList TyUnknown, iter_subst))
 
   | EEnumVariant (enum_name, variant_name, [], pos) ->
-      (match Env.find_binding enum_name env with
+      let resolved_target = match Env.find_binding enum_name env with
+        | Some ty -> Some ty
+        | None ->
+            (match Env.find_struct enum_name env with
+             | Some _ -> Some (TyStruct (enum_name, []))
+             | None ->
+                 (match Env.find_enum enum_name env with
+                  | Some _ -> Some (TyEnum (enum_name, []))
+                  | None -> None))
+      in
+      (match resolved_target with
        | Some (TyStruct (struct_name, _)) ->
            (match Env.find_struct struct_name env with
             | Some struct_def ->
@@ -1147,7 +1157,17 @@ let rec infer_expr env = function
       let (arg_types, arg_substs) = List.split (List.map (infer_expr env) args) in
       let combined_subst = List.fold_left compose_subst empty_subst arg_substs in
       let resolved_arg_types = List.map (apply_subst combined_subst) arg_types in
-      (match Env.find_binding enum_name env with
+      let resolved_target = match Env.find_binding enum_name env with
+        | Some ty -> Some ty
+        | None ->
+            (match Env.find_struct enum_name env with
+             | Some _ -> Some (TyStruct (enum_name, []))
+             | None ->
+                 (match Env.find_enum enum_name env with
+                  | Some _ -> Some (TyEnum (enum_name, []))
+                  | None -> None))
+      in
+      (match resolved_target with
        | Some (TyStruct (struct_name, _)) ->
            (match Env.find_struct struct_name env with
             | Some struct_def ->
@@ -1156,14 +1176,17 @@ let rec infer_expr env = function
                      (match parameter_types with
                       | expected_arguments
                         when List.length expected_arguments = List.length resolved_arg_types ->
+                          let subst_ref = ref combined_subst in
                           List.iter2 (fun expected actual ->
-                            try ignore (unify expected actual)
+                            try
+                              let s = unify (apply_subst !subst_ref expected) (apply_subst !subst_ref actual) in
+                              subst_ref := compose_subst s !subst_ref
                             with Failure msg ->
                               let err = make_error (TypeError msg) _pos
                                 "Method argument type mismatch" in
                               report_error err
                           ) expected_arguments resolved_arg_types;
-                          return_type, combined_subst
+                          apply_subst !subst_ref return_type, !subst_ref
                       | _ ->
                           let err = make_error (TypeError "Argument count mismatch") _pos
                             (Printf.sprintf "Method '%s' argument count does not match"

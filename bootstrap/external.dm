@@ -129,6 +129,10 @@ const EXTERNAL_ID_INT_POW: int = 1116
 const EXTERNAL_ID_FLOAT_POW: int = 1117
 const EXTERNAL_ID_TIME_MS: int = 1118
 const EXTERNAL_ID_DEBUG_ON: int = 1119
+const EXTERNAL_ID_INT_TO_FLOAT: int = 1120
+const EXTERNAL_ID_FLOAT_TO_INT: int = 1121
+const EXTERNAL_ID_STR_TO_INT: int = 1122
+const EXTERNAL_ID_STR_TO_FLOAT: int = 1123
 
 const EXTERNAL_ID_BASE: int = 1000
 const EXTERNAL_RETURN_UNIT: int = 1
@@ -864,6 +868,30 @@ let EXTERNAL_DEFS: list[ExternalDef] = [
         id: EXTERNAL_ID_DEBUG_ON,
         name: "__c_debug_on",
         return_type: EXTERNAL_RETURN_BOOL,
+        has_declaration: true
+    },
+    ExternalDef{
+        id: EXTERNAL_ID_INT_TO_FLOAT,
+        name: "__c_int_to_float",
+        return_type: EXTERNAL_RETURN_FLOAT,
+        has_declaration: true
+    },
+    ExternalDef{
+        id: EXTERNAL_ID_FLOAT_TO_INT,
+        name: "__c_float_to_int",
+        return_type: EXTERNAL_RETURN_INT,
+        has_declaration: true
+    },
+    ExternalDef{
+        id: EXTERNAL_ID_STR_TO_INT,
+        name: "__c_str_to_int",
+        return_type: EXTERNAL_RETURN_INT,
+        has_declaration: true
+    },
+    ExternalDef{
+        id: EXTERNAL_ID_STR_TO_FLOAT,
+        name: "__c_str_to_float",
+        return_type: EXTERNAL_RETURN_FLOAT,
         has_declaration: true
     },
 ]

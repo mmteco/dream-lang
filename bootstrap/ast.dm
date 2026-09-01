@@ -967,20 +967,32 @@ def ast_parse_statement(context: ParseContext, index: int, body_end: int, ast: l
         if next_kind == TOKEN_DOT and token_kind(kinds, ast_advance_index(index,
             2)) == TOKEN_IDENTIFIER and token_kind(kinds, ast_advance_index(index, 3)) == TOKEN_OPEN_BRACKET:
             let assign_probe_index = ast_advance_index(index, 4)
-            while token_kind(kinds, assign_probe_index) not in [TOKEN_CLOSE_BRACKET, TOKEN_EOF]:
-                assign_probe_index = assign_probe_index + 1
-            if token_kind(kinds, assign_probe_index) == TOKEN_CLOSE_BRACKET and token_kind(kinds,
-                ast_next_index(assign_probe_index)) == TOKEN_ASSIGN:
+            let bracket_depth = 1
+            while assign_probe_index < len(kinds) and token_kind(kinds, assign_probe_index) != TOKEN_EOF and bracket_depth > 0:
+                let pk = token_kind(kinds, assign_probe_index)
+                if pk == TOKEN_OPEN_BRACKET:
+                    bracket_depth = bracket_depth + 1
+                elif pk == TOKEN_CLOSE_BRACKET:
+                    bracket_depth = bracket_depth - 1
+                if bracket_depth > 0:
+                    assign_probe_index = assign_probe_index + 1
+            if bracket_depth == 0 and token_kind(kinds, ast_next_index(assign_probe_index)) == TOKEN_ASSIGN:
                 return ast_parse_attribute_element_assign_statement(context, index, ast)
         if next_kind == TOKEN_DOT and token_kind(kinds, ast_advance_index(index,
             2)) == TOKEN_IDENTIFIER and token_kind(kinds, ast_advance_index(index, 3)) == TOKEN_ASSIGN:
             return ast_parse_attribute_assign_statement(context, index, ast)
         if next_kind == TOKEN_OPEN_BRACKET:
             let assign_probe_index = ast_advance_index(index, 2)
-            while token_kind(kinds, assign_probe_index) not in [TOKEN_CLOSE_BRACKET, TOKEN_EOF]:
-                assign_probe_index = assign_probe_index + 1
-            if token_kind(kinds, assign_probe_index) == TOKEN_CLOSE_BRACKET and token_kind(kinds,
-                ast_next_index(assign_probe_index)) == TOKEN_ASSIGN:
+            let bracket_depth = 1
+            while assign_probe_index < len(kinds) and token_kind(kinds, assign_probe_index) != TOKEN_EOF and bracket_depth > 0:
+                let pk = token_kind(kinds, assign_probe_index)
+                if pk == TOKEN_OPEN_BRACKET:
+                    bracket_depth = bracket_depth + 1
+                elif pk == TOKEN_CLOSE_BRACKET:
+                    bracket_depth = bracket_depth - 1
+                if bracket_depth > 0:
+                    assign_probe_index = assign_probe_index + 1
+            if bracket_depth == 0 and token_kind(kinds, ast_next_index(assign_probe_index)) == TOKEN_ASSIGN:
                 return ast_parse_element_assign_statement(context, index, ast)
         if __c_range_equals_cstr(source, token_start(starts, index), token_end(ends, index), "match"):
             return ast_parse_match_statement(context, index, body_end, ast)

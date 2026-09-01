@@ -25,6 +25,7 @@
   - [x] 基础闭包捕获环境和闭包 runtime ABI
   - [ ] 可变共享捕获和完整闭包生命周期规则
 - [ ] 完善泛型和单态化
+  - [x] bootstrap 列表元素声明在 `list[Struct]` 字段、参数和索引链路传播
   - [ ] 泛型容器（list、dict、tuple、struct、enum）
   - [ ] 高阶泛型函数和泛型约束
 - [ ] 完善 enum 和错误处理

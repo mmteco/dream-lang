@@ -201,6 +201,7 @@ struct FunctionTable:
     default_indexes: list[int]
     annotation_starts: list[int]
     annotation_ends: list[int]
+    owner_decls: list[int]
 
 struct ConstantTable:
     starts: list[int]
@@ -1622,7 +1623,14 @@ def struct_field_kind_from_type(tokens: TokenStream, type_index: int) -> int:
         return STRUCT_FIELD_STR
     if source_equals(source, type_start, type_end, "list") and token_kind(kinds, type_index + 1) == TOKEN_OPEN_BRACKET:
         let element_index = type_index + 2
-        if source_equals(source, token_start(starts, element_index), token_end(ends, element_index), "str"):
+        let element_start = token_start(starts, element_index)
+        let element_end = token_end(ends, element_index)
+        if (
+            source_equals(source, element_start, element_end, "str") or
+            source_type_is_struct(tokens, element_start, element_end) or
+            source_type_is_enum(source, element_start, element_end) or
+            source_type_is_interface(tokens, element_start, element_end)
+        ):
             return STRUCT_FIELD_LIST_STR
         return STRUCT_FIELD_LIST_INT
     if source_equals(source, type_start, type_end, "dict") and token_kind(kinds, type_index + 1) == TOKEN_OPEN_BRACKET:
@@ -1641,11 +1649,21 @@ def struct_field_value_type_declaration(tokens: TokenStream, type_index: int) ->
     let starts = tokens.starts
     let ends = tokens.ends
     let source = tokens.src
-    if token_kind(kinds, type_index) != TOKEN_IDENTIFIER or not source_equals(source,
-        token_start(starts, type_index), token_end(ends, type_index), "dict"):
+    if token_kind(kinds, type_index) != TOKEN_IDENTIFIER:
+        return -1
+    let is_dict = source_equals(source, token_start(starts, type_index), token_end(ends, type_index), "dict")
+    let is_list = source_equals(source, token_start(starts, type_index), token_end(ends, type_index), "list")
+    if not is_dict and not is_list:
         return -1
     if token_kind(kinds, type_index + 1) != TOKEN_OPEN_BRACKET:
         return -1
+    if is_list:
+        let element_index = type_index + 2
+        if token_kind(kinds, element_index) != TOKEN_IDENTIFIER:
+            return -1
+        let element_start = token_start(starts, element_index)
+        let element_end = token_end(ends, element_index)
+        return find_type_declaration_index(source, element_start, element_end, element_start)
     let cursor = type_index + 2
     let depth = 0
     while token_kind(kinds, cursor) != TOKEN_EOF:
@@ -1861,6 +1879,12 @@ def get_parameter_type(tokens: TokenStream, index: int) -> int:
         if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source_type_is_enum(source, token_start(starts,
             element_index), token_end(ends, element_index)):
             return VALUE_TYPE_LIST_STRING
+        if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source_type_is_struct(tokens, token_start(starts,
+            element_index), token_end(ends, element_index)):
+            return VALUE_TYPE_LIST_STRING
+        if token_kind(kinds, element_index) == TOKEN_IDENTIFIER and source_type_is_interface(tokens,
+            token_start(starts, element_index), token_end(ends, element_index)):
+            return VALUE_TYPE_LIST_STRING
         return VALUE_TYPE_LIST_INT
     if parameter_type != 0:
         return parameter_type
@@ -2006,6 +2030,7 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
     let parameter_default_indexes = functions.default_indexes
     let parameter_annotation_starts = functions.annotation_starts
     let parameter_annotation_ends = functions.annotation_ends
+    let func_owner_decls = functions.owner_decls
     let current_index = 0
     # interface 声明块内的 def 只是方法签名，不收集为可调用函数
     let interface_indent = -1
@@ -2034,6 +2059,7 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
             let open_index = find_func_open_parenthesis(kinds, name_index)
             append(func_starts, token_start(starts, name_index))
             append(func_ends, token_end(ends, name_index))
+            append(func_owner_decls, enclosing_self_struct_declaration(tokens, token_start(starts, name_index)))
             append(func_param_offsets, len(parameter_starts))
             let parameter_index = open_index + 1
             let parameter_count = 0
@@ -2063,7 +2089,10 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
                     if collected_struct_declaration >= 0:
                         append(parameter_struct_decls, collected_struct_declaration)
                     else:
-                        append(parameter_struct_decls, struct_field_type_declaration(tokens, parameter_type_index))
+                        let parameter_declaration = struct_field_type_declaration(tokens, parameter_type_index)
+                        if parameter_declaration < 0:
+                            parameter_declaration = struct_field_value_type_declaration(tokens, parameter_type_index)
+                        append(parameter_struct_decls, parameter_declaration)
                     let parameter_boundary = find_parameter_boundary(kinds, parameter_index)
                     let default_index = -1
                     let default_scan_index = parameter_index + 1
@@ -2089,6 +2118,9 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
                 if token_kind(kinds, return_type_scan_index) == TOKEN_ARROW:
                     func_return_type = get_return_type(tokens, return_type_scan_index + 1)
                     func_return_struct_decl = struct_field_type_declaration(tokens, return_type_scan_index + 1)
+                    if func_return_struct_decl < 0:
+                        func_return_struct_decl = struct_field_value_type_declaration(tokens,
+                            return_type_scan_index + 1)
                 return_type_scan_index = return_type_scan_index + 1
             append(func_return_types, func_return_type)
             append(func_return_struct_decls, func_return_struct_decl)

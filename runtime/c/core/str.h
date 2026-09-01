@@ -30,6 +30,10 @@ bool __c_str_is_whitespace(char c);
 dynarray_ptr* __c_str_split(const char* str, const char* delimiter);
 char* __c_str_join(dynarray_ptr* arr, const char* separator);
 
+// 高性能类型转换
+int __c_str_to_int(const char* str, int fallback);
+double __c_str_to_float(const char* str, double fallback);
+
 // 范围比较与哈希(供编译器内部优化):按 rune 语义,单次扫描
 bool __c_range_equal(const char* str, int first_start, int first_end, int second_start, int second_end);
 uint32_t __c_fnv_hash_range(const char* str, int start, int end);
