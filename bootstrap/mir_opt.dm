@@ -1,4 +1,4 @@
-from compiler_mir_model import (
+from mir_model import (
     MirProgram,
     MirRecord,
     mir_record_count,
@@ -30,7 +30,7 @@ from compiler_mir_model import (
     MIR_TERM_BRANCH,
     MIR_TERM_SWITCH
 )
-from compiler_operator import (
+from operator import (
     IR_OPERATOR_ADD,
     IR_OPERATOR_SUB,
     IR_OPERATOR_MUL,

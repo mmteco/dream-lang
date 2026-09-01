@@ -2011,11 +2011,11 @@ def collect_functions(tokens: TokenStream, functions: FunctionTable) -> int:
     let interface_indent = -1
     let interface_header_end = -1
     while token_kind(kinds, current_index) != TOKEN_EOF:
+        if interface_indent >= 0 and current_index > interface_header_end:
+            if token_kind(kinds, current_index) != TOKEN_NEWLINE and line_indent(source, token_start(starts, current_index)) <= interface_indent:
+                interface_indent = -1
         if token_kind(kinds, current_index) == TOKEN_IDENTIFIER:
-            if interface_indent >= 0 and current_index > interface_header_end:
-                if line_indent(source, token_start(starts, current_index)) <= interface_indent:
-                    interface_indent = -1
-            elif (
+            if (
                 source[token_start(starts, current_index):token_end(ends, current_index)] == "interface" and
                 token_kind(kinds, current_index + 1) == TOKEN_IDENTIFIER and
                 token_kind(kinds, current_index + 2) == TOKEN_COLON

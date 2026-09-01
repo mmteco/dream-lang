@@ -1,4 +1,4 @@
-from compiler_mir_model import (
+from mir_model import (
     MirProgram,
     mir_record_count,
     mir_value_count,

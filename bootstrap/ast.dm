@@ -2,7 +2,7 @@
 # 节点索引 = 池中 kind 字段的下标;池首 dummy 节点(kind=0),真实节点 >= 1,0 表示"无节点"
 # 子节点区间 [child_start, child_end) 可走查:从 child_start 循环 ast_next_node 直到 child_end
 
-from compiler_lex import (
+from lex import (
     ParseContext,
     parse_integer,
     TOKEN_EOF,

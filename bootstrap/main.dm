@@ -6,7 +6,7 @@ from utf8 import ord
 from crypto import sha256
 from sys import argc, arg, env
 from time import monotonic_ms
-from compiler_lex import (
+from lex import (
     lex,
     parse_integer,
     parse_rune_literal,
@@ -94,7 +94,7 @@ from compiler_lex import (
     TOKEN_BREAK,
     TOKEN_CONTINUE
 )
-from compiler_ast import (
+from ast import (
     ast_validate_program,
     ast_build_program,
     ast_node_kind,
@@ -157,7 +157,7 @@ from compiler_ast import (
     AST_STMT_SWITCH,
     AST_STMT_WHILE
 )
-from compiler_hir_model import (
+from hir_model import (
     HirDiagnosticContext,
     HirProgram,
     hir_int_list_get,
@@ -166,13 +166,13 @@ from compiler_hir_model import (
     hir_report_unreachable,
     hir_validate_semantics
 )
-from compiler_mir_model import (
+from mir_model import (
     mir_model_build_program,
     mir_validate_program,
     mir_dump_program
 )
-from compiler_mir_opt import mir_optimize_program
-from compiler_lir_model import (
+from mir_opt import mir_optimize_program
+from lir_model import (
     lir_model_build_program,
     lir_validate_program,
     lir_dump_validated_program,
@@ -180,7 +180,7 @@ from compiler_lir_model import (
     lir_value_exists,
     lir_block_parameter_offset
 )
-from compiler_llvm_emit import llvm_lower_lir
+from llvm_emit import llvm_lower_lir
 
 const COMPILE_OUTPUT_AST: int = 0
 const COMPILE_OUTPUT_HIR: int = 1
@@ -330,26 +330,50 @@ def module_path(module_name: str, importer_path: str, relative_depth: int) -> st
             return "runtime/stdlib/prelude.dm"
         case "compiler":
             return "runtime/stdlib/compiler.dm"
+        case "lex":
+            return "bootstrap/lex.dm"
+        case "operator":
+            return "bootstrap/operator.dm"
+        case "external":
+            return "bootstrap/external.dm"
+        case "ast":
+            return "bootstrap/ast.dm"
+        case "hir_model":
+            return "bootstrap/hir_model.dm"
+        case "mir_model":
+            return "bootstrap/mir_model.dm"
+        case "mir_opt":
+            return "bootstrap/mir_opt.dm"
+        case "lir_model":
+            return "bootstrap/lir_model.dm"
+        case "llvm_emit":
+            return "bootstrap/llvm_emit.dm"
+        case "hash_index":
+            return "bootstrap/hash_index.dm"
+        case "symbol_index":
+            return "bootstrap/hash_index.dm"
+        case "main":
+            return "bootstrap/main.dm"
         case "compiler_lex":
-            return "bootstrap/compiler_lex.dm"
+            return "bootstrap/lex.dm"
         case "compiler_operator":
-            return "bootstrap/compiler_operator.dm"
+            return "bootstrap/operator.dm"
         case "compiler_external":
-            return "bootstrap/compiler_external.dm"
+            return "bootstrap/external.dm"
         case "compiler_ast":
-            return "bootstrap/compiler_ast.dm"
+            return "bootstrap/ast.dm"
         case "compiler_hir_model":
-            return "bootstrap/compiler_hir_model.dm"
+            return "bootstrap/hir_model.dm"
         case "compiler_mir_model":
-            return "bootstrap/compiler_mir_model.dm"
+            return "bootstrap/mir_model.dm"
         case "compiler_mir_opt":
-            return "bootstrap/compiler_mir_opt.dm"
+            return "bootstrap/mir_opt.dm"
         case "compiler_lir_model":
-            return "bootstrap/compiler_lir_model.dm"
+            return "bootstrap/lir_model.dm"
         case "compiler_llvm_emit":
-            return "bootstrap/compiler_llvm_emit.dm"
+            return "bootstrap/llvm_emit.dm"
         case "compiler_main":
-            return "bootstrap/compiler_main.dm"
+            return "bootstrap/main.dm"
 
     let entry_dir = MODULE_ENTRY_DIR
     if entry_dir.len() > 0:
@@ -1189,7 +1213,8 @@ def compile_source(source_path: str, output_path: str, output_mode: int) -> bool
     phase_time = compiler_debug_checkpoint("hir-build", phase_time)
     let validated_hir_records: list[int] = []
     let validated_hir_struct_decls: list[int] = []
-    if not hir_validate_semantics(hir_records, hir_values, hir_struct_decls, source, validated_hir_records,
+    if not hir_validate_semantics(hir_records, hir_values, hir_struct_decls, source,
+        constant_starts, constant_ends, constant_types, validated_hir_records,
         validated_hir_struct_decls):
         eprintln("error: HIR semantic validation failed")
         return false

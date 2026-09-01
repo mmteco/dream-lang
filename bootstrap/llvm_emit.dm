@@ -1,5 +1,5 @@
 from utf8 import ord
-from compiler_lir_model import (
+from lir_model import (
     LirProgram,
     lir_record_count,
     lir_value_count,
@@ -71,7 +71,7 @@ from compiler_lir_model import (
     LIR_TERM_RETURN,
     LIR_TERM_UNREACHABLE
 )
-from compiler_operator import (
+from operator import (
     IR_OPERATOR_ADD,
     IR_OPERATOR_SUB,
     IR_OPERATOR_MUL,
@@ -97,7 +97,7 @@ from compiler_operator import (
     IR_OPERATOR_POS,
     IR_OPERATOR_NEG
 )
-from compiler_external import (
+from external import (
     EXTERNAL_ID_BASE,
     EXTERNAL_DEFS,
     EXTERNAL_ID_APPEND,

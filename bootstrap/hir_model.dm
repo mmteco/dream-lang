@@ -1,5 +1,10 @@
 from utf8 import ord
-from compiler_operator import (
+from hash_index import (
+    HashIndex,
+    hash_index_build,
+    hir_file_visible
+)
+from operator import (
     ir_binary_operator_from_token,
     ir_unary_operator_from_token,
     ir_operator_is_comparison,
@@ -7,7 +12,7 @@ from compiler_operator import (
     IR_OPERATOR_ADD,
     IR_OPERATOR_NOT
 )
-from compiler_lex import (
+from lex import (
     source_ranges_equal,
     find_struct_declaration_index,
     find_type_declaration_index,
@@ -31,7 +36,7 @@ from compiler_lex import (
     STRUCT_FIELD_TYPE_DECLS,
     STRUCT_FIELD_VALUE_TYPE_DECLS
 )
-from compiler_external import (
+from external import (
     external_id_from_name,
     external_return_type,
     EXTERNAL_RETURN_UNIT,
@@ -40,7 +45,7 @@ from compiler_external import (
     EXTERNAL_RETURN_FLOAT,
     EXTERNAL_RETURN_STRING
 )
-from compiler_ast import (
+from ast import (
     ast_node_kind,
     ast_node_arg,
     ast_node_start,
@@ -197,8 +202,18 @@ struct HirProgram:
     values: list[int]
     struct_decls: list[int]
 
-let HIR_CONSTANT_DATA: list[int] = []
-let HIR_CONSTANT_BASE: int = 0
+struct HirFuncTable:
+    index_map: HashIndex
+    starts: list[int]
+    ends: list[int]
+    files: list[int]
+    offsets: list[int]
+
+struct HirConstantTable:
+    index_map: HashIndex
+    starts: list[int]
+    ends: list[int]
+    types: list[int]
 
 def hir_record_count(records: list[int]) -> int:
     return len(records) / HIR_MODEL_RECORD_SIZE
@@ -1063,8 +1078,11 @@ def hir_node_type(program: HirProgram, value_kind: int, value: int) -> int:
         return HIR_TYPE_UNKNOWN
     return hir_int_list_get(records, hir_record_offset(value) + 2)
 
-def hir_collect_func_index(records: list[int], source: str, func_index: list[int]):
-    let source_size = source.len()
+def hir_collect_func_table(records: list[int], source: str) -> HirFuncTable:
+    let starts: list[int] = []
+    let ends: list[int] = []
+    let files: list[int] = []
+    let offsets: list[int] = []
     let record_id = 0
     let total_records = hir_record_count(records)
     while record_id < total_records:
@@ -1072,13 +1090,19 @@ def hir_collect_func_index(records: list[int], source: str, func_index: list[int
         if hir_int_list_get(records, offset) == HIR_RECORD_FUNCTION:
             let name_start = hir_int_list_get(records, offset + 9)
             let name_end = hir_int_list_get(records, offset + 10)
-            let name_hash = 0
-            if name_start >= 0 and name_end > name_start and name_end <= source_size:
-                name_hash = __c_fnv_hash_range(source, name_start, name_end)
-            append(func_index, offset)
-            append(func_index, name_hash)
-            append(func_index, module_env_file_at(name_start))
+            append(starts, name_start)
+            append(ends, name_end)
+            append(files, module_env_file_at(name_start))
+            append(offsets, offset)
         record_id = record_id + 1
+    let index_map = hash_index_build(source, starts, ends)
+    return HirFuncTable{
+        index_map: index_map,
+        starts: starts,
+        ends: ends,
+        files: files,
+        offsets: offsets
+    }
 
 def hir_collect_scope_maps(records: list[int], scope_records: list[int]):
     let current_caller = 0
@@ -1125,24 +1149,6 @@ def hir_node_caller_offset(program: HirProgram, record_id: int) -> int:
         current_record = current_record - 1
     return 0
 
-# 定义文件（def_file）是否对调用点（caller_offset）可见：按 per-module 规则快速判定
-def hir_file_visible(caller_offset: int, source: str, name_start: int, name_end: int, def_file: int) -> bool:
-    let caller_file = module_env_file_at(caller_offset)
-    if caller_file < 0:
-        caller_file = 0
-    if caller_file == def_file:
-        return true
-    let candidate_files: list[int] = []
-    if module_candidate_files(caller_offset, source, name_start, name_end, candidate_files) != 0:
-        return false
-    let candidate_index = 0
-    let candidate_count = len(candidate_files)
-    while candidate_index < candidate_count:
-        if hir_int_list_get(candidate_files, candidate_index) == def_file:
-            return true
-        candidate_index = candidate_index + 1
-    return false
-
 # 定义点（def_offset）是否对调用点（caller_offset）可见
 def hir_definition_visible(caller_offset: int, source: str, name_start: int, name_end: int,
     def_offset: int) -> bool:
@@ -1158,26 +1164,13 @@ def hir_find_func_return_type(
     name_start: int,
     name_end: int,
     caller_offset: int,
-    func_index: list[int]
+    func_table: HirFuncTable
 ) -> int:
-    if name_start < 0 or name_end <= name_start or name_end > source.len():
-        return HIR_TYPE_UNKNOWN
-    let name_hash = __c_fnv_hash_range(source, name_start, name_end)
-    let func_i = 0
-    let total_funcs = len(func_index) / 3
-    while func_i < total_funcs:
-        let base = func_i * 3
-        if hir_int_list_get(func_index, base + 1) == name_hash:
-            let offset = hir_int_list_get(func_index, base)
-            let definition_start = hir_int_list_get(records, offset + 9)
-            let definition_end = hir_int_list_get(records, offset + 10)
-            if (
-                hir_source_ranges_equal(source, name_start, name_end, definition_start, definition_end) and
-                hir_file_visible(caller_offset, source, definition_start, definition_end,
-                    hir_int_list_get(func_index, base + 2))
-            ):
-                return hir_signature_int(records, values, offset, HIR_SIGNATURE_RETURN_TYPE)
-        func_i = func_i + 1
+    let func_idx = func_table.index_map.find(source, name_start, name_end,
+        func_table.starts, func_table.ends, func_table.files, caller_offset)
+    if func_idx >= 0 and func_idx < len(func_table.offsets):
+        let offset = hir_int_list_get(func_table.offsets, func_idx)
+        return hir_signature_int(records, values, offset, HIR_SIGNATURE_RETURN_TYPE)
     return HIR_TYPE_UNKNOWN
 
 # extern 调用返回类型：统一查外部表；表外特例保留 UTF-8 API 的 HIR 语义
@@ -1211,36 +1204,6 @@ def hir_external_type_for_name(name: str) -> int:
             return HIR_TYPE_STR
     return HIR_TYPE_DYNAMIC
 
-def hir_set_constant_index(starts: list[int], ends: list[int], types: list[int]):
-    HIR_CONSTANT_BASE = len(HIR_CONSTANT_DATA)
-    let index = 0
-    while index < len(starts) and index < len(ends) and index < len(types):
-        append(HIR_CONSTANT_DATA, starts[index])
-        append(HIR_CONSTANT_DATA, ends[index])
-        append(HIR_CONSTANT_DATA, types[index])
-        index = index + 1
-
-const HIR_CONSTANT_BUCKET_SIZE: int = 512
-
-def hir_collect_constant_buckets(source: str, constant_heads: list[int], constant_index: list[int]):
-    let b_idx = 0
-    while b_idx < HIR_CONSTANT_BUCKET_SIZE:
-        append(constant_heads, -1)
-        b_idx = b_idx + 1
-    let const_idx = HIR_CONSTANT_BASE
-    let const_id = 0
-    while const_idx + 2 < len(HIR_CONSTANT_DATA):
-        let h = __c_fnv_hash_range(source, hir_int_list_get(HIR_CONSTANT_DATA, const_idx),
-            hir_int_list_get(HIR_CONSTANT_DATA, const_idx + 1))
-        let bucket = h % HIR_CONSTANT_BUCKET_SIZE
-        if bucket < 0:
-            bucket = bucket + HIR_CONSTANT_BUCKET_SIZE
-        append(constant_index, h)
-        append(constant_index, hir_int_list_get(constant_heads, bucket))
-        hir_int_list_set(constant_heads, bucket, const_id)
-        const_idx = const_idx + 3
-        const_id = const_id + 1
-
 def hir_collect_field_hashes(source: str, hashes: list[int]):
     let fld_idx = 0
     while fld_idx < len(STRUCT_FIELD_DECLARATIONS):
@@ -1255,28 +1218,12 @@ def hir_find_global_type(
     name_start: int,
     name_end: int,
     caller_offset: int,
-    constant_heads: list[int],
-    constant_index: list[int]
+    constant_table: HirConstantTable
 ) -> int:
-    let name_hash = __c_fnv_hash_range(source, name_start, name_end)
-    let bucket = name_hash % HIR_CONSTANT_BUCKET_SIZE
-    if bucket < 0:
-        bucket = bucket + HIR_CONSTANT_BUCKET_SIZE
-    if bucket < len(constant_heads):
-        let const_id = hir_int_list_get(constant_heads, bucket)
-        let total_consts = len(constant_index) / 2
-        while const_id >= 0 and const_id < total_consts:
-            let c_base = const_id * 2
-            if hir_int_list_get(constant_index, c_base) == name_hash:
-                let const_offset = HIR_CONSTANT_BASE + const_id * 3
-                if const_offset + 2 < len(HIR_CONSTANT_DATA):
-                    let c_start = hir_int_list_get(HIR_CONSTANT_DATA, const_offset)
-                    let c_end = hir_int_list_get(HIR_CONSTANT_DATA, const_offset + 1)
-                    if hir_source_ranges_equal(source, c_start, c_end, name_start, name_end):
-                        let constant_file = module_env_file_at(c_start)
-                        if hir_file_visible(caller_offset, source, name_start, name_end, constant_file):
-                            return hir_type_from_collected_type(hir_int_list_get(HIR_CONSTANT_DATA, const_offset + 2))
-            const_id = hir_int_list_get(constant_index, c_base + 1)
+    let const_id = constant_table.index_map.find(source, name_start, name_end,
+        constant_table.starts, constant_table.ends, CONSTANT_FILES, caller_offset)
+    if const_id >= 0 and const_id < len(constant_table.types):
+        return hir_type_from_collected_type(hir_int_list_get(constant_table.types, const_id))
     let record_id = hir_record_count(records) - 1
     while record_id >= 0:
         let offset = hir_record_offset(record_id)
@@ -1374,7 +1321,7 @@ def hir_func_return_element_type(records: list[int], source: str, func_offset: i
 
 # 解析元组初始化节点第 ordinal 个元素的类型
 def hir_tuple_element_type(records: list[int], values: list[int], source: str, value_node: int, ordinal: int,
-    caller_offset: int, func_index: list[int]) -> int:
+    caller_offset: int, func_table: HirFuncTable) -> int:
     if value_node < 0 or value_node >= hir_record_count(records):
         return HIR_TYPE_DYNAMIC
     let offset = hir_record_offset(value_node)
@@ -1397,18 +1344,11 @@ def hir_tuple_element_type(records: list[int], values: list[int], source: str, v
                 if hir_int_list_get(records, callee_record_offset + 1) == HIR_OP_LOCAL:
                     let callee_name_start = hir_int_list_get(records, callee_record_offset + 3)
                     let callee_name_end = hir_int_list_get(records, callee_record_offset + 4)
-                    let callee_hash = __c_fnv_hash_range(source, callee_name_start, callee_name_end)
-                    let func_i = 0
-                    let total_funcs = len(func_index) / 3
-                    while func_i < total_funcs:
-                        let base = func_i * 3
-                        if hir_int_list_get(func_index, base + 1) == callee_hash:
-                            let rec_offset = hir_int_list_get(func_index, base)
-                            let def_start = hir_int_list_get(records, rec_offset + 9)
-                            let def_end = hir_int_list_get(records, rec_offset + 10)
-                            if hir_source_ranges_equal(source, callee_name_start, callee_name_end, def_start, def_end):
-                                return hir_func_return_element_type(records, source, rec_offset, ordinal)
-                        func_i = func_i + 1
+                    let func_idx = func_table.index_map.find(source, callee_name_start,
+                        callee_name_end, func_table.starts, func_table.ends, func_table.files, caller_offset)
+                    if func_idx >= 0 and func_idx < len(func_table.offsets):
+                        let rec_offset = hir_int_list_get(func_table.offsets, func_idx)
+                        return hir_func_return_element_type(records, source, rec_offset, ordinal)
     return HIR_TYPE_DYNAMIC
 
 def hir_resolve_local_binding(
@@ -1419,9 +1359,8 @@ def hir_resolve_local_binding(
     name_start: int,
     name_end: int,
     scope_records: list[int],
-    func_index: list[int],
-    constant_heads: list[int],
-    constant_index: list[int],
+    func_table: HirFuncTable,
+    constant_table: HirConstantTable,
     local_bindings: list[int]
 ):
     if name_start < 0 or name_end <= name_start or name_end > source.len():
@@ -1473,7 +1412,7 @@ def hir_resolve_local_binding(
                 return
             parameter_index = parameter_index + 1
         let global_type = hir_find_global_type(records, values, source, name_start, name_end, name_start,
-            constant_heads, constant_index)
+            constant_table)
         if global_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC]:
             append(local_bindings, HIR_BIND_CONST_TYPE)
             append(local_bindings, global_type)
@@ -1482,7 +1421,7 @@ def hir_resolve_local_binding(
     else:
         let caller_offset = hir_int_list_get(scope_records, scope_base)
         let global_type = hir_find_global_type(records, values, source, name_start, name_end, caller_offset,
-            constant_heads, constant_index)
+            constant_table)
         if global_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC]:
             append(local_bindings, HIR_BIND_CONST_TYPE)
             append(local_bindings, global_type)
@@ -1497,9 +1436,8 @@ def hir_collect_local_bindings(
     values: list[int],
     source: str,
     scope_records: list[int],
-    func_index: list[int],
-    constant_heads: list[int],
-    constant_index: list[int],
+    func_table: HirFuncTable,
+    constant_table: HirConstantTable,
     local_bindings: list[int]
 ):
     let record_id = 0
@@ -1515,9 +1453,8 @@ def hir_collect_local_bindings(
                 hir_int_list_get(records, offset + 3),
                 hir_int_list_get(records, offset + 4),
                 scope_records,
-                func_index,
-                constant_heads,
-                constant_index,
+                func_table,
+                constant_table,
                 local_bindings
             )
         else:
@@ -1527,7 +1464,7 @@ def hir_collect_local_bindings(
         record_id = record_id + 1
 
 def hir_find_local_type(records: list[int], values: list[int], source: str, current_record_id: int,
-    func_index: list[int], local_bindings: list[int]) -> int:
+    func_table: HirFuncTable, local_bindings: list[int]) -> int:
     let base = current_record_id * 3
     let bind_kind = hir_int_list_get(local_bindings, base)
     if bind_kind == HIR_BIND_LET:
@@ -1538,7 +1475,7 @@ def hir_find_local_type(records: list[int], values: list[int], source: str, curr
     if bind_kind == HIR_BIND_TUPLE_LET:
         let value_node = hir_int_list_get(local_bindings, base + 1)
         let ordinal = hir_int_list_get(local_bindings, base + 2)
-        let element_type = hir_tuple_element_type(records, values, source, value_node, ordinal, 0, func_index)
+        let element_type = hir_tuple_element_type(records, values, source, value_node, ordinal, 0, func_table)
         if element_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC]:
             return element_type
     return HIR_TYPE_UNKNOWN
@@ -1583,7 +1520,7 @@ def hir_is_scalar_list_element_type(type_tag: int) -> bool:
     )
 
 def hir_infer_node_type(records: list[int], values: list[int], source: str, record_id: int,
-    scope_records: list[int], func_index: list[int], field_name_hashes: list[int], local_bindings: list[int]) -> int:
+    scope_records: list[int], func_table: HirFuncTable, field_name_hashes: list[int], local_bindings: list[int]) -> int:
     let offset = hir_record_offset(record_id)
     let kind = hir_int_list_get(records, offset)
     if kind != HIR_RECORD_EXPRESSION and kind != HIR_RECORD_STATEMENT:
@@ -1592,7 +1529,7 @@ def hir_infer_node_type(records: list[int], values: list[int], source: str, reco
     let payload_start = hir_int_list_get(records, offset + 5)
     let payload_count = hir_int_list_get(records, offset + 6)
     if opcode == HIR_OP_LOCAL:
-        return hir_find_local_type(records, values, source, record_id, func_index, local_bindings)
+        return hir_find_local_type(records, values, source, record_id, func_table, local_bindings)
     if opcode == HIR_OP_CALL and payload_count > 0:
         let callee_offset = hir_value_offset(payload_start)
         if hir_int_list_get(values, callee_offset) == HIR_VALUE_NODE:
@@ -1610,7 +1547,7 @@ def hir_infer_node_type(records: list[int], values: list[int], source: str, reco
                         func_name_start,
                         func_name_end,
                         caller_offset,
-                        func_index
+                        func_table
                     )
                     if func_type != HIR_TYPE_UNKNOWN:
                         return func_type
@@ -1772,7 +1709,7 @@ def hir_infer_types(
     source: str,
     inferred_records: list[int],
     scope_records: list[int],
-    func_index: list[int],
+    func_table: HirFuncTable,
     field_name_hashes: list[int],
     local_bindings: list[int]
 ):
@@ -1785,7 +1722,7 @@ def hir_infer_types(
         while record_id < total_recs:
             let offset = hir_record_offset(record_id)
             let inferred_type = hir_infer_node_type(records, values, source, record_id,
-                scope_records, func_index, field_name_hashes, local_bindings)
+                scope_records, func_table, field_name_hashes, local_bindings)
             if (
                 inferred_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC] and
                 hir_int_list_get(records, offset + 2) != inferred_type
@@ -2083,6 +2020,7 @@ def hir_func_signatures_equal(records: list[int], values: list[int], source: str
     return true
 
 def hir_validate_semantics(records: list[int], values: list[int], struct_decls: list[int], source: str,
+    constant_starts: list[int], constant_ends: list[int], constant_types: list[int],
     validated_records: list[int], validated_struct_decls: list[int]) -> bool:
     let initial_program = HirProgram{records: records, values: values, struct_decls: struct_decls}
     let phase_time = 0
@@ -2093,19 +2031,21 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
     phase_time = hir_debug_checkpoint("model", phase_time)
     let scope_records: list[int] = []
     hir_collect_scope_maps(records, scope_records)
-    let func_index: list[int] = []
-    hir_collect_func_index(records, source, func_index)
-    let constant_heads: list[int] = []
-    let constant_index: list[int] = []
-    hir_collect_constant_buckets(source, constant_heads, constant_index)
+    let func_table = hir_collect_func_table(records, source)
+    let constant_table = HirConstantTable{
+        index_map: hash_index_build(source, constant_starts, constant_ends),
+        starts: constant_starts,
+        ends: constant_ends,
+        types: constant_types
+    }
     let field_name_hashes: list[int] = []
     hir_collect_field_hashes(source, field_name_hashes)
     let local_bindings: list[int] = []
-    hir_collect_local_bindings(records, values, source, scope_records, func_index,
-        constant_heads, constant_index, local_bindings)
+    hir_collect_local_bindings(records, values, source, scope_records, func_table,
+        constant_table, local_bindings)
     let inferred_records: list[int] = []
     hir_infer_types(records, values, struct_decls, source, inferred_records,
-        scope_records, func_index, field_name_hashes, local_bindings)
+        scope_records, func_table, field_name_hashes, local_bindings)
     phase_time = hir_debug_checkpoint("infer", phase_time)
     hir_resolve_struct_decls(inferred_records, values, struct_decls, source,
         scope_records, local_bindings)
@@ -2312,7 +2252,6 @@ def hir_model_build_program(
     while declaration_fill_index < hir_record_count(records):
         append(struct_decls, -1)
         declaration_fill_index = declaration_fill_index + 1
-    hir_set_constant_index(constant_starts, constant_ends, constant_types)
     return true
 
 def hir_empty_program() -> HirProgram:

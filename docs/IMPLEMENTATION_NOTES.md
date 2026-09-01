@@ -68,3 +68,11 @@
 30. **自举长签名函数传参溢出（参数 > 8 个）**:自举 Stage 1/2 下长签名函数（如 10+ 参数）在栈帧/寄存器传递时易导致栈错位或 `SIGTRAP`；相关并行数组统一扁平合并（如 `scope_records`、`local_bindings` 3 槽步长），严格控制函数参数在 4~8 个以内。
 31. **未 import 跨模块全局变量访问生成 @llvm.trap**:模块内部直接引用未 import 的全局符号时，编译器将其误判为 NULL 指针并在使用时插入 `@llvm.trap()`；跨模块引用需显式 import 或通过已有导出接口访问。
 32. **HIR 语义验证性能大幅优化（hir-validate 73.8s → 0.38s，加速 ~194 倍）**:通过作用域静态预绑定（local_bindings 映射）、常量哈希桶（constant_heads/index）、解构函数快速索引与字段哈希快筛，彻底消除类型推导中的数千万次回溯扫描。
+33. **通用哈希索引重构与面向对象方法（`HashIndex`）**:
+    - 通用化 `bootstrap/hash_index.dm`，以结构体 `struct HashIndex` 统一管理函数、常量、全局变量与结构体字段的扁平哈希桶与冲突链表。
+    - 全面采用 Dream 原生结构体方法（`self` 接收器）提供面向对象 API：`find`、`find_func`、`find_pair` 等。
+    - 解决同名符号哈希链表遮蔽：`find_func` 在遍历哈希桶单向链表时通过 `receiver_flags` 自动跳过带有 `self` 接收器的结构体方法，确保同名顶层函数正确被命中。
+34. **HIR 常量表上下文解耦与全局状态消除**:
+    - 引入 `struct HirConstantTable` 封装常量表上下文并在 `hir_validate_semantics` 间安全传参，彻底移除全局常量列表，杜绝多文件编译与阶段自举时的状态污染。
+35. **词法分析器 Interface 状态重置**:
+    - `collect_functions` 的接口块缩进退出检测必须置于词法主循环头部，防止紧跟在接口块后的 `def`/`struct` 顶层定义被误识别为接口抽象签名而漏收集。

@@ -1,4 +1,4 @@
-from compiler_lex import (
+from lex import (
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_MULTIPLY,

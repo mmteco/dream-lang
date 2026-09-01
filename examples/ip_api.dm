@@ -4,9 +4,10 @@ from http import get
 from json import Json, loads
 
 def print_info(document: Json):
-    let status = document.get("status").as_str()
-    if status != "success":
-        return "ip-api error: " + document.get("message")
+    let status = document.get("status")
+    if str(status) != "success":
+        print("ip-api error: " + document.get("message"))
+        return
 
     print("IP: " + document.get("query"))
     print("Country: " + document.get("country"))

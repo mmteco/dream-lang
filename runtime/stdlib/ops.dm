@@ -48,6 +48,9 @@ interface Eq[T]:
     def neq(self, other: T) -> bool:
         return not self.eq(other)
 
+interface Hash:
+    def hash(self) -> int
+
 interface Ord[T]:
     def lt(self, other: T) -> bool
     def gt(self, other: T) -> bool

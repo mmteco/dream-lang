@@ -27,6 +27,8 @@ if test (count $argv) -gt 0
 end
 set ast_output_file tmp/dream_bootstrap_ast.ast
 
+rm -rf target/cache
+rm -rf tmp
 mkdir -p tmp
 
 function cleanup_bootstrap_request --on-event fish_exit
@@ -172,17 +174,20 @@ end
 check_host_example "$full_ocaml_example" "$ocaml_output_file"
 check_host_example "$full_dream_example" "$host_output_file"
 
+echo "[bootstrap] 1. build stage1..."
 $stage0_compiler build "$compiler_source" -o "$stage1_binary" >/dev/null
 or exit 1
 check_bootstrapped_ast "$full_dream_example" expr_unary expr_logical expr_cond expr_call expr_index
 rg -q 'stmt_return s6: [1-9][0-9]* ' "$ast_output_file"
 or exit 1
 check_bootstrapped_ast "$full_dream_example" expr_attr expr_binary expr_bool expr_builtin_enum expr_call expr_cond expr_dict expr_float expr_index expr_lambda expr_list expr_list_comp expr_logical expr_match expr_method_call expr_rune expr_slice expr_string expr_struct expr_tuple expr_unary expr_var pat_bool pat_builtin pat_cons pat_enum pat_float pat_int pat_list pat_rune pat_string pat_struct pat_var pat_wildcard m_case stmt_assign stmt_break stmt_case stmt_elif stmt_expr stmt_for stmt_if stmt_let stmt_let_tuple stmt_return stmt_switch stmt_while
+echo "[bootstrap] 2. stage1 llvm -> stage2.ll..."
 "$stage1_binary" llvm "$compiler_source" -o "tmp/stage2.ll"
 or exit 1
 verify_bootstrap_llvm
 or exit 1
 
+echo "[bootstrap] 3. compile stage2..."
 compile_llvm "tmp/stage2" "tmp/stage2.ll"
 or exit 1
 
@@ -190,10 +195,12 @@ or exit 1
 or exit 1
 
 if test "$include_stage3" = true
+    echo "[bootstrap] 4. stage2 llvm -> stage3.ll..."
     "tmp/stage2" llvm "$compiler_source" -o "tmp/stage3.ll"
     or exit 1
     verify_bootstrap_llvm --with-stage3
     or exit 1
+    echo "[bootstrap] 5. compile stage3..."
     compile_llvm "tmp/stage3" "tmp/stage3.ll"
     or exit 1
     "tmp/stage3" help >/dev/null

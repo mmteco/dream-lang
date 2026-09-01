@@ -53,20 +53,28 @@ DreamIR 是类型化 CFG/SSA 中间表示：SSA 值使用稳定 ID（`%v1`），
 ### bootstrap 自举编译器
 
 ```
-compiler.dm（源码）
+compiler.dm（源码入口）
   ↓
-compiler_lex.dm       lex + collect（token 流、声明表预收集：struct/函数/全局 let）
+lex.dm               lex + collect（token 流、声明表预收集：struct/函数/接口/全局 let）
   ↓
-compiler_ast.dm       AST 节点池（扁平 list[int]，节点 = [kind, token_start, token_end, arg0...]）
+ast.dm               AST 节点池（扁平 list[int]，节点 = [kind, token_start, token_end, arg0...]）
   ↓
-compiler_lower.dm     lower 顶向下遍历 → 结构化 DIR records（FUNCTION/BLOCK/指令记录）
+hash_index.dm        通用符号哈希索引（HashIndex 结构体方法：find、find_func、find_pair，高效 O(1) 查找并支持同名函数/方法消歧）
   ↓
-compiler_dir.dm       dir_validate_records 验证 → dir_render_records 渲染 LLVM IR
+hir_model.dm         HIR 模型构建与语义分析（作用域静态预绑定、类型推导与语义验证）
+  ↓
+mir_model.dm         MIR 模型与 Lowering（结构化控制流、模式匹配解构、静态/动态方法调用分派）
+  ↓
+mir_opt.dm           MIR 优化 Pass（死代码消除、常量折叠等）
+  ↓
+lir_model.dm         LIR 低级模型与寄存器/栈槽分配
+  ↓
+llvm_emit.dm         LLVM IR 发射与渲染
   ↓
 clang + runtime/c/core + runtime/c/wrappers      链接生成可执行文件（runtime linker 动态扫描 runtime/c/core/*.c 和 runtime/c/wrappers/*.c）
 ```
 
-自举编译器的 lexer/表达式/语句解析仍是过渡实现（服务于 `compiler.dm` 自身的语法子集），但发射器已直接构建结构化 DIR records，与 OCaml 版本保持同一流水线方向，不再存在「先生成 LLVM 文本、再反解析为 DIR」的反向路径。新旧管线的详细进度见 [BOOTSTRAP.md](BOOTSTRAP.md)。
+自举编译器已实现模块化多阶段 IR 管线（`AST → HIR → MIR → LIR → LLVM`），通过 `hash_index.dm` 的通用结构体方法提供高效符号索引，并与 OCaml 版本保持统一的语义模型。新旧管线的详细进度见 [BOOTSTRAP.md](BOOTSTRAP.md)。
 
 ## 项目目录结构
 
@@ -82,7 +90,19 @@ dream/
 │   │   ├── dir/       # DreamIR 后端（dir.ml、dir_lower.ml、dir_verify.ml、dir_printer.ml、dir_lower_llvm.ml）
 │   │   └── compiler/  # 编译管线（dir_compiler.ml）
 │   └── test/          # OCaml 单元测试（dir_test.ml）
-├── bootstrap/         # 自举编译器源码（Dream 语言编写，compiler*.dm）
+├── bootstrap/         # 自举编译器源码（Dream 语言编写，compiler.dm 入口及各 stage 模块）
+│   ├── compiler.dm    # 自举编译器顶层主入口
+│   ├── main.dm        # 编译器管线驱动与 CLI
+│   ├── hash_index.dm  # 通用符号哈希索引与结构体方法（HashIndex）
+│   ├── lex.dm         # 词法分析与声明预收集
+│   ├── ast.dm         # AST 节点池与语法树构建
+│   ├── hir_model.dm   # HIR 模型与语义验证
+│   ├── mir_model.dm   # MIR 模型与 lowering
+│   ├── mir_opt.dm     # MIR 优化 Pass
+│   ├── lir_model.dm   # LIR 低级模型
+│   ├── llvm_emit.dm   # LLVM IR 发射器
+│   ├── external.dm    # 运行时 ABI 与外部符号映射
+│   └── operator.dm    # 运算符定义与映射
 ├── runtime/           # 运行时标准库
 │   ├── c/             # C 运行时（io.c / memory.c / dynarray.c / str.c / bytes.c / file.c
 │   │                  #  dict.c / tuple.c / union.c / enum.c / utf8.c / math.c 等）

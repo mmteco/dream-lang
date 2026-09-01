@@ -52,6 +52,9 @@ Stage 0: OCaml compiler
 - **ord**：身份函数透传（rune 与 int 底层同 i32），避免生成未声明的 `@ord` 调用。
 - **KEYWORD_DICTIONARY 初始化**：全局 dict 由 main 入口按字面量求值填充，修复 `def` 等关键字被识别为 IDENTIFIER。
 - **范围比较与哈希提速**：runtime 新增 `__c_range_equal`（按 rune 定位后 memcmp）与 `__c_fnv_hash_range`（一次扫描 FNV-1a 变体），`source_ranges_equal` 从「切片+字符串比较」（两次分配+全量扫描）改为单次定位+memcmp；两者在 OCaml 编译器（`env.ml` 类型、`dir_lower.ml` runtime_externs）与新管线 extern 声明中注册。
+- **通用符号哈希索引与面向对象方法（`HashIndex`）**：将符号哈希表统一封装为 `struct HashIndex`（`bootstrap/hash_index.dm`），实现面向对象结构体方法（`find`、`find_func`、`find_pair` 等）。`find_func` 在遍历冲突链表时自动通过 `receiver_flags` 跳过带 `self` 接收器的结构体方法，彻底解决同名顶层函数与方法（如 `io.read` 与 `File.read`）哈希遮蔽冲突。
+- **HIR 常量表上下文解耦**：引入 `struct HirConstantTable` 打包常量表上下文，替换全局变量，避免跨文件编译与阶段自举时的状态覆盖与内存污染。
+- **词法分析器 Interface 状态重置**：将接口块的缩进退出检测前置到词法主循环头部，解决紧跟接口块的顶层函数被误判为接口签名而漏收集的问题。
 
 性能（-O2 生产配置，stage1 编译 compiler.dm）：
 
