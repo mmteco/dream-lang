@@ -404,6 +404,21 @@ def dumps(value: Json) -> str:
         Json.Object(entries): encode_object(entries)
         Json.Error(_): "null"
 
+def parse(text: str) -> Json:
+    return loads(text)
+
+def load_file(path: str) -> Json:
+    if not __c_file_exists(path):
+        return Json.Error("file not found: " + path)
+    let text = __c_file_read(path)
+    return loads(text)
+
+def dump_file(path: str, value: Json) -> bool:
+    let text = dumps(value)
+    let written = __c_file_write(path, text)
+    return written >= 0
+
+
 impl JsonValue for Json:
     def get(self, key: str) -> Json:
         return match self:

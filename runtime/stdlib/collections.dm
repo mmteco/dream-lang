@@ -81,6 +81,55 @@ struct Set:
             append(result, v)
         return result
 
+    def clear(self) -> Set:
+        self.values = []
+        self.index = {}
+        return self
+
+    def pop(self) -> str:
+        if len(self.values) == 0:
+            return ""
+        let last_idx = len(self.values) - 1
+        let val = self.values[last_idx]
+        let new_values: list[str] = []
+        let new_index: dict[str, int] = {}
+        let idx = 0
+        while idx < last_idx:
+            let item = self.values[idx]
+            append(new_values, item)
+            new_index[item] = 1
+            idx = idx + 1
+        self.values = new_values
+        self.index = new_index
+        return val
+
+    def update(self, other: Set) -> Set:
+        for value in other.values:
+            self.add(value)
+        return self
+
+    def intersection_update(self, other: Set) -> Set:
+        let new_values: list[str] = []
+        let new_index: dict[str, int] = {}
+        for value in self.values:
+            if value in other.index:
+                append(new_values, value)
+                new_index[value] = 1
+        self.values = new_values
+        self.index = new_index
+        return self
+
+    def difference_update(self, other: Set) -> Set:
+        let new_values: list[str] = []
+        let new_index: dict[str, int] = {}
+        for value in self.values:
+            if value not in other.index:
+                append(new_values, value)
+                new_index[value] = 1
+        self.values = new_values
+        self.index = new_index
+        return self
+
     def copy(self) -> Set:
         let result = Set()
         for v in self.values:
@@ -171,6 +220,55 @@ struct OrderedSet:
             append(result, v)
         return result
 
+    def clear(self) -> OrderedSet:
+        self.values = []
+        self.index = {}
+        return self
+
+    def pop(self) -> str:
+        if len(self.values) == 0:
+            return ""
+        let last_idx = len(self.values) - 1
+        let val = self.values[last_idx]
+        let new_values: list[str] = []
+        let new_index: dict[str, int] = {}
+        let idx = 0
+        while idx < last_idx:
+            let item = self.values[idx]
+            append(new_values, item)
+            new_index[item] = 1
+            idx = idx + 1
+        self.values = new_values
+        self.index = new_index
+        return val
+
+    def update(self, other: OrderedSet) -> OrderedSet:
+        for value in other.values:
+            self.add(value)
+        return self
+
+    def intersection_update(self, other: OrderedSet) -> OrderedSet:
+        let new_values: list[str] = []
+        let new_index: dict[str, int] = {}
+        for value in self.values:
+            if value in other.index:
+                append(new_values, value)
+                new_index[value] = 1
+        self.values = new_values
+        self.index = new_index
+        return self
+
+    def difference_update(self, other: OrderedSet) -> OrderedSet:
+        let new_values: list[str] = []
+        let new_index: dict[str, int] = {}
+        for value in self.values:
+            if value not in other.index:
+                append(new_values, value)
+                new_index[value] = 1
+        self.values = new_values
+        self.index = new_index
+        return self
+
     def copy(self) -> OrderedSet:
         let result = OrderedSet()
         for v in self.values:
@@ -213,4 +311,65 @@ def ordered_set(items: list[str] = []) -> OrderedSet:
     for item in items:
         result.add(item)
     return result
+
+
+struct Counter:
+    counts: dict[str, int]
+    keys: list[str]
+    _total: int
+
+    def __init__() -> Counter:
+        return Counter{counts: {}, keys: [], _total: 0}
+
+    def get(self, key: str) -> int:
+        if key in self.counts:
+            return self.counts[key]
+        return 0
+
+    def add(self, key: str, count: int = 1) -> Counter:
+        if key not in self.counts:
+            append(self.keys, key)
+            self.counts[key] = count
+        else:
+            self.counts[key] = self.counts[key] + count
+        self._total = self._total + count
+        return self
+
+    def total(self) -> int:
+        return self._total
+
+    def len(self) -> int:
+        return len(self.keys)
+
+    def contains(self, key: str) -> bool:
+        return key in self.counts
+
+    def update(self, items: list[str]) -> Counter:
+        for item in items:
+            self.add(item, 1)
+        return self
+
+    def most_common_key(self) -> str:
+        let best_k = ""
+        let best_v = -1
+        for k in self.keys:
+            let v = self.counts[k]
+            if v > best_v:
+                best_v = v
+                best_k = k
+        return best_k
+
+    def most_common_count(self) -> int:
+        let best_v = 0
+        for k in self.keys:
+            let v = self.counts[k]
+            if v > best_v:
+                best_v = v
+        return best_v
+
+def counter(items: list[str] = []) -> Counter:
+    let result = Counter()
+    result.update(items)
+    return result
+
 

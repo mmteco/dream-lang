@@ -69,3 +69,84 @@ def split(value: str, separator: str) -> list[str]:
 
 def join(values: list[str], separator: str) -> str:
     return __c_str_join(values, separator)
+
+def splitlines(value: str) -> list[str]:
+    let result: list[str] = []
+    let length = len(value)
+    let start = 0
+    let index = 0
+    while index < length:
+        if value[index] == '\r':
+            append(result, value[start:index])
+            if index + 1 < length and value[index + 1] == '\n':
+                index = index + 1
+            start = index + 1
+        elif value[index] == '\n':
+            append(result, value[start:index])
+            start = index + 1
+        index = index + 1
+    if start < length:
+        append(result, value[start:length])
+    return result
+
+def zfill(value: str, width: int) -> str:
+    let length = len(value)
+    if length >= width:
+        return value
+    let pad_len = width - length
+    let pad = ""
+    let i = 0
+    while i < pad_len:
+        pad += "0"
+        i += 1
+    return pad + value
+
+def ljust(value: str, width: int, fill: str = " ") -> str:
+    let length = len(value)
+    if length >= width:
+        return value
+    let pad_len = width - length
+    let pad = ""
+    let i = 0
+    while i < pad_len:
+        pad += fill
+        i += 1
+    return value + pad
+
+def rjust(value: str, width: int, fill: str = " ") -> str:
+    let length = len(value)
+    if length >= width:
+        return value
+    let pad_len = width - length
+    let pad = ""
+    let i = 0
+    while i < pad_len:
+        pad += fill
+        i += 1
+    return pad + value
+
+def center(value: str, width: int, fill: str = " ") -> str:
+    let length = len(value)
+    if length >= width:
+        return value
+    let total_pad = width - length
+    let left_pad_len = total_pad / 2
+    let right_pad_len = total_pad - left_pad_len
+    let left_pad = ""
+    let right_pad = ""
+    let i = 0
+    while i < left_pad_len:
+        left_pad += fill
+        i += 1
+    i = 0
+    while i < right_pad_len:
+        right_pad += fill
+        i += 1
+    return left_pad + value + right_pad
+
+def partition(value: str, sep: str) -> (str, str, str):
+    let idx = find(value, sep)
+    if idx < 0:
+        return (value, "", "")
+    return (value[:idx], sep, value[idx + len(sep):])
+

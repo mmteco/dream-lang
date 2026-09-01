@@ -492,7 +492,12 @@ and lower_statement context function_builder environment statement =
   | SIndexAssign (collection, index, expression, position) ->
       let lowered_collection = lower_expr context function_builder environment collection in
       let lowered_index = lower_expr context function_builder environment index in
-      let lowered_value = lower_expr context function_builder environment expression in
+      let expected_value_type = match lowered_collection.ty with
+        | Dir.List elem_type -> Some elem_type
+        | Dir.Dict (_, val_type) -> Some val_type
+        | _ -> None
+      in
+      let lowered_value = lower_expr_expected context function_builder environment expected_value_type expression in
       (match lowered_collection.ty with
        | Dir.List Dir.I32 ->
            expect_type position Dir.I32 lowered_index.ty "index assignment index";
@@ -576,7 +581,7 @@ and lower_statement context function_builder environment statement =
         | None -> fail_at position ("unknown struct field " ^ field_name)
         | Some index -> index, snd (List.nth fields index)
       in
-      let lowered_value = lower_expr context function_builder environment expression in
+      let lowered_value = lower_expr_expected context function_builder environment (Some field_type) expression in
       expect_type position field_type lowered_value.ty ("struct field " ^ field_name);
       (match object_value.ty with
        | Ref (Struct _) ->

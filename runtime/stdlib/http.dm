@@ -2,6 +2,7 @@
 
 from collections import OrderedSet
 from utf8 import ord
+from json import Json, loads
 
 struct Response:
     status: int
@@ -11,6 +12,12 @@ struct Response:
 
     def ok(self) -> bool:
         return self.error == "" and self.status >= 200 and self.status < 300
+
+    def text(self) -> str:
+        return self.body
+
+    def json(self) -> Json:
+        return loads(self.body)
 
     def header(self, name: str) -> str:
         let key = name.lower()

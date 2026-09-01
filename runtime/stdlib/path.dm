@@ -153,6 +153,32 @@ struct Path:
             return Err("failed to write bytes")
         return Ok(written)
 
+    def append_text(self, content: str) -> Result[int, str]:
+        let written = __c_file_append(self.raw, content)
+        if written == -1:
+            return Err("failed to append file")
+        return Ok(written)
+
+    def append_bytes(self, content: bytes) -> Result[int, str]:
+        let written = __c_file_append_bytes(self.raw, content)
+        if written == -1:
+            return Err("failed to append bytes")
+        return Ok(written)
+
+    def rename(self, target: str) -> bool:
+        return __c_file_rename(self.raw, target)
+
+    def with_name(self, name: str) -> Path:
+        return Path(join(dirname(self.raw), name))
+
+    def with_suffix(self, suffix: str) -> Path:
+        let cur_stem = stem(self.raw)
+        let parent_dir = dirname(self.raw)
+        let new_name = cur_stem + suffix
+        if parent_dir == ".":
+            return Path(new_name)
+        return Path(join(parent_dir, new_name))
+
     def unlink(self) -> bool:
         return __c_file_delete(self.raw)
 

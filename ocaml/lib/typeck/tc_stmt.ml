@@ -1048,8 +1048,9 @@ let rec check_statement env = function
                      (env, empty_subst)
                  | Some field_type ->
                      (try
-                        let _ = unify (apply_subst combined_subst value_type) field_type in
-                        (apply_subst_to_env combined_subst env, combined_subst)
+                        let subst = unify (apply_subst combined_subst value_type) field_type in
+                        let total_subst = compose_subst subst combined_subst in
+                        (apply_subst_to_env total_subst env, total_subst)
                       with Failure msg ->
                         let err = make_error (TypeError msg) pos
                           (Printf.sprintf "Field '%s' type mismatch: %s" field msg) in
@@ -1069,9 +1070,11 @@ let rec check_statement env = function
       (match apply_subst combined_subst arr_type with
        | TyList elem_type ->
            (try
-              let _ = unify (apply_subst combined_subst idx_type) TyInt in
-              let _ = unify (apply_subst combined_subst value_type) elem_type in
-              (apply_subst_to_env combined_subst env, combined_subst)
+              let s1 = unify (apply_subst combined_subst idx_type) TyInt in
+              let subst2 = compose_subst s1 combined_subst in
+              let s2 = unify (apply_subst subst2 value_type) (apply_subst subst2 elem_type) in
+              let total_subst = compose_subst s2 subst2 in
+              (apply_subst_to_env total_subst env, total_subst)
             with Failure msg ->
               let err = make_error (TypeError msg) pos
                 (Printf.sprintf "Index assignment type error: %s" msg) in
@@ -1079,9 +1082,11 @@ let rec check_statement env = function
               (env, empty_subst))
        | TyDict (key_type, val_type) ->
            (try
-              let _ = unify (apply_subst combined_subst idx_type) key_type in
-              let _ = unify (apply_subst combined_subst value_type) val_type in
-              (apply_subst_to_env combined_subst env, combined_subst)
+              let s1 = unify (apply_subst combined_subst idx_type) key_type in
+              let subst2 = compose_subst s1 combined_subst in
+              let s2 = unify (apply_subst subst2 value_type) (apply_subst subst2 val_type) in
+              let total_subst = compose_subst s2 subst2 in
+              (apply_subst_to_env total_subst env, total_subst)
             with Failure msg ->
               let err = make_error (TypeError msg) pos
                 (Printf.sprintf "Dictionary assignment type error: %s" msg) in
