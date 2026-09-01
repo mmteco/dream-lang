@@ -5,11 +5,19 @@
 ## 性能优化注意点
 
 1. **哈希查找优于字符串比较链**:keyword 查找从 18 次字符串比较改为 dict 哈希,stage1 编译 compiler.dm 271s → 47s(5.8 倍)。原则:高频符号查找(关键字、struct/函数声明名)编译期预收集成哈希表。
-2. **容器操作按元素类型特化**:`list[i32]` 用 `dynarray_i32`、`list[str]`/`list[tuple]` 用 `dynarray_ptr`;ListGet/Create/Slice/Concat/Length 分派 i32/ptr 变体(runtime 提供 `slice_dynarray_ptr`/`concat_dynarray_ptr`)。不为通用性引入装箱开销。
-3. **元组槽统一 intptr_t 位编码**:i32/bool 位扩展截断、f64 位变换、指针 ptrtoint/inttoptr;仅 struct/interface 聚合经 `dream_closure_alloc` 堆装箱。标量不堆分配。
-4. **接口装箱对象引用计数托管 + 编译期逃逸标记**:`function_builder` 记录装箱对象,emit 时按「参数交给其他函数/全局/闭包捕获」标记逃逸,函数返回前(SReturn 与默认路径)释放未逃逸对象。修复前每次循环泄漏一份 struct 拷贝(百万次峰值内存 ~0.8MB)。
-5. **字符串相等性比较避免 utf8-aware 慢路径**:DM `ord()` 逐字符极慢;`source_ranges_equal` 用长度预检查 + 字节比较,后演进出 `__c_range_equal`(memcmp)。
-6. **switch 代码生成按类型选指令**:int/bool 用 `icmp`、float 用 `fcmp oeq`、str 用 `string_compare`;整数用 LLVM 原生 `switch`,其余标量渲染为比较链。
+2. **作用域静态预绑定代替全量逆向线性扫描（hir-infer 68s → 232ms）**:
+   - 原 `hir_find_local_type` / `hir_local_struct_declaration` 逐节点逆向线性回溯至函数头，在 8 轮 Pass 下产生数千万次无效遍历。
+   - 改在推导前单次正向构建 `scope_records`（caller_offset, func_id, prev_let）并解析 `local_bindings` 静态绑定（LET/CONST/TUPLE/GLOBAL），多轮 Pass 内局部变量类型推导降为 **$O(1)$ 常数时间**。
+3. **全局常量与函数返回类型哈希桶化**:
+   - `hir_find_global_type` 引入 512 槽哈希桶（`constant_heads` + `constant_index`），消除未命中局部变量时对 `HIR_CONSTANT_DATA` 的全量线性回溯。
+   - `hir_tuple_element_type` 和 `hir_find_func_return_type` 复用紧凑 `func_index`（`[offset, name_hash, def_file]`），消除解构赋值时对全程序 records 的全局倒序扫描。
+4. **模块可见性判定零堆分配短路（hir_file_visible）**:同文件与 Prelude 引用直接短路返回 `true`，消除高频堆分配 `candidate_files` 列表的开销。
+5. **移除结构体字段推导中的源码倒序扫描陷阱**:表达式 `base.field` 处的字段名是使用点而非定义点，原 `hir_field_type_from_source` 向上倒退几万字符扫描寻找 `struct ` 且必定失败；改用预收集的 `field_name_hashes` 快筛。
+6. **容器操作按元素类型特化**:`list[i32]` 用 `dynarray_i32`、`list[str]`/`list[tuple]` 用 `dynarray_ptr`;ListGet/Create/Slice/Concat/Length 分派 i32/ptr 变体(runtime 提供 `slice_dynarray_ptr`/`concat_dynarray_ptr`)。不为通用性引入装箱开销。
+7. **元组槽统一 intptr_t 位编码**:i32/bool 位扩展截断、f64 位变换、指针 ptrtoint/inttoptr;仅 struct/interface 聚合经 `dream_closure_alloc` 堆装箱。标量不堆分配。
+8. **接口装箱对象引用计数托管 + 编译期逃逸标记**:`function_builder` 记录装箱对象,emit 时按「参数交给其他函数/全局/闭包捕获」标记逃逸,函数返回前(SReturn 与默认路径)释放未逃逸对象。修复前每次循环泄漏一份 struct 拷贝(百万次峰值内存 ~0.8MB)。
+9. **字符串相等性比较避免 utf8-aware 慢路径**:DM `ord()` 逐字符极慢;`source_ranges_equal` 用长度预检查 + 字节比较,后演进出 `__c_range_equal`(memcmp)。
+10. **switch 代码生成按类型选指令**:int/bool 用 `icmp`、float 用 `fcmp oeq`、str 用 `string_compare`;整数用 LLVM 原生 `switch`,其余标量渲染为比较链。
 
 ## 实现注意点(ABI/布局)
 
@@ -57,4 +65,6 @@
 26. **函数值传递 + 间接调用**（新特性）：函数类型参数（`(T)->T` 注解→HIR_TYPE_FUNCTION）调用生成 MIR_RUNTIME_FUNCTION_CALL；LLVM 函数指针表 `@dm_function_table=[ptr @dm_function_N]`（放函数定义后，入口函数 null），统一签名 `i32 (i32, i32, i32)` 间接调用（arm64 首参 w0 对齐）。
 27. **prepare 脚本顶层残留**:bootstrap_build.fish 的 sed 只删 `^let` 行，`let x = match ...` 多行体残留顶层非法块→awk 只保留定义块（struct/def 等含缩进块）。
 28. **LLVM 输出缺 `; DIR records=` 统计**:check_fixed_point 用 rg 校验，LLVM 输出头补 `; DIR records=N`。
-29. **字符串/浮点字面量节点越界读**:AST_EXPR_STRING/FLOAT 节点构建为 0 个 arg（size 3），但 hir_lower_ast_node 的 LITERAL 分支无条件读 arg0（node+3）→ 最后节点顶到池尾时越界 1（自举差异：stage1 内联路径恰好不触发，stage2 触发）；改按 ast_node_size > header 判断才读。越界诊断同时改为仅 DEBUG 输出（防御性）。
+30. **自举长签名函数传参溢出（参数 > 8 个）**:自举 Stage 1/2 下长签名函数（如 10+ 参数）在栈帧/寄存器传递时易导致栈错位或 `SIGTRAP`；相关并行数组统一扁平合并（如 `scope_records`、`local_bindings` 3 槽步长），严格控制函数参数在 4~8 个以内。
+31. **未 import 跨模块全局变量访问生成 @llvm.trap**:模块内部直接引用未 import 的全局符号时，编译器将其误判为 NULL 指针并在使用时插入 `@llvm.trap()`；跨模块引用需显式 import 或通过已有导出接口访问。
+32. **HIR 语义验证性能大幅优化（hir-validate 73.8s → 0.38s，加速 ~194 倍）**:通过作用域静态预绑定（local_bindings 映射）、常量哈希桶（constant_heads/index）、解构函数快速索引与字段哈希快筛，彻底消除类型推导中的数千万次回溯扫描。

@@ -271,6 +271,7 @@
 - [ ] 优化列表推导式的内存分配
 - [ ] 启用 LLVM 优化 pass (-O2, -O3)
 - [x] bootstrap 编译器性能优化（source_type_is_interface 预收集声明表：emit 38s → 11.3s；lex 魔法数字常量）
+- [x] HIR 语义验证性能优化（hir-validate 73.8s → 0.38s，加速 ~194 倍：静态预绑定、常量/函数哈希桶索引、零堆分配短路）
 
 ### 长期
 - [ ] 实现写时复制 (COW)

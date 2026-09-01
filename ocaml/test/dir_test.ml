@@ -198,7 +198,7 @@ let () =
     externs = [];
     functions = [list_function];
   } in
-  assert_true (contains list_llvm_text "@set_dynarray_i32")
+  assert_true (contains list_llvm_text "@__c_set_dynarray_i32")
     "LLVM lowering lost list mutation";
   let switch_llvm_text = Dir_lower_llvm.render {
     Dir.name = "switch_test";
@@ -212,7 +212,7 @@ let () =
     "boolean DIR switch did not lower to an integer comparison";
   assert_true (contains switch_llvm_text "fcmp oeq double")
     "float DIR switch did not lower to a floating-point comparison";
-  assert_true (contains switch_llvm_text "call i32 @string_compare")
+  assert_true (contains switch_llvm_text "call i32 @__c_str_compare")
     "string DIR switch did not lower to string comparison";
   let merged_module = match Dir_lower.lower_program branch_merge_program with
     | Ok module_ -> module_

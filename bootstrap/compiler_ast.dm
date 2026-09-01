@@ -411,25 +411,34 @@ def ast_advance_index(index: int, amount: int) -> int:
 def ast_int_list_get(values: list[int], index: int) -> int:
     return values[index]
 
-def ast_node_index_is_valid(ast: list[int], node: int) -> bool:
-    if node <= 0 or node >= len(ast):
-        return false
+def ast_build_node_validity_map(ast: list[int]) -> list[int]:
+    let is_valid_node: list[int] = []
+    let i = 0
+    while i < len(ast):
+        append(is_valid_node, 0)
+        i = i + 1
     let current_node = 1
-    while current_node < node:
+    while current_node < len(ast):
         let node_size = ast_node_size(ast, current_node)
         if node_size < AST_HEADER_SIZE or current_node + node_size > len(ast):
-            return false
+            return is_valid_node
+        is_valid_node[current_node] = 1
         current_node = current_node + node_size
-    return current_node == node
+    return is_valid_node
 
-def ast_range_is_walkable(ast: list[int], start: int, end: int) -> bool:
+def ast_node_index_is_valid_fast(valid_map: list[int], node: int) -> bool:
+    if node <= 0 or node >= len(valid_map):
+        return false
+    return valid_map[node] == 1
+
+def ast_range_is_walkable_fast(ast: list[int], valid_map: list[int], start: int, end: int) -> bool:
     if start == 0 and end == 0:
         return true
     if start <= 0 or end < start or end > len(ast):
         return false
     if start == end:
         return true
-    if not ast_node_index_is_valid(ast, start):
+    if not ast_node_index_is_valid_fast(valid_map, start):
         return false
     let node = start
     while node < end:
@@ -442,83 +451,83 @@ def ast_range_is_walkable(ast: list[int], start: int, end: int) -> bool:
         node = next
     return node == end
 
-def ast_optional_range_is_walkable(ast: list[int], start: int, end: int) -> bool:
+def ast_optional_range_is_walkable_fast(ast: list[int], valid_map: list[int], start: int, end: int) -> bool:
     if start == 0:
         return end >= 0 and end <= len(ast)
-    return ast_range_is_walkable(ast, start, end)
+    return ast_range_is_walkable_fast(ast, valid_map, start, end)
 
-def ast_child_is_valid(ast: list[int], node: int) -> bool:
+def ast_child_is_valid_fast(valid_map: list[int], node: int) -> bool:
     if node == AST_NODE_INVALID:
         return true
-    return ast_node_index_is_valid(ast, node)
+    return ast_node_index_is_valid_fast(valid_map, node)
 
-def ast_required_child_is_valid(ast: list[int], node: int) -> bool:
+def ast_required_child_is_valid_fast(valid_map: list[int], node: int) -> bool:
     if node == AST_NODE_INVALID:
         return false
-    return ast_node_index_is_valid(ast, node)
+    return ast_node_index_is_valid_fast(valid_map, node)
 
-def ast_validate_child_array(ast: list[int], node: int, count_argument: int, first_argument: int,
+def ast_validate_child_array_fast(ast: list[int], valid_map: list[int], node: int, count_argument: int, first_argument: int,
     max_count: int) -> bool:
     let child_count = ast_node_arg(ast, node, count_argument)
     if child_count < 0 or child_count > max_count:
         return false
     let child_index = 0
     while child_index < child_count:
-        if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, first_argument + child_index)):
+        if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, first_argument + child_index)):
             return false
         child_index = child_index + 1
     return true
 
-def ast_validate_node_children(ast: list[int], node: int) -> bool:
+def ast_validate_node_children(ast: list[int], node: int, valid_map: list[int]) -> bool:
     let kind = ast_node_kind(ast, node)
     switch kind:
         case AST_EXPR_CALL:
             if ast_node_arg(ast, node, 1) < 0 or node + ast_node_size(ast, node) > len(ast):
                 return false
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_validate_child_array(ast, node, 1, 3, len(ast))
+            return ast_validate_child_array_fast(ast, valid_map, node, 1, 3, len(ast))
         case AST_EXPR_METHOD_CALL:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_validate_child_array(ast, node, 3, 5, 8)
+            return ast_validate_child_array_fast(ast, valid_map, node, 3, 5, 8)
         case AST_EXPR_ATTR:
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0))
         case AST_EXPR_BINARY:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_LEFT)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_LEFT)):
                 return false
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_RIGHT))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_RIGHT))
         case AST_EXPR_LOGICAL:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_LEFT)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_LEFT)):
                 return false
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_RIGHT))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_RIGHT))
         case AST_EXPR_UNARY:
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_OPERAND))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_OPERAND))
         case AST_EXPR_COND:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_COND)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_COND)):
                 return false
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_THEN)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_THEN)):
                 return false
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, ARG_ELSE))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, ARG_ELSE))
         case AST_EXPR_LIST:
             let list_count = ast_node_arg(ast, node, 0)
             if list_count < 0:
                 return false
             let list_index = 0
             while list_index < list_count:
-                if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 1 + list_index)):
+                if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 1 + list_index)):
                     return false
                 list_index = list_index + 1
             return true
         case AST_EXPR_TUPLE:
-            return ast_validate_child_array(ast, node, 0, 1, 13)
+            return ast_validate_child_array_fast(ast, valid_map, node, 0, 1, 13)
         case AST_EXPR_DICT:
-            if not ast_validate_child_array(ast, node, 0, 1, 20):
+            if not ast_validate_child_array_fast(ast, valid_map, node, 0, 1, 20):
                 return false
             let pair_count = ast_node_arg(ast, node, 0)
             let pair_index = 0
             while pair_index < pair_count:
-                if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 21 + pair_index)):
+                if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 21 + pair_index)):
                     return false
                 pair_index = pair_index + 1
             return true
@@ -528,89 +537,89 @@ def ast_validate_node_children(ast: list[int], node: int) -> bool:
                 return false
             if node + AST_HEADER_SIZE + ARGS_STRUCT_BASE + field_count > len(ast):
                 return false
-            return ast_validate_child_array(ast, node, 4, 5, field_count)
+            return ast_validate_child_array_fast(ast, valid_map, node, 4, 5, field_count)
         case AST_EXPR_INDEX:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 1))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 1))
         case AST_EXPR_SLICE:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 1)):
+            if not ast_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 1)):
                 return false
-            return ast_child_is_valid(ast, ast_node_arg(ast, node, 2))
+            return ast_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 2))
         case AST_EXPR_LAMBDA:
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 2))
         case AST_EXPR_LIST_COMP:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 3)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 3)):
                 return false
-            return ast_child_is_valid(ast, ast_node_arg(ast, node, 6))
+            return ast_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 6))
         case AST_EXPR_MATCH:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
+            return ast_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
         case AST_STMT_LET:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 4)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 4)):
                 return false
-            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 6))
+            return ast_range_is_walkable_fast(ast, valid_map, node, ast_node_arg(ast, node, 6))
         case AST_STMT_LET_TUPLE:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 2)):
                 return false
-            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 3))
+            return ast_range_is_walkable_fast(ast, valid_map, node, ast_node_arg(ast, node, 3))
         case AST_STMT_ASSIGN:
-            if ast_node_arg(ast, node, 2) != 0 and not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 3)):
+            if ast_node_arg(ast, node, 2) != 0 and not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 3)):
                 return false
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 4)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 4)):
                 return false
-            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 5))
+            return ast_range_is_walkable_fast(ast, valid_map, node, ast_node_arg(ast, node, 5))
         case AST_STMT_IF:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            if not ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2)):
+            if not ast_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2)):
                 return false
-            if not ast_range_is_walkable(ast, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4)):
+            if not ast_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4)):
                 return false
-            return ast_optional_range_is_walkable(ast, ast_node_arg(ast, node, 5), ast_node_arg(ast, node, 6))
+            return ast_optional_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 5), ast_node_arg(ast, node, 6))
         case AST_ELIF:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
+            return ast_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
         case AST_STMT_WHILE:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
+            return ast_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2))
         case AST_STMT_FOR:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 2)):
                 return false
-            return ast_range_is_walkable(ast, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4))
+            return ast_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4))
         case AST_STMT_SWITCH:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            if not ast_range_is_walkable(ast, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2)):
+            if not ast_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 1), ast_node_arg(ast, node, 2)):
                 return false
-            return ast_optional_range_is_walkable(ast, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4))
+            return ast_optional_range_is_walkable_fast(ast, valid_map, ast_node_arg(ast, node, 3), ast_node_arg(ast, node, 4))
         case AST_CASE:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 1)):
+            if not ast_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 1)):
                 return false
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 2))
         case AST_STMT_RETURN:
-            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 2))
+            return ast_range_is_walkable_fast(ast, valid_map, node, ast_node_arg(ast, node, 2))
         case AST_STMT_EXPR:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            return ast_range_is_walkable(ast, node, ast_node_arg(ast, node, 1))
+            return ast_range_is_walkable_fast(ast, valid_map, node, ast_node_arg(ast, node, 1))
         case AST_M_CASE:
-            if not ast_required_child_is_valid(ast, ast_node_arg(ast, node, 0)):
+            if not ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 0)):
                 return false
-            if not ast_child_is_valid(ast, ast_node_arg(ast, node, 1)):
+            if not ast_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 1)):
                 return false
-            return ast_required_child_is_valid(ast, ast_node_arg(ast, node, 2))
+            return ast_required_child_is_valid_fast(valid_map, ast_node_arg(ast, node, 2))
         default:
             return true
 
@@ -622,9 +631,10 @@ def ast_validate_program(ast: list[int]) -> bool:
         eprintln("AST validation invalid pool header")
         eprintln(ast[0])
         return false
+    let valid_map = ast_build_node_validity_map(ast)
     let node = 1
     while node < len(ast):
-        if not ast_validate_node_children(ast, node):
+        if not ast_validate_node_children(ast, node, valid_map):
             eprint("AST validation failed node=")
             eprint(node)
             eprint(" kind=")

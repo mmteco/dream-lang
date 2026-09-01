@@ -144,6 +144,11 @@ const HIR_OP_ENUM: int = 23
 const HIR_OP_SEQUENCE: int = 25
 const HIR_OP_MAX: int = HIR_OP_SEQUENCE
 
+const HIR_BIND_NONE: int = 0
+const HIR_BIND_LET: int = 1
+const HIR_BIND_CONST_TYPE: int = 2
+const HIR_BIND_TUPLE_LET: int = 3
+
 const HIR_TYPE_UNKNOWN: int = 0
 const HIR_TYPE_UNIT: int = 1
 const HIR_TYPE_BOOL: int = 2
@@ -957,6 +962,11 @@ def hir_debug_checkpoint(label: str, previous_time: int) -> int:
     if not __c_debug_on():
         return previous_time
     let current_time = __c_time_ms()
+    eprint("[timing]   hir-")
+    eprint(label)
+    eprint(" ")
+    eprint(current_time - previous_time)
+    eprintln("ms")
     return current_time
 
 def hir_type_is_comparison(operator: int) -> bool:
@@ -1048,23 +1058,62 @@ def hir_field_type_from_source(source: str, name_start: int, name_end: int) -> i
     return HIR_TYPE_DYNAMIC
 
 def hir_node_type(program: HirProgram, value_kind: int, value: int) -> int:
-    if value_kind != HIR_VALUE_NODE or value < 0 or value >= hir_record_count(program.records):
+    let records = program.records
+    if value_kind != HIR_VALUE_NODE or value < 0 or value >= hir_record_count(records):
         return HIR_TYPE_UNKNOWN
-    return program.records[hir_record_offset(value) + 2]
+    return hir_int_list_get(records, hir_record_offset(value) + 2)
 
-def hir_collect_func_index(program: HirProgram, source: str, offsets: list[int], hashes: list[int]):
+def hir_collect_func_index(records: list[int], source: str, func_index: list[int]):
     let source_size = source.len()
     let record_id = 0
-    while record_id < hir_record_count(program.records):
+    let total_records = hir_record_count(records)
+    while record_id < total_records:
         let offset = hir_record_offset(record_id)
-        if program.records[offset] == HIR_RECORD_FUNCTION:
-            let name_start = program.records[offset + 9]
-            let name_end = program.records[offset + 10]
+        if hir_int_list_get(records, offset) == HIR_RECORD_FUNCTION:
+            let name_start = hir_int_list_get(records, offset + 9)
+            let name_end = hir_int_list_get(records, offset + 10)
             let name_hash = 0
             if name_start >= 0 and name_end > name_start and name_end <= source_size:
                 name_hash = __c_fnv_hash_range(source, name_start, name_end)
-            append(offsets, offset)
-            append(hashes, name_hash)
+            append(func_index, offset)
+            append(func_index, name_hash)
+            append(func_index, module_env_file_at(name_start))
+        record_id = record_id + 1
+
+def hir_collect_scope_maps(records: list[int], scope_records: list[int]):
+    let current_caller = 0
+    let current_func_id = -1
+    let last_let_id = -1
+    let record_id = 0
+    let total_records = hir_record_count(records)
+    while record_id < total_records:
+        let offset = hir_record_offset(record_id)
+        let record_type = hir_int_list_get(records, offset)
+        if record_type == HIR_RECORD_FUNCTION:
+            current_caller = hir_int_list_get(records, offset + 9)
+            current_func_id = record_id
+            last_let_id = -1
+        elif record_type == HIR_RECORD_STATEMENT and hir_int_list_get(records, offset + 1) == HIR_OP_LET:
+            append(scope_records, current_caller)
+            append(scope_records, current_func_id)
+            append(scope_records, last_let_id)
+            last_let_id = record_id
+            record_id = record_id + 1
+            continue
+        append(scope_records, current_caller)
+        append(scope_records, current_func_id)
+        append(scope_records, last_let_id)
+        record_id = record_id + 1
+
+def hir_collect_caller_offsets(program: HirProgram, caller_offsets: list[int]):
+    let current_caller = 0
+    let record_id = 0
+    let total_records = hir_record_count(program.records)
+    while record_id < total_records:
+        let offset = hir_record_offset(record_id)
+        if program.records[offset] == HIR_RECORD_FUNCTION:
+            current_caller = program.records[offset + 9]
+        append(caller_offsets, current_caller)
         record_id = record_id + 1
 
 def hir_node_caller_offset(program: HirProgram, record_id: int) -> int:
@@ -1076,14 +1125,20 @@ def hir_node_caller_offset(program: HirProgram, record_id: int) -> int:
         current_record = current_record - 1
     return 0
 
-# 定义文件（def_file）是否对调用点（caller_offset）可见：按 per-module 候选文件判定
+# 定义文件（def_file）是否对调用点（caller_offset）可见：按 per-module 规则快速判定
 def hir_file_visible(caller_offset: int, source: str, name_start: int, name_end: int, def_file: int) -> bool:
+    let caller_file = module_env_file_at(caller_offset)
+    if caller_file < 0:
+        caller_file = 0
+    if caller_file == def_file:
+        return true
     let candidate_files: list[int] = []
     if module_candidate_files(caller_offset, source, name_start, name_end, candidate_files) != 0:
         return false
     let candidate_index = 0
-    while candidate_index < len(candidate_files):
-        if candidate_files[candidate_index] == def_file:
+    let candidate_count = len(candidate_files)
+    while candidate_index < candidate_count:
+        if hir_int_list_get(candidate_files, candidate_index) == def_file:
             return true
         candidate_index = candidate_index + 1
     return false
@@ -1096,23 +1151,33 @@ def hir_definition_visible(caller_offset: int, source: str, name_start: int, nam
         return false
     return hir_file_visible(caller_offset, source, name_start, name_end, def_file)
 
-def hir_find_func_return_type(program: HirProgram, source: str, name_start: int, name_end: int,
-    caller_offset: int, func_offsets: list[int], func_name_hashes: list[int]) -> int:
+def hir_find_func_return_type(
+    records: list[int],
+    values: list[int],
+    source: str,
+    name_start: int,
+    name_end: int,
+    caller_offset: int,
+    func_index: list[int]
+) -> int:
     if name_start < 0 or name_end <= name_start or name_end > source.len():
         return HIR_TYPE_UNKNOWN
     let name_hash = __c_fnv_hash_range(source, name_start, name_end)
-    let func_index = 0
-    while func_index < len(func_offsets):
-        let offset = func_offsets[func_index]
-        let definition_start = program.records[offset + 9]
-        let definition_end = program.records[offset + 10]
-        if (
-            func_name_hashes[func_index] == name_hash and
-            hir_source_ranges_equal(source, name_start, name_end, definition_start, definition_end) and
-            hir_definition_visible(caller_offset, source, definition_start, definition_end, definition_start)
-        ):
-            return hir_signature_int(program, offset, HIR_SIGNATURE_RETURN_TYPE)
-        func_index = func_index + 1
+    let func_i = 0
+    let total_funcs = len(func_index) / 3
+    while func_i < total_funcs:
+        let base = func_i * 3
+        if hir_int_list_get(func_index, base + 1) == name_hash:
+            let offset = hir_int_list_get(func_index, base)
+            let definition_start = hir_int_list_get(records, offset + 9)
+            let definition_end = hir_int_list_get(records, offset + 10)
+            if (
+                hir_source_ranges_equal(source, name_start, name_end, definition_start, definition_end) and
+                hir_file_visible(caller_offset, source, definition_start, definition_end,
+                    hir_int_list_get(func_index, base + 2))
+            ):
+                return hir_signature_int(records, values, offset, HIR_SIGNATURE_RETURN_TYPE)
+        func_i = func_i + 1
     return HIR_TYPE_UNKNOWN
 
 # extern 调用返回类型：统一查外部表；表外特例保留 UTF-8 API 的 HIR 语义
@@ -1155,46 +1220,96 @@ def hir_set_constant_index(starts: list[int], ends: list[int], types: list[int])
         append(HIR_CONSTANT_DATA, types[index])
         index = index + 1
 
-def hir_find_global_type(program: HirProgram, source: str, name_start: int, name_end: int,
-    caller_offset: int) -> int:
-    let constant_index = HIR_CONSTANT_BASE
-    while constant_index + 2 < len(HIR_CONSTANT_DATA):
-        if source_ranges_equal(source, HIR_CONSTANT_DATA[constant_index], HIR_CONSTANT_DATA[constant_index + 1],
-            name_start, name_end):
-            let constant_file = module_env_file_at(HIR_CONSTANT_DATA[constant_index])
-            if hir_file_visible(caller_offset, source, name_start, name_end, constant_file):
-                return hir_type_from_collected_type(HIR_CONSTANT_DATA[constant_index + 2])
-        constant_index = constant_index + 3
-    let record_id = hir_record_count(program.records) - 1
+const HIR_CONSTANT_BUCKET_SIZE: int = 512
+
+def hir_collect_constant_buckets(source: str, constant_heads: list[int], constant_index: list[int]):
+    let b_idx = 0
+    while b_idx < HIR_CONSTANT_BUCKET_SIZE:
+        append(constant_heads, -1)
+        b_idx = b_idx + 1
+    let const_idx = HIR_CONSTANT_BASE
+    let const_id = 0
+    while const_idx + 2 < len(HIR_CONSTANT_DATA):
+        let h = __c_fnv_hash_range(source, hir_int_list_get(HIR_CONSTANT_DATA, const_idx),
+            hir_int_list_get(HIR_CONSTANT_DATA, const_idx + 1))
+        let bucket = h % HIR_CONSTANT_BUCKET_SIZE
+        if bucket < 0:
+            bucket = bucket + HIR_CONSTANT_BUCKET_SIZE
+        append(constant_index, h)
+        append(constant_index, hir_int_list_get(constant_heads, bucket))
+        hir_int_list_set(constant_heads, bucket, const_id)
+        const_idx = const_idx + 3
+        const_id = const_id + 1
+
+def hir_collect_field_hashes(source: str, hashes: list[int]):
+    let fld_idx = 0
+    while fld_idx < len(STRUCT_FIELD_DECLARATIONS):
+        append(hashes, __c_fnv_hash_range(source, hir_int_list_get(STRUCT_FIELD_NAME_STARTS, fld_idx),
+            hir_int_list_get(STRUCT_FIELD_NAME_ENDS, fld_idx)))
+        fld_idx = fld_idx + 1
+
+def hir_find_global_type(
+    records: list[int],
+    values: list[int],
+    source: str,
+    name_start: int,
+    name_end: int,
+    caller_offset: int,
+    constant_heads: list[int],
+    constant_index: list[int]
+) -> int:
+    let name_hash = __c_fnv_hash_range(source, name_start, name_end)
+    let bucket = name_hash % HIR_CONSTANT_BUCKET_SIZE
+    if bucket < 0:
+        bucket = bucket + HIR_CONSTANT_BUCKET_SIZE
+    if bucket < len(constant_heads):
+        let const_id = hir_int_list_get(constant_heads, bucket)
+        let total_consts = len(constant_index) / 2
+        while const_id >= 0 and const_id < total_consts:
+            let c_base = const_id * 2
+            if hir_int_list_get(constant_index, c_base) == name_hash:
+                let const_offset = HIR_CONSTANT_BASE + const_id * 3
+                if const_offset + 2 < len(HIR_CONSTANT_DATA):
+                    let c_start = hir_int_list_get(HIR_CONSTANT_DATA, const_offset)
+                    let c_end = hir_int_list_get(HIR_CONSTANT_DATA, const_offset + 1)
+                    if hir_source_ranges_equal(source, c_start, c_end, name_start, name_end):
+                        let constant_file = module_env_file_at(c_start)
+                        if hir_file_visible(caller_offset, source, name_start, name_end, constant_file):
+                            return hir_type_from_collected_type(hir_int_list_get(HIR_CONSTANT_DATA, const_offset + 2))
+            const_id = hir_int_list_get(constant_index, c_base + 1)
+    let record_id = hir_record_count(records) - 1
     while record_id >= 0:
         let offset = hir_record_offset(record_id)
-        if program.records[offset] == HIR_RECORD_FUNCTION:
+        if hir_int_list_get(records, offset) != HIR_RECORD_GLOBAL:
             return HIR_TYPE_UNKNOWN
-        let definition_start = program.records[offset + 9]
-        let definition_end = program.records[offset + 10]
+        let definition_start = hir_int_list_get(records, offset + 9)
+        let definition_end = hir_int_list_get(records, offset + 10)
         if (
-            program.records[offset] == HIR_RECORD_GLOBAL and
             hir_source_ranges_equal(source, name_start, name_end, definition_start, definition_end) and
-            hir_definition_visible(caller_offset, source, definition_start, definition_end, definition_start)
+            hir_definition_visible(caller_offset, source, name_start, name_end, definition_start)
         ):
-            return program.records[offset + 2]
+            return hir_int_list_get(records, offset + 2)
         record_id = record_id - 1
     return HIR_TYPE_UNKNOWN
 
 # 计算 let (a, b) = ... 解构中名字对应的序号；非绑定名返回 -1
 def hir_let_tuple_bound_ordinal(records: list[int], source: str, stmt_offset: int, name_start: int,
     name_end: int) -> int:
+    let stmt_start = records[stmt_offset + 3]
+    let stmt_end = records[stmt_offset + 4]
     let source_length = source.len()
-    let scan = records[stmt_offset + 3]
-    while scan < source_length and source[scan] != '(':
+    if stmt_start < 0 or stmt_end > source_length or stmt_end <= stmt_start:
+        return -1
+    let scan = stmt_start
+    while scan < stmt_end and source[scan] != '(' and source[scan] != '=':
         scan = scan + 1
-    if scan >= source_length:
+    if scan >= stmt_end or source[scan] != '(':
         return -1
     scan = scan + 1
     let depth = 1
     let ordinal = 0
     let matched = -1
-    while scan < source_length and depth > 0:
+    while scan < stmt_end and depth > 0:
         let ch = source[scan]
         if ch == '(':
             depth = depth + 1
@@ -1208,9 +1323,9 @@ def hir_let_tuple_bound_ordinal(records: list[int], source: str, stmt_offset: in
             else:
                 let run_start = scan
                 let run_end = run_start + 1
-                while run_end < source_length and is_identifier_continue(ord(source[run_end])):
+                while run_end < stmt_end and is_identifier_continue(ord(source[run_end])):
                     run_end = run_end + 1
-                if source[run_start:run_end] == source[name_start:name_end]:
+                if hir_source_ranges_equal(source, run_start, run_end, name_start, name_end):
                     matched = ordinal
                 ordinal = ordinal + 1
                 scan = run_end
@@ -1258,88 +1373,185 @@ def hir_func_return_element_type(records: list[int], source: str, func_offset: i
     return HIR_TYPE_DYNAMIC
 
 # 解析元组初始化节点第 ordinal 个元素的类型
-def hir_tuple_element_type(program: HirProgram, source: str, value_node: int, ordinal: int,
-    caller_offset: int) -> int:
-    if value_node < 0 or value_node >= hir_record_count(program.records):
+def hir_tuple_element_type(records: list[int], values: list[int], source: str, value_node: int, ordinal: int,
+    caller_offset: int, func_index: list[int]) -> int:
+    if value_node < 0 or value_node >= hir_record_count(records):
         return HIR_TYPE_DYNAMIC
     let offset = hir_record_offset(value_node)
-    let opcode = program.records[offset + 1]
-    let payload_start = program.records[offset + 5]
-    let payload_count = program.records[offset + 6]
+    let opcode = hir_int_list_get(records, offset + 1)
+    let payload_start = hir_int_list_get(records, offset + 5)
+    let payload_count = hir_int_list_get(records, offset + 6)
     if opcode == HIR_OP_TUPLE and payload_count > ordinal + 1:
         let element_offset = hir_value_offset(payload_start + 1 + ordinal)
-        if program.values[element_offset] == HIR_VALUE_NODE:
-            return hir_node_type(program, program.values[element_offset], program.values[element_offset + 1])
+        if hir_int_list_get(values, element_offset) == HIR_VALUE_NODE:
+            let child_node = hir_int_list_get(values, element_offset + 1)
+            if child_node >= 0 and child_node < hir_record_count(records):
+                return hir_int_list_get(records, hir_record_offset(child_node) + 2)
         return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_CALL and payload_count > 0:
         let callee_offset = hir_value_offset(payload_start)
-        if program.values[callee_offset] == HIR_VALUE_NODE:
-            let callee_id = program.values[callee_offset + 1]
-            if callee_id >= 0 and callee_id < hir_record_count(program.records):
+        if hir_int_list_get(values, callee_offset) == HIR_VALUE_NODE:
+            let callee_id = hir_int_list_get(values, callee_offset + 1)
+            if callee_id >= 0 and callee_id < hir_record_count(records):
                 let callee_record_offset = hir_record_offset(callee_id)
-                if program.records[callee_record_offset + 1] == HIR_OP_LOCAL:
-                    let callee_name_start = program.records[callee_record_offset + 3]
-                    let callee_name_end = program.records[callee_record_offset + 4]
-                    let record_id = hir_record_count(program.records) - 1
-                    let callee_name = source[callee_name_start:callee_name_end]
-                    while record_id >= 0:
-                        let rec_offset = hir_record_offset(record_id)
-                        if program.records[rec_offset] == HIR_RECORD_FUNCTION:
-                            if callee_name == source[program.records[rec_offset + 9]:program.records[rec_offset + 10]]:
-                                return hir_func_return_element_type(program.records, source, rec_offset, ordinal)
-                        record_id = record_id - 1
+                if hir_int_list_get(records, callee_record_offset + 1) == HIR_OP_LOCAL:
+                    let callee_name_start = hir_int_list_get(records, callee_record_offset + 3)
+                    let callee_name_end = hir_int_list_get(records, callee_record_offset + 4)
+                    let callee_hash = __c_fnv_hash_range(source, callee_name_start, callee_name_end)
+                    let func_i = 0
+                    let total_funcs = len(func_index) / 3
+                    while func_i < total_funcs:
+                        let base = func_i * 3
+                        if hir_int_list_get(func_index, base + 1) == callee_hash:
+                            let rec_offset = hir_int_list_get(func_index, base)
+                            let def_start = hir_int_list_get(records, rec_offset + 9)
+                            let def_end = hir_int_list_get(records, rec_offset + 10)
+                            if hir_source_ranges_equal(source, callee_name_start, callee_name_end, def_start, def_end):
+                                return hir_func_return_element_type(records, source, rec_offset, ordinal)
+                        func_i = func_i + 1
     return HIR_TYPE_DYNAMIC
 
-def hir_find_local_type(program: HirProgram, source: str, current_record_id: int, name_start: int,
-    name_end: int) -> int:
-    let record_id = current_record_id - 1
-    while record_id >= 0:
-        let offset = hir_record_offset(record_id)
-        if program.records[offset] == HIR_RECORD_FUNCTION:
-            let parameter_count = hir_signature_int(program, offset, HIR_SIGNATURE_PARAM_COUNT)
-            let parameter_index = 0
-            while parameter_index < parameter_count:
-                let metadata_index = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
-                if hir_source_ranges_equal(source, name_start, name_end, hir_signature_int(program, offset,
-                    metadata_index + 1), hir_signature_int(program, offset, metadata_index + 2)):
-                    return hir_signature_int(program, offset, metadata_index)
-                parameter_index = parameter_index + 1
-            return hir_find_global_type(program, source, name_start, name_end, name_start)
-        if (
-            program.records[offset] == HIR_RECORD_STATEMENT and
-            program.records[offset + 1] == HIR_OP_LET and
-            program.records[offset + 6] > 1
-        ):
-            let payload_start = program.records[offset + 5]
+def hir_resolve_local_binding(
+    records: list[int],
+    values: list[int],
+    source: str,
+    record_id: int,
+    name_start: int,
+    name_end: int,
+    scope_records: list[int],
+    func_index: list[int],
+    constant_heads: list[int],
+    constant_index: list[int],
+    local_bindings: list[int]
+):
+    if name_start < 0 or name_end <= name_start or name_end > source.len():
+        append(local_bindings, HIR_BIND_NONE)
+        append(local_bindings, 0)
+        append(local_bindings, 0)
+        return
+    let scope_base = record_id * 3
+    let let_id = hir_int_list_get(scope_records, scope_base + 2)
+    while let_id >= 0:
+        let offset = hir_record_offset(let_id)
+        if hir_int_list_get(records, offset + 6) > 1:
+            let payload_start = hir_int_list_get(records, offset + 5)
             let start_offset = hir_value_offset(payload_start)
             let end_offset = hir_value_offset(payload_start + 1)
-            if hir_source_ranges_equal(source, name_start, name_end, program.values[start_offset + 1],
-                program.values[end_offset + 1]):
-                return program.records[offset + 2]
-            # let (a, b) = rhs：绑定名的类型 = rhs 元组第 ordinal 个元素类型
+            if hir_source_ranges_equal(source, name_start, name_end, hir_int_list_get(values, start_offset + 1),
+                hir_int_list_get(values, end_offset + 1)):
+                append(local_bindings, HIR_BIND_LET)
+                append(local_bindings, let_id)
+                append(local_bindings, 0)
+                return
             if (
-                program.records[offset + 6] == 3 and
-                program.values[hir_value_offset(payload_start + 2)] == HIR_VALUE_NODE
+                hir_int_list_get(records, offset + 6) == 3 and
+                hir_int_list_get(values, hir_value_offset(payload_start + 2)) == HIR_VALUE_NODE
             ):
-                let value_node = program.values[hir_value_offset(payload_start + 2) + 1]
-                let ordinal = hir_let_tuple_bound_ordinal(program.records, source, offset, name_start, name_end)
+                let ordinal = hir_let_tuple_bound_ordinal(records, source, offset, name_start, name_end)
                 if ordinal >= 0:
-                    let element_type = hir_tuple_element_type(program, source, value_node, ordinal, name_start)
-                    if element_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC]:
-                        return element_type
-        record_id = record_id - 1
-    return hir_find_global_type(program, source, name_start, name_end, hir_node_caller_offset(program, current_record_id))
+                    let value_node = hir_int_list_get(values, hir_value_offset(payload_start + 2) + 1)
+                    append(local_bindings, HIR_BIND_TUPLE_LET)
+                    append(local_bindings, value_node)
+                    append(local_bindings, ordinal)
+                    return
+        let_id = hir_int_list_get(scope_records, let_id * 3 + 2)
+    let func_id = hir_int_list_get(scope_records, scope_base + 1)
+    if func_id >= 0:
+        let func_offset = hir_record_offset(func_id)
+        let aux_start = hir_int_list_get(records, func_offset + 7)
+        let parameter_count = hir_int_list_get(values, hir_value_offset(aux_start) + 1)
+        let parameter_index = 0
+        while parameter_index < parameter_count:
+            let metadata_index = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
+            let p_type = hir_int_list_get(values, hir_value_offset(aux_start + metadata_index) + 1)
+            let p_start = hir_int_list_get(values, hir_value_offset(aux_start + metadata_index + 1) + 1)
+            let p_end = hir_int_list_get(values, hir_value_offset(aux_start + metadata_index + 2) + 1)
+            if hir_source_ranges_equal(source, name_start, name_end, p_start, p_end):
+                append(local_bindings, HIR_BIND_CONST_TYPE)
+                append(local_bindings, p_type)
+                append(local_bindings, 0)
+                return
+            parameter_index = parameter_index + 1
+        let global_type = hir_find_global_type(records, values, source, name_start, name_end, name_start,
+            constant_heads, constant_index)
+        if global_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC]:
+            append(local_bindings, HIR_BIND_CONST_TYPE)
+            append(local_bindings, global_type)
+            append(local_bindings, 0)
+            return
+    else:
+        let caller_offset = hir_int_list_get(scope_records, scope_base)
+        let global_type = hir_find_global_type(records, values, source, name_start, name_end, caller_offset,
+            constant_heads, constant_index)
+        if global_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC]:
+            append(local_bindings, HIR_BIND_CONST_TYPE)
+            append(local_bindings, global_type)
+            append(local_bindings, 0)
+            return
+    append(local_bindings, HIR_BIND_NONE)
+    append(local_bindings, 0)
+    append(local_bindings, 0)
+
+def hir_collect_local_bindings(
+    records: list[int],
+    values: list[int],
+    source: str,
+    scope_records: list[int],
+    func_index: list[int],
+    constant_heads: list[int],
+    constant_index: list[int],
+    local_bindings: list[int]
+):
+    let record_id = 0
+    let total_records = hir_record_count(records)
+    while record_id < total_records:
+        let offset = hir_record_offset(record_id)
+        if hir_int_list_get(records, offset) == HIR_RECORD_EXPRESSION and hir_int_list_get(records, offset + 1) == HIR_OP_LOCAL:
+            hir_resolve_local_binding(
+                records,
+                values,
+                source,
+                record_id,
+                hir_int_list_get(records, offset + 3),
+                hir_int_list_get(records, offset + 4),
+                scope_records,
+                func_index,
+                constant_heads,
+                constant_index,
+                local_bindings
+            )
+        else:
+            append(local_bindings, HIR_BIND_NONE)
+            append(local_bindings, 0)
+            append(local_bindings, 0)
+        record_id = record_id + 1
+
+def hir_find_local_type(records: list[int], values: list[int], source: str, current_record_id: int,
+    func_index: list[int], local_bindings: list[int]) -> int:
+    let base = current_record_id * 3
+    let bind_kind = hir_int_list_get(local_bindings, base)
+    if bind_kind == HIR_BIND_LET:
+        let target_id = hir_int_list_get(local_bindings, base + 1)
+        return hir_int_list_get(records, hir_record_offset(target_id) + 2)
+    if bind_kind == HIR_BIND_CONST_TYPE:
+        return hir_int_list_get(local_bindings, base + 1)
+    if bind_kind == HIR_BIND_TUPLE_LET:
+        let value_node = hir_int_list_get(local_bindings, base + 1)
+        let ordinal = hir_int_list_get(local_bindings, base + 2)
+        let element_type = hir_tuple_element_type(records, values, source, value_node, ordinal, 0, func_index)
+        if element_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC]:
+            return element_type
+    return HIR_TYPE_UNKNOWN
 
 def hir_global_node(program: HirProgram, source: str, name_start: int, name_end: int, caller_offset: int) -> int:
     let record_id = hir_record_count(program.records) - 1
     while record_id >= 0:
         let offset = hir_record_offset(record_id)
-        if program.records[offset] == HIR_RECORD_FUNCTION:
+        if program.records[offset] != HIR_RECORD_GLOBAL:
             return -1
         let definition_start = program.records[offset + 9]
         let definition_end = program.records[offset + 10]
         if (
-            program.records[offset] == HIR_RECORD_GLOBAL and
             hir_source_ranges_equal(source, name_start, name_end, definition_start, definition_end) and
             hir_definition_visible(caller_offset, source, definition_start, definition_end, definition_start)
         ):
@@ -1370,24 +1582,39 @@ def hir_is_scalar_list_element_type(type_tag: int) -> bool:
         type_tag == HIR_TYPE_UNIT
     )
 
-def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_offsets: list[int],
-    func_name_hashes: list[int]) -> int:
+def hir_infer_node_type(records: list[int], values: list[int], source: str, record_id: int,
+    scope_records: list[int], func_index: list[int], field_name_hashes: list[int], local_bindings: list[int]) -> int:
     let offset = hir_record_offset(record_id)
-    let opcode = program.records[offset + 1]
-    let payload_start = program.records[offset + 5]
-    let payload_count = program.records[offset + 6]
+    let kind = hir_int_list_get(records, offset)
+    if kind != HIR_RECORD_EXPRESSION and kind != HIR_RECORD_STATEMENT:
+        return hir_int_list_get(records, offset + 2)
+    let opcode = hir_int_list_get(records, offset + 1)
+    let payload_start = hir_int_list_get(records, offset + 5)
+    let payload_count = hir_int_list_get(records, offset + 6)
     if opcode == HIR_OP_LOCAL:
-        return hir_find_local_type(program, source, record_id, program.records[offset + 3], program.records[offset + 4])
+        return hir_find_local_type(records, values, source, record_id, func_index, local_bindings)
     if opcode == HIR_OP_CALL and payload_count > 0:
         let callee_offset = hir_value_offset(payload_start)
-        if program.values[callee_offset] == HIR_VALUE_NODE:
-            let callee_id = program.values[callee_offset + 1]
-            if callee_id >= 0 and callee_id < hir_record_count(program.records):
+        if hir_int_list_get(values, callee_offset) == HIR_VALUE_NODE:
+            let callee_id = hir_int_list_get(values, callee_offset + 1)
+            if callee_id >= 0 and callee_id < hir_record_count(records):
                 let callee_record_offset = hir_record_offset(callee_id)
-                if program.records[callee_record_offset + 1] == HIR_OP_LOCAL:
-                    let name_start = program.records[callee_record_offset + 3]
-                    let name_end = program.records[callee_record_offset + 4]
-                    let name = source[name_start:name_end]
+                if hir_int_list_get(records, callee_record_offset + 1) == HIR_OP_LOCAL:
+                    let func_name_start = hir_int_list_get(records, callee_record_offset + 3)
+                    let func_name_end = hir_int_list_get(records, callee_record_offset + 4)
+                    let caller_offset = hir_int_list_get(scope_records, record_id * 3)
+                    let func_type = hir_find_func_return_type(
+                        records,
+                        values,
+                        source,
+                        func_name_start,
+                        func_name_end,
+                        caller_offset,
+                        func_index
+                    )
+                    if func_type != HIR_TYPE_UNKNOWN:
+                        return func_type
+                    let name = source[func_name_start:func_name_end]
                     if name == "str":
                         return HIR_TYPE_STR
                     if name in prelude_all_names:
@@ -1395,27 +1622,20 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
                     let external_type = hir_external_type_for_name(name)
                     if external_type != HIR_TYPE_UNKNOWN:
                         return external_type
-                    let func_name_start = program.records[callee_record_offset + 3]
-                    let func_name_end = program.records[callee_record_offset + 4]
-                    let func_type = hir_find_func_return_type(
-                        program,
-                        source,
-                        func_name_start,
-                        func_name_end,
-                        hir_node_caller_offset(program, record_id),
-                        func_offsets,
-                        func_name_hashes
-                    )
-                    if func_type != HIR_TYPE_UNKNOWN:
-                        return func_type
         return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_BINARY and payload_count >= 3:
         let operator_offset = hir_value_offset(payload_start)
         let left_offset = hir_value_offset(payload_start + 1)
         let right_offset = hir_value_offset(payload_start + 2)
-        let left_type = hir_node_type(program, program.values[left_offset], program.values[left_offset + 1])
-        let right_type = hir_node_type(program, program.values[right_offset], program.values[right_offset + 1])
-        let operator = program.values[operator_offset + 1]
+        let left_id = hir_int_list_get(values, left_offset + 1)
+        let right_id = hir_int_list_get(values, right_offset + 1)
+        let left_type = HIR_TYPE_UNKNOWN
+        if left_id >= 0 and left_id < hir_record_count(records):
+            left_type = hir_int_list_get(records, hir_record_offset(left_id) + 2)
+        let right_type = HIR_TYPE_UNKNOWN
+        if right_id >= 0 and right_id < hir_record_count(records):
+            right_type = hir_int_list_get(records, hir_record_offset(right_id) + 2)
+        let operator = hir_int_list_get(values, operator_offset + 1)
         if hir_type_is_boolean_result(operator):
             return HIR_TYPE_BOOL
         if left_type == HIR_TYPE_F64 or right_type == HIR_TYPE_F64:
@@ -1427,21 +1647,25 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
         return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_UNARY and payload_count >= 2:
         let operator_offset = hir_value_offset(payload_start)
-        let operator = program.values[operator_offset + 1]
+        let operator = hir_int_list_get(values, operator_offset + 1)
         if operator == IR_OPERATOR_NOT:
             return HIR_TYPE_BOOL
         let value_offset = hir_value_offset(payload_start + 1)
-        return hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
+        let target_node = hir_int_list_get(values, value_offset + 1)
+        if target_node >= 0 and target_node < hir_record_count(records):
+            return hir_int_list_get(records, hir_record_offset(target_node) + 2)
+        return HIR_TYPE_DYNAMIC
     if opcode in [HIR_OP_LET, HIR_OP_ASSIGN]:
         if opcode == HIR_OP_LET and payload_count > 4:
             let annotation_start_offset = hir_value_offset(payload_start + 2)
             let annotation_end_offset = hir_value_offset(payload_start + 3)
             if (
-                program.values[annotation_start_offset] == HIR_VALUE_INT and
-                program.values[annotation_end_offset] == HIR_VALUE_INT
+                hir_int_list_get(values, annotation_start_offset) == HIR_VALUE_INT and
+                hir_int_list_get(values, annotation_end_offset) == HIR_VALUE_INT
             ):
-                let annotation_type = hir_type_from_annotation(source, program.values[annotation_start_offset + 1],
-                    program.values[annotation_end_offset + 1])
+                let annotation_type = hir_type_from_annotation(source,
+                    hir_int_list_get(values, annotation_start_offset + 1),
+                    hir_int_list_get(values, annotation_end_offset + 1))
                 if annotation_type != HIR_TYPE_UNKNOWN:
                     return annotation_type
         let value_index = payload_start + payload_count - 1
@@ -1449,13 +1673,22 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
             value_index = payload_start + 4
         if payload_count > 0:
             let value_offset = hir_value_offset(value_index)
-            return hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
+            let target_node = hir_int_list_get(values, value_offset + 1)
+            if target_node >= 0 and target_node < hir_record_count(records):
+                return hir_int_list_get(records, hir_record_offset(target_node) + 2)
+        return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_SEQUENCE and payload_count > 0:
         let value_offset = hir_value_offset(payload_start)
-        return hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
+        let target_node = hir_int_list_get(values, value_offset + 1)
+        if target_node >= 0 and target_node < hir_record_count(records):
+            return hir_int_list_get(records, hir_record_offset(target_node) + 2)
+        return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_INDEX and payload_count > 0:
         let value_offset = hir_value_offset(payload_start)
-        let base_type = hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
+        let target_node = hir_int_list_get(values, value_offset + 1)
+        let base_type = HIR_TYPE_DYNAMIC
+        if target_node >= 0 and target_node < hir_record_count(records):
+            base_type = hir_int_list_get(records, hir_record_offset(target_node) + 2)
         if base_type == HIR_TYPE_STR:
             return HIR_TYPE_I32
         if base_type == HIR_TYPE_LIST_INT:
@@ -1463,7 +1696,10 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
         return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_SLICE and payload_count > 0:
         let value_offset = hir_value_offset(payload_start)
-        let base_type = hir_node_type(program, program.values[value_offset], program.values[value_offset + 1])
+        let target_node = hir_int_list_get(values, value_offset + 1)
+        let base_type = HIR_TYPE_DYNAMIC
+        if target_node >= 0 and target_node < hir_record_count(records):
+            base_type = hir_int_list_get(records, hir_record_offset(target_node) + 2)
         if base_type == HIR_TYPE_STR:
             return HIR_TYPE_STR
         if base_type in [HIR_TYPE_LIST, HIR_TYPE_LIST_INT]:
@@ -1471,24 +1707,25 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
         if base_type == HIR_TYPE_BYTES:
             return HIR_TYPE_BYTES
         return HIR_TYPE_DYNAMIC
-    if opcode == HIR_OP_FIELD:
-        let field_type_start = program.values[hir_value_offset(payload_start + 1) + 1]
-        let field_type_end = program.values[hir_value_offset(payload_start + 2) + 1]
-        let source_field_type = hir_field_type_from_source(source, field_type_start, field_type_end)
-        if source_field_type != HIR_TYPE_DYNAMIC:
-            return source_field_type
-        let field_index = 0
-        while field_index < len(STRUCT_FIELD_DECLARATIONS):
-            let field_name_start_offset = hir_value_offset(payload_start + 1)
-            let field_name_end_offset = hir_value_offset(payload_start + 2)
-            if (
-                program.values[field_name_start_offset] == HIR_VALUE_INT and
-                program.values[field_name_end_offset] == HIR_VALUE_INT
-            ):
-                let field_name_start = program.values[field_name_start_offset + 1]
-                let field_name_end = program.values[field_name_end_offset + 1]
-                if hir_source_ranges_equal(source, hir_int_list_get(STRUCT_FIELD_NAME_STARTS, field_index),
-                    hir_int_list_get(STRUCT_FIELD_NAME_ENDS, field_index), field_name_start, field_name_end):
+    if opcode == HIR_OP_FIELD and payload_count >= 3:
+        let field_name_start_offset = hir_value_offset(payload_start + 1)
+        let field_name_end_offset = hir_value_offset(payload_start + 2)
+        if (
+            hir_int_list_get(values, field_name_start_offset) == HIR_VALUE_INT and
+            hir_int_list_get(values, field_name_end_offset) == HIR_VALUE_INT
+        ):
+            let field_name_start = hir_int_list_get(values, field_name_start_offset + 1)
+            let field_name_end = hir_int_list_get(values, field_name_end_offset + 1)
+            let field_hash = __c_fnv_hash_range(source, field_name_start, field_name_end)
+            let field_index = 0
+            let field_count = len(STRUCT_FIELD_DECLARATIONS)
+            while field_index < field_count:
+                if (
+                    field_index < len(field_name_hashes) and
+                    hir_int_list_get(field_name_hashes, field_index) == field_hash and
+                    hir_source_ranges_equal(source, hir_int_list_get(STRUCT_FIELD_NAME_STARTS, field_index),
+                        hir_int_list_get(STRUCT_FIELD_NAME_ENDS, field_index), field_name_start, field_name_end)
+                ):
                     let field_kind = hir_int_list_get(STRUCT_FIELD_KINDS, field_index)
                     if field_kind == STRUCT_FIELD_INT:
                         return HIR_TYPE_I32
@@ -1504,17 +1741,18 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
                         return HIR_TYPE_LIST
                     if field_kind == STRUCT_FIELD_DICT:
                         return HIR_TYPE_DICT
-            field_index = field_index + 1
+                field_index = field_index + 1
         return HIR_TYPE_DYNAMIC
     if opcode == HIR_OP_LIST:
-        # 元素类型推断：任一指针元素（str/struct 等）为 LIST，全标量或空为 LIST_INT
         let list_element_type = HIR_TYPE_LIST_INT
         let element_index = 0
         while element_index < payload_count:
             let element_offset = hir_value_offset(payload_start + element_index)
-            if program.values[element_offset] == HIR_VALUE_NODE:
-                let element_type = hir_node_type(program, program.values[element_offset],
-                    program.values[element_offset + 1])
+            if hir_int_list_get(values, element_offset) == HIR_VALUE_NODE:
+                let child_node = hir_int_list_get(values, element_offset + 1)
+                let element_type = HIR_TYPE_UNKNOWN
+                if child_node >= 0 and child_node < hir_record_count(records):
+                    element_type = hir_int_list_get(records, hir_record_offset(child_node) + 2)
                 if not hir_is_scalar_list_element_type(element_type):
                     list_element_type = HIR_TYPE_LIST
             element_index = element_index + 1
@@ -1525,34 +1763,40 @@ def hir_infer_node_type(program: HirProgram, source: str, record_id: int, func_o
         return HIR_TYPE_TUPLE
     if opcode == HIR_OP_LAMBDA:
         return HIR_TYPE_CLOSURE
-    return program.records[offset + 2]
+    return hir_int_list_get(records, offset + 2)
 
-def hir_infer_types(records: list[int], values: list[int], struct_decls: list[int], source: str,
-    inferred_records: list[int]):
-    let program = HirProgram{records: records, values: values, struct_decls: struct_decls}
-    let func_offsets: list[int] = []
-    let func_name_hashes: list[int] = []
-    hir_collect_func_index(program, source, func_offsets, func_name_hashes)
+def hir_infer_types(
+    records: list[int],
+    values: list[int],
+    struct_decls: list[int],
+    source: str,
+    inferred_records: list[int],
+    scope_records: list[int],
+    func_index: list[int],
+    field_name_hashes: list[int],
+    local_bindings: list[int]
+):
     let pass = 0
     let has_changes = true
     while pass < 8 and has_changes:
         has_changes = false
         let record_id = 0
-        while record_id < hir_record_count(program.records):
+        let total_recs = hir_record_count(records)
+        while record_id < total_recs:
             let offset = hir_record_offset(record_id)
-            let inferred_type = hir_infer_node_type(program, source, record_id, func_offsets, func_name_hashes)
+            let inferred_type = hir_infer_node_type(records, values, source, record_id,
+                scope_records, func_index, field_name_hashes, local_bindings)
             if (
                 inferred_type not in [HIR_TYPE_UNKNOWN, HIR_TYPE_DYNAMIC] and
-                program.records[offset + 2] != inferred_type
+                hir_int_list_get(records, offset + 2) != inferred_type
             ):
-                program.records[offset + 2] = inferred_type
-                records[offset + 2] = inferred_type
+                hir_int_list_set(records, offset + 2, inferred_type)
                 has_changes = true
             record_id = record_id + 1
         pass = pass + 1
     let copy_index = 0
-    while copy_index < len(program.records):
-        append(inferred_records, hir_int_list_get(program.records, copy_index))
+    while copy_index < len(records):
+        append(inferred_records, hir_int_list_get(records, copy_index))
         copy_index = copy_index + 1
 
 def hir_node_struct_declaration(program: HirProgram, node_id: int) -> int:
@@ -1612,133 +1856,181 @@ def hir_global_struct_declaration(program: HirProgram, source: str, name_start: 
     let record_id = hir_record_count(program.records) - 1
     while record_id >= 0:
         let offset = hir_record_offset(record_id)
-        if program.records[offset] == HIR_RECORD_FUNCTION:
+        if program.records[offset] != HIR_RECORD_GLOBAL:
             return -1
-        if program.records[offset] == HIR_RECORD_GLOBAL and hir_source_ranges_equal(source, name_start, name_end,
+        if hir_source_ranges_equal(source, name_start, name_end,
             program.records[offset + 9], program.records[offset + 10]):
             return hir_node_struct_declaration(program, record_id)
         record_id = record_id - 1
     return -1
 
-def hir_local_struct_declaration(program: HirProgram, source: str, current_record_id: int, name_start: int,
-    name_end: int) -> int:
-    let record_id = current_record_id - 1
+def hir_local_struct_declaration(
+    records: list[int],
+    values: list[int],
+    source: str,
+    current_record_id: int,
+    name_start: int,
+    name_end: int,
+    struct_decls: list[int],
+    scope_records: list[int],
+    local_bindings: list[int]
+) -> int:
+    let base = current_record_id * 3
+    let bind_kind = hir_int_list_get(local_bindings, base)
+    if bind_kind == HIR_BIND_LET:
+        let target_id = hir_int_list_get(local_bindings, base + 1)
+        if target_id >= 0 and target_id < len(struct_decls):
+            return hir_int_list_get(struct_decls, target_id)
+        return -1
+    let func_id = hir_int_list_get(scope_records, base + 1)
+    if func_id >= 0:
+        let func_offset = hir_record_offset(func_id)
+        let aux_start = hir_int_list_get(records, func_offset + 7)
+        let parameter_count = hir_int_list_get(values, hir_value_offset(aux_start) + 1)
+        let parameter_index = 0
+        while parameter_index < parameter_count:
+            let metadata_index = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
+            let p_start = hir_int_list_get(values, hir_value_offset(aux_start + metadata_index + 1) + 1)
+            let p_end = hir_int_list_get(values, hir_value_offset(aux_start + metadata_index + 2) + 1)
+            if hir_source_ranges_equal(source, name_start, name_end, p_start, p_end):
+                let p_decl = hir_int_list_get(values, hir_value_offset(aux_start + metadata_index + 4) + 1)
+                if p_decl >= 0:
+                    return p_decl
+                let (type_start, type_end) = hir_parameter_type_range(source, p_start, p_end)
+                if type_end > type_start:
+                    let declaration_index = find_struct_declaration_index(source, type_start, type_end, type_start)
+                    if declaration_index >= 0:
+                        return declaration_index
+            parameter_index = parameter_index + 1
+        return hir_global_struct_declaration_fast(records, struct_decls, source, name_start, name_end, name_start)
+    return hir_global_struct_declaration_fast(records, struct_decls, source, name_start, name_end, name_start)
+
+def hir_global_struct_declaration_fast(records: list[int], struct_decls: list[int], source: str, name_start: int, name_end: int,
+    caller_offset: int) -> int:
+    let record_id = hir_record_count(records) - 1
     while record_id >= 0:
         let offset = hir_record_offset(record_id)
-        if program.records[offset] == HIR_RECORD_FUNCTION:
-            let parameter_count = hir_signature_int(program, offset, HIR_SIGNATURE_PARAM_COUNT)
-            let parameter_index = 0
-            while parameter_index < parameter_count:
-                let metadata_index = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
-                let parameter_name_start = hir_signature_int(program, offset, metadata_index + 1)
-                let parameter_name_end = hir_signature_int(program, offset, metadata_index + 2)
-                if hir_source_ranges_equal(source, name_start, name_end, parameter_name_start, parameter_name_end):
-                    let parameter_declaration = hir_signature_int(program, offset, metadata_index + 4)
-                    if parameter_declaration >= 0:
-                        return parameter_declaration
-                    let (type_start, type_end) = hir_parameter_type_range(source, parameter_name_start,
-                        parameter_name_end)
-                    if type_end > type_start:
-                        let declaration_index = find_struct_declaration_index(source, type_start, type_end,
-                            type_start)
-                        if declaration_index >= 0:
-                            return declaration_index
-                parameter_index = parameter_index + 1
-            return hir_global_struct_declaration(program, source, name_start, name_end, name_start)
-        if (
-            program.records[offset] == HIR_RECORD_STATEMENT and
-            program.records[offset + 1] == HIR_OP_LET and
-            program.records[offset + 6] > 1
-        ):
-            let payload_start = program.records[offset + 5]
-            let start_offset = hir_value_offset(payload_start)
-            let end_offset = hir_value_offset(payload_start + 1)
-            if hir_source_ranges_equal(source, name_start, name_end, program.values[start_offset + 1],
-                program.values[end_offset + 1]):
-                return hir_node_struct_declaration(program, record_id)
+        if hir_int_list_get(records, offset) != HIR_RECORD_GLOBAL:
+            return -1
+        if hir_source_ranges_equal(source, name_start, name_end,
+            hir_int_list_get(records, offset + 9), hir_int_list_get(records, offset + 10)):
+            if record_id < len(struct_decls):
+                return hir_int_list_get(struct_decls, record_id)
+            return -1
         record_id = record_id - 1
-    return hir_global_struct_declaration(program, source, name_start, name_end, name_start)
+    return -1
 
-def hir_record_struct_declaration(program: HirProgram, source: str, record_id: int) -> int:
+def hir_record_struct_declaration(
+    records: list[int],
+    values: list[int],
+    struct_decls: list[int],
+    source: str,
+    record_id: int,
+    scope_records: list[int],
+    local_bindings: list[int]
+) -> int:
     let offset = hir_record_offset(record_id)
-    let record_kind = program.records[offset]
-    let opcode = program.records[offset + 1]
-    let payload_start = program.records[offset + 5]
-    let payload_count = program.records[offset + 6]
+    let record_kind = hir_int_list_get(records, offset)
+    let opcode = hir_int_list_get(records, offset + 1)
+    let payload_start = hir_int_list_get(records, offset + 5)
+    let payload_count = hir_int_list_get(records, offset + 6)
     if record_kind == HIR_RECORD_GLOBAL:
         if payload_count > 0:
             let value_offset = hir_value_offset(payload_start)
-            if program.values[value_offset] == HIR_VALUE_NODE:
-                return hir_node_struct_declaration(program, program.values[value_offset + 1])
+            if hir_int_list_get(values, value_offset) == HIR_VALUE_NODE:
+                let child_node = hir_int_list_get(values, value_offset + 1)
+                if child_node >= 0 and child_node < len(struct_decls):
+                    return hir_int_list_get(struct_decls, child_node)
         return -1
     if opcode == HIR_OP_STRUCT and payload_count >= 2:
         let name_start_offset = hir_value_offset(payload_start)
         let name_end_offset = hir_value_offset(payload_start + 1)
-        if program.values[name_start_offset] == HIR_VALUE_INT and program.values[name_end_offset] == HIR_VALUE_INT:
-            return find_struct_declaration_index(source, program.values[name_start_offset + 1],
-                program.values[name_end_offset + 1], program.values[name_start_offset + 1])
+        if (
+            hir_int_list_get(values, name_start_offset) == HIR_VALUE_INT and
+            hir_int_list_get(values, name_end_offset) == HIR_VALUE_INT
+        ):
+            return find_struct_declaration_index(source, hir_int_list_get(values, name_start_offset + 1),
+                hir_int_list_get(values, name_end_offset + 1), hir_int_list_get(values, name_start_offset + 1))
         return -1
     if opcode == HIR_OP_FIELD and payload_count >= 3:
         let base_offset = hir_value_offset(payload_start)
         let base_declaration = -1
-        if program.values[base_offset] == HIR_VALUE_NODE:
-            base_declaration = hir_node_struct_declaration(program, program.values[base_offset + 1])
+        if hir_int_list_get(values, base_offset) == HIR_VALUE_NODE:
+            let base_node = hir_int_list_get(values, base_offset + 1)
+            if base_node >= 0 and base_node < len(struct_decls):
+                base_declaration = hir_int_list_get(struct_decls, base_node)
         let name_start_offset = hir_value_offset(payload_start + 1)
         let name_end_offset = hir_value_offset(payload_start + 2)
-        if program.values[name_start_offset] != HIR_VALUE_INT or program.values[name_end_offset] != HIR_VALUE_INT:
+        if (
+            hir_int_list_get(values, name_start_offset) != HIR_VALUE_INT or
+            hir_int_list_get(values, name_end_offset) != HIR_VALUE_INT
+        ):
             return -1
-        let name_start = program.values[name_start_offset + 1]
-        let name_end = program.values[name_end_offset + 1]
+        let name_start = hir_int_list_get(values, name_start_offset + 1)
+        let name_end = hir_int_list_get(values, name_end_offset + 1)
         if base_declaration < 0:
             base_declaration = hir_struct_declaration_by_field_name(source, name_start, name_end)
         if base_declaration < 0:
             return -1
         return hir_struct_field_type_declaration(source, base_declaration, name_start, name_end)
     if opcode == HIR_OP_LOCAL:
-        return hir_local_struct_declaration(program, source, record_id, program.records[offset + 3],
-            program.records[offset + 4])
+        return hir_local_struct_declaration(records, values, source, record_id, hir_int_list_get(records, offset + 3),
+            hir_int_list_get(records, offset + 4), struct_decls, scope_records, local_bindings)
     if opcode == HIR_OP_LET:
         if payload_count > 4:
             let annotation_start_offset = hir_value_offset(payload_start + 2)
             let annotation_end_offset = hir_value_offset(payload_start + 3)
             if (
-                program.values[annotation_start_offset] == HIR_VALUE_INT and
-                program.values[annotation_end_offset] == HIR_VALUE_INT
+                hir_int_list_get(values, annotation_start_offset) == HIR_VALUE_INT and
+                hir_int_list_get(values, annotation_end_offset) == HIR_VALUE_INT
             ):
                 let annotation_declaration = hir_annotation_struct_declaration(source,
-                    program.values[annotation_start_offset + 1], program.values[annotation_end_offset + 1])
+                    hir_int_list_get(values, annotation_start_offset + 1),
+                    hir_int_list_get(values, annotation_end_offset + 1))
                 if annotation_declaration >= 0:
                     return annotation_declaration
         if payload_count > 0:
             let value_offset = hir_value_offset(payload_start + payload_count - 1)
-            if program.values[value_offset] == HIR_VALUE_NODE:
-                return hir_node_struct_declaration(program, program.values[value_offset + 1])
+            if hir_int_list_get(values, value_offset) == HIR_VALUE_NODE:
+                let child_node = hir_int_list_get(values, value_offset + 1)
+                if child_node >= 0 and child_node < len(struct_decls):
+                    return hir_int_list_get(struct_decls, child_node)
         return -1
     if opcode == HIR_OP_ASSIGN and payload_count > 0:
         let value_offset = hir_value_offset(payload_start + payload_count - 1)
-        if program.values[value_offset] == HIR_VALUE_NODE:
-            return hir_node_struct_declaration(program, program.values[value_offset + 1])
+        if hir_int_list_get(values, value_offset) == HIR_VALUE_NODE:
+            let child_node = hir_int_list_get(values, value_offset + 1)
+            if child_node >= 0 and child_node < len(struct_decls):
+                return hir_int_list_get(struct_decls, child_node)
     return -1
 
-def hir_resolve_struct_decls(program: HirProgram, struct_decls: list[int], source: str):
+def hir_resolve_struct_decls(
+    records: list[int],
+    values: list[int],
+    struct_decls: list[int],
+    source: str,
+    scope_records: list[int],
+    local_bindings: list[int]
+):
     let pass = 0
     let has_changes = true
     while pass < 8 and has_changes:
         has_changes = false
         let record_id = 0
-        while record_id < hir_record_count(program.records):
-            let resolved_declaration = hir_record_struct_declaration(program, source, record_id)
-            if resolved_declaration >= 0 and hir_int_list_get(program.struct_decls, record_id) != resolved_declaration:
-                hir_int_list_set(program.struct_decls, record_id, resolved_declaration)
+        let total_recs = hir_record_count(records)
+        while record_id < total_recs:
+            let resolved_declaration = hir_record_struct_declaration(records, values, struct_decls, source,
+                record_id, scope_records, local_bindings)
+            if resolved_declaration >= 0 and hir_int_list_get(struct_decls, record_id) != resolved_declaration:
                 hir_int_list_set(struct_decls, record_id, resolved_declaration)
                 has_changes = true
             record_id = record_id + 1
         pass = pass + 1
 
-def hir_signature_int(program: HirProgram, record_offset: int, index: int) -> int:
-    let value_id = program.records[record_offset + 7] + index
+def hir_signature_int(records: list[int], values: list[int], record_offset: int, index: int) -> int:
+    let value_id = hir_int_list_get(records, record_offset + 7) + index
     let value_offset = hir_value_offset(value_id)
-    return program.values[value_offset + 1]
+    return hir_int_list_get(values, value_offset + 1)
 
 def hir_parameter_type_range(source: str, name_start: int, name_end: int) -> (int, int):
     # 扫描参数名后的类型注解区间（不创建 slice）
@@ -1767,22 +2059,22 @@ def hir_is_method_name(source: str, name_start: int) -> bool:
         line_start = line_start - 1
     return name_start > line_start and source[line_start] == ' '
 
-def hir_func_signatures_equal(program: HirProgram, source: str, left_offset: int, right_offset: int) -> bool:
-    let left_count = hir_signature_int(program, left_offset, HIR_SIGNATURE_PARAM_COUNT)
-    let right_count = hir_signature_int(program, right_offset, HIR_SIGNATURE_PARAM_COUNT)
+def hir_func_signatures_equal(records: list[int], values: list[int], source: str, left_offset: int, right_offset: int) -> bool:
+    let left_count = hir_signature_int(records, values, left_offset, HIR_SIGNATURE_PARAM_COUNT)
+    let right_count = hir_signature_int(records, values, right_offset, HIR_SIGNATURE_PARAM_COUNT)
     if left_count != right_count:
         return false
     let parameter_index = 0
     while parameter_index < left_count:
         let left_metadata = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
         let right_metadata = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
-        if hir_signature_int(program, left_offset, left_metadata) != hir_signature_int(program, right_offset,
+        if hir_signature_int(records, values, left_offset, left_metadata) != hir_signature_int(records, values, right_offset,
             right_metadata):
             return false
-        let left_name_start = hir_signature_int(program, left_offset, left_metadata + 1)
-        let left_name_end = hir_signature_int(program, left_offset, left_metadata + 2)
-        let right_name_start = hir_signature_int(program, right_offset, right_metadata + 1)
-        let right_name_end = hir_signature_int(program, right_offset, right_metadata + 2)
+        let left_name_start = hir_signature_int(records, values, left_offset, left_metadata + 1)
+        let left_name_end = hir_signature_int(records, values, left_offset, left_metadata + 2)
+        let right_name_start = hir_signature_int(records, values, right_offset, right_metadata + 1)
+        let right_name_end = hir_signature_int(records, values, right_offset, right_metadata + 2)
         let (left_type_start, left_type_end) = hir_parameter_type_range(source, left_name_start, left_name_end)
         let (right_type_start, right_type_end) = hir_parameter_type_range(source, right_name_start, right_name_end)
         if not hir_source_ranges_equal(source, left_type_start, left_type_end, right_type_start, right_type_end):
@@ -1799,12 +2091,26 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
     if not hir_validate_model_program(initial_program):
         return hir_semantic_error("invalid model")
     phase_time = hir_debug_checkpoint("model", phase_time)
+    let scope_records: list[int] = []
+    hir_collect_scope_maps(records, scope_records)
+    let func_index: list[int] = []
+    hir_collect_func_index(records, source, func_index)
+    let constant_heads: list[int] = []
+    let constant_index: list[int] = []
+    hir_collect_constant_buckets(source, constant_heads, constant_index)
+    let field_name_hashes: list[int] = []
+    hir_collect_field_hashes(source, field_name_hashes)
+    let local_bindings: list[int] = []
+    hir_collect_local_bindings(records, values, source, scope_records, func_index,
+        constant_heads, constant_index, local_bindings)
     let inferred_records: list[int] = []
-    hir_infer_types(records, values, struct_decls, source, inferred_records)
-    let program = HirProgram{records: inferred_records, values: values, struct_decls: struct_decls}
+    hir_infer_types(records, values, struct_decls, source, inferred_records,
+        scope_records, func_index, field_name_hashes, local_bindings)
     phase_time = hir_debug_checkpoint("infer", phase_time)
-    hir_resolve_struct_decls(program, struct_decls, source)
+    hir_resolve_struct_decls(inferred_records, values, struct_decls, source,
+        scope_records, local_bindings)
     phase_time = hir_debug_checkpoint("struct-decls", phase_time)
+    let program = HirProgram{records: inferred_records, values: values, struct_decls: struct_decls}
     let records = program.records
     let record_id = 0
     while record_id < hir_record_count(records):
@@ -1816,16 +2122,16 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
                 return hir_semantic_error("function name range")
             if records[offset + 8] < HIR_SIGNATURE_PARAM_BASE:
                 return hir_semantic_error("function signature")
-            let parameter_count = hir_signature_int(program, offset, HIR_SIGNATURE_PARAM_COUNT)
+            let parameter_count = hir_signature_int(records, values, offset, HIR_SIGNATURE_PARAM_COUNT)
             let expected_auxiliary_count = HIR_SIGNATURE_PARAM_BASE + parameter_count * HIR_SIGNATURE_PARAM_SIZE
             if parameter_count < 0 or records[offset + 8] != expected_auxiliary_count:
                 return hir_semantic_error("function parameter metadata")
             let parameter_index = 0
             while parameter_index < parameter_count:
                 let metadata_index = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
-                let parameter_type = hir_signature_int(program, offset, metadata_index)
-                let parameter_name_start = hir_signature_int(program, offset, metadata_index + 1)
-                let parameter_name_end = hir_signature_int(program, offset, metadata_index + 2)
+                let parameter_type = hir_signature_int(records, values, offset, metadata_index)
+                let parameter_name_start = hir_signature_int(records, values, offset, metadata_index + 1)
+                let parameter_name_end = hir_signature_int(records, values, offset, metadata_index + 2)
                 if parameter_type < HIR_TYPE_UNKNOWN or parameter_type > HIR_TYPE_MAX:
                     return hir_semantic_error("parameter type")
                 if (
@@ -1837,8 +2143,8 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
                 let previous_index = 0
                 while previous_index < parameter_index:
                     let previous_metadata = HIR_SIGNATURE_PARAM_BASE + previous_index * HIR_SIGNATURE_PARAM_SIZE
-                    let previous_start = hir_signature_int(program, offset, previous_metadata + 1)
-                    let previous_end = hir_signature_int(program, offset, previous_metadata + 2)
+                    let previous_start = hir_signature_int(records, values, offset, previous_metadata + 1)
+                    let previous_end = hir_signature_int(records, values, offset, previous_metadata + 2)
                     if hir_source_ranges_equal(source, parameter_name_start, parameter_name_end, previous_start,
                         previous_end):
                         return hir_semantic_error("duplicate parameter")
@@ -1874,7 +2180,7 @@ def hir_validate_semantics(records: list[int], values: list[int], struct_decls: 
                         records[right_offset + 9],
                         records[right_offset + 10]
                     ) and
-                    hir_func_signatures_equal(program, source, left_offset, right_offset)
+                    hir_func_signatures_equal(records, values, source, left_offset, right_offset)
                 ):
                     return hir_semantic_error("duplicate function")
             right_index = right_index + 1
