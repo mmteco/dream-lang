@@ -1301,18 +1301,19 @@ def llvm_emit_func_table(program: LirProgram, output: Buffer):
     append(output, "declare i8* @__c_dict_get_str_ptr(i8*, i8*)\n")
 
 def llvm_emit_external_declarations(output: Buffer):
-    let external_id = EXTERNAL_ID_BASE
-    while external_id < EXTERNAL_ID_BASE + len(EXTERNAL_DEFS):
-        if external_has_declaration(external_id):
-            let external_type = llvm_lir_external_type(external_id)
+    let index = 0
+    while index < len(EXTERNAL_DEFS):
+        let def_item = EXTERNAL_DEFS[index]
+        if def_item.has_declaration:
+            let external_type = llvm_lir_external_type(def_item.id)
             append(output, "declare ")
             if external_type == LIR_TYPE_I1:
                 append(output, "zeroext ")
             append(output, llvm_lir_type(external_type))
             append(output, " ")
-            append(output, llvm_lir_external_name(LIR_EXTERNAL_BASE + external_id))
+            append(output, llvm_lir_external_name(LIR_EXTERNAL_BASE + def_item.id))
             append(output, "(...)\n")
-        external_id = external_id + 1
+        index = index + 1
     append(output, "declare void @__c_append_f64(i8*, double)\n")
 
 def llvm_emit_string_globals(program: LirProgram, output: Buffer):
@@ -1574,12 +1575,19 @@ def llvm_emit_direct_call_casts(program: LirProgram, record_offset: int, func_in
         if llvm_lir_direct_call_argument_needs_cast(actual_type, expected_type):
             let temp_name = llvm_lir_join_int("%call_arg_", record_offset + operand_index, "")
             if expected_type == LIR_TYPE_PTR and actual_type == LIR_TYPE_I32:
-                append(output, "  ")
-                append(output, temp_name)
-                append(output, " = ")
-                append(output, "inttoptr i32 ")
-                llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
-                append(output, " to i8*\n")
+                let operand_kind = llvm_lir_operand_kind(program, record_offset, operand_index)
+                if operand_kind == LIR_OPERAND_SYMBOL and not llvm_lir_is_external_symbol(llvm_lir_operand_value(program, record_offset, operand_index)):
+                    append(output, "  ")
+                    append(output, temp_name)
+                    append(output, " = bitcast i32 (i32, i32, i32)* ")
+                    llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_PTR, output)
+                    append(output, " to i8*\n")
+                else:
+                    append(output, "  ")
+                    append(output, temp_name)
+                    append(output, " = inttoptr i32 ")
+                    llvm_emit_operand(program, record_offset, operand_index, LIR_TYPE_I32, output)
+                    append(output, " to i8*\n")
             elif expected_type == LIR_TYPE_PTR and actual_type == LIR_TYPE_I1:
                 let integer_name = llvm_lir_join_int("%call_arg_int_", record_offset + operand_index, "")
                 append(output, "  ")
@@ -2227,11 +2235,19 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                     llvm_emit_operand(program, offset, 0, return_type, output)
                     append(output, "\n")
             elif return_type == LIR_TYPE_PTR and actual_type == LIR_TYPE_I32:
-                append(output, "  ")
-                append(output, result_name)
-                append(output, " = inttoptr i32 ")
-                llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
-                append(output, " to i8*\n")
+                let operand_kind = llvm_lir_operand_kind(program, offset, 0)
+                if operand_kind == LIR_OPERAND_SYMBOL and not llvm_lir_is_external_symbol(llvm_lir_operand_value(program, offset, 0)):
+                    append(output, "  ")
+                    append(output, result_name)
+                    append(output, " = bitcast i32 (i32, i32, i32)* ")
+                    llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                    append(output, " to i8*\n")
+                else:
+                    append(output, "  ")
+                    append(output, result_name)
+                    append(output, " = inttoptr i32 ")
+                    llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
+                    append(output, " to i8*\n")
             elif return_type == LIR_TYPE_I32 and llvm_lir_is_pointer_like(actual_type):
                 append(output, "  ")
                 append(output, result_name)
@@ -2239,11 +2255,19 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
                 llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
                 append(output, " to i32\n")
             elif llvm_lir_is_pointer_like(return_type) and actual_type == LIR_TYPE_I32:
-                append(output, "  ")
-                append(output, result_name)
-                append(output, " = inttoptr i32 ")
-                llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
-                append(output, " to i8*\n")
+                let operand_kind = llvm_lir_operand_kind(program, offset, 0)
+                if operand_kind == LIR_OPERAND_SYMBOL and not llvm_lir_is_external_symbol(llvm_lir_operand_value(program, offset, 0)):
+                    append(output, "  ")
+                    append(output, result_name)
+                    append(output, " = bitcast i32 (i32, i32, i32)* ")
+                    llvm_emit_operand(program, offset, 0, LIR_TYPE_PTR, output)
+                    append(output, " to i8*\n")
+                else:
+                    append(output, "  ")
+                    append(output, result_name)
+                    append(output, " = inttoptr i32 ")
+                    llvm_emit_operand(program, offset, 0, LIR_TYPE_I32, output)
+                    append(output, " to i8*\n")
             elif llvm_lir_is_pointer_like(return_type) and actual_type == LIR_TYPE_I1:
                 let integer_name = llvm_lir_join_int("%dynamic_copy_int_", offset, "")
                 append(output, "  ")

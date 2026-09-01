@@ -124,8 +124,8 @@ let find_interface_method_type env interface_name interface_params method_name =
 let string_method_type method_name =
   match method_name with
   | "length" | "len" -> Some (TyFunc ([], TyInt))
-  | "upper" | "lower" | "strip" -> Some (TyFunc ([], TyStr))
-  | "find" -> Some (TyFunc ([TyStr], TyInt))
+  | "upper" | "lower" | "strip" | "lstrip" | "rstrip" -> Some (TyFunc ([], TyStr))
+  | "find" | "count" -> Some (TyFunc ([TyStr], TyInt))
   | "startswith" | "endswith" -> Some (TyFunc ([TyStr], TyBool))
   | "replace" -> Some (TyFunc ([TyStr; TyStr], TyStr))
   | "split" -> Some (TyFunc ([TyStr], TyList TyStr))
@@ -136,7 +136,8 @@ let string_method_type method_name =
 
 let bytes_method_type method_name =
   match method_name with
-  | "length" -> Some (TyFunc ([], TyInt))
+  | "length" | "len" -> Some (TyFunc ([], TyInt))
+  | "hex" -> Some (TyFunc ([], TyStr))
   | "get" -> Some (TyFunc ([TyInt], TyByte))
   | "slice" -> Some (TyFunc ([TyInt; TyInt], TyBytes))
   | "decode" -> Some (TyFunc ([], TyStr))
@@ -145,9 +146,15 @@ let bytes_method_type method_name =
 let dict_method_type key_type value_type method_name =
   match method_name with
   | "len" | "length" -> Some (TyFunc ([], TyInt))
-  | "has" -> Some (TyFunc ([key_type], TyBool))
+  | "has" | "contains" -> Some (TyFunc ([key_type], TyBool))
   | "get" -> Some (TyFunc ([key_type], value_type))
   | "set" -> Some (TyFunc ([key_type; value_type], TyDict (key_type, value_type)))
+  | _ -> None
+
+let list_method_type element_type method_name =
+  match method_name with
+  | "len" | "length" -> Some (TyFunc ([], TyInt))
+  | "append" -> Some (TyFunc ([element_type], TyNone))
   | _ -> None
 
 (* 表达式类型推导 *)
@@ -760,6 +767,14 @@ let rec infer_expr env = function
                   (Printf.sprintf "Dictionary type has no method '%s'" attr) in
                 report_error err;
                 (TyUnknown, obj_subst))
+       | TyList elem_type ->
+           (match list_method_type elem_type attr with
+            | Some method_type -> (method_type, obj_subst)
+            | None ->
+                let err = make_error (TypeError "Unknown list method") pos
+                  (Printf.sprintf "List type has no method '%s'" attr) in
+                report_error err;
+                (TyUnknown, obj_subst))
        | TyStruct (struct_name, _) ->
            (match Env.find_struct struct_name env with
             | None ->
@@ -1240,6 +1255,46 @@ let rec infer_expr env = function
             | Some (TyFunc (expected_argument_types, _)) ->
                 let err = make_error (TypeError "Argument count mismatch") _pos
                   (Printf.sprintf "Bytes method '%s' expects %d arguments but got %d"
+                    variant_name (List.length expected_argument_types)
+                    (List.length resolved_arg_types)) in
+                report_error err;
+                TyUnknown, combined_subst
+            | _ -> TyUnknown, combined_subst)
+       | Some (TyList elem_type) ->
+           (match list_method_type elem_type variant_name with
+            | Some (TyFunc (expected_argument_types, return_type))
+              when List.length expected_argument_types = List.length resolved_arg_types ->
+                List.iter2 (fun expected actual ->
+                  try ignore (unify expected actual)
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) _pos
+                      "List method argument type mismatch" in
+                    report_error err
+                ) expected_argument_types resolved_arg_types;
+                return_type, combined_subst
+            | Some (TyFunc (expected_argument_types, _)) ->
+                let err = make_error (TypeError "Argument count mismatch") _pos
+                  (Printf.sprintf "List method '%s' expects %d arguments but got %d"
+                    variant_name (List.length expected_argument_types)
+                    (List.length resolved_arg_types)) in
+                report_error err;
+                TyUnknown, combined_subst
+            | _ -> TyUnknown, combined_subst)
+       | Some (TyDict (key_type, value_type)) ->
+           (match dict_method_type key_type value_type variant_name with
+            | Some (TyFunc (expected_argument_types, return_type))
+              when List.length expected_argument_types = List.length resolved_arg_types ->
+                List.iter2 (fun expected actual ->
+                  try ignore (unify expected actual)
+                  with Failure msg ->
+                    let err = make_error (TypeError msg) _pos
+                      "Dictionary method argument type mismatch" in
+                    report_error err
+                ) expected_argument_types resolved_arg_types;
+                return_type, combined_subst
+            | Some (TyFunc (expected_argument_types, _)) ->
+                let err = make_error (TypeError "Argument count mismatch") _pos
+                  (Printf.sprintf "Dictionary method '%s' expects %d arguments but got %d"
                     variant_name (List.length expected_argument_types)
                     (List.length resolved_arg_types)) in
                 report_error err;

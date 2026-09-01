@@ -1,6 +1,7 @@
-# Set and ordered set collections
+# Set and ordered set collections with Python-like interface
 
-from ops import BitAnd, BitOr, Sub
+from ops import BitAnd, BitOr, Sub, Display
+
 
 struct Set:
     values: list[str]
@@ -61,6 +62,31 @@ struct Set:
             if value in other.index:
                 return false
         return true
+
+    def isdisjoint(self, other: Set) -> bool:
+        return self.is_disjoint(other)
+
+    def issubset(self, other: Set) -> bool:
+        return self.is_subset(other)
+
+    def issuperset(self, other: Set) -> bool:
+        return other.is_subset(self)
+
+    def is_superset(self, other: Set) -> bool:
+        return other.is_subset(self)
+
+    def to_list(self) -> list[str]:
+        let result: list[str] = []
+        for v in self.values:
+            append(result, v)
+        return result
+
+    def copy(self) -> Set:
+        let result = Set()
+        for v in self.values:
+            result.add(v)
+        return result
+
 
 struct OrderedSet:
     values: list[str]
@@ -127,6 +153,31 @@ struct OrderedSet:
                 return false
         return true
 
+    def isdisjoint(self, other: OrderedSet) -> bool:
+        return self.is_disjoint(other)
+
+    def issubset(self, other: OrderedSet) -> bool:
+        return self.is_subset(other)
+
+    def issuperset(self, other: OrderedSet) -> bool:
+        return other.is_subset(self)
+
+    def is_superset(self, other: OrderedSet) -> bool:
+        return other.is_subset(self)
+
+    def to_list(self) -> list[str]:
+        let result: list[str] = []
+        for v in self.values:
+            append(result, v)
+        return result
+
+    def copy(self) -> OrderedSet:
+        let result = OrderedSet()
+        for v in self.values:
+            result.add(v)
+        return result
+
+
 impl BitOr[Set] for Set:
     def bitor(self, other: Set) -> Set:
         return self.union(other)
@@ -150,3 +201,16 @@ impl BitAnd[OrderedSet] for OrderedSet:
 impl Sub[OrderedSet] for OrderedSet:
     def sub(self, other: OrderedSet) -> OrderedSet:
         return self.difference(other)
+
+def set(items: list[str] = []) -> Set:
+    let result = Set()
+    for item in items:
+        result.add(item)
+    return result
+
+def ordered_set(items: list[str] = []) -> OrderedSet:
+    let result = OrderedSet()
+    for item in items:
+        result.add(item)
+    return result
+

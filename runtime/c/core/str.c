@@ -212,6 +212,55 @@ char* __c_str_strip(const char* str) {
     return result;
 }
 
+char* __c_str_lstrip(const char* str) {
+    if (str == NULL || *str == '\0') {
+        return allocate_empty_string();
+    }
+    const char* start = str;
+    while (isspace((unsigned char)*start)) start++;
+    if (*start == '\0') {
+        return allocate_empty_string();
+    }
+    size_t len = strlen(start);
+    char* result = (char*)malloc(len + 1);
+    if (result == NULL) return NULL;
+    memcpy(result, start, len);
+    result[len] = '\0';
+    return result;
+}
+
+char* __c_str_rstrip(const char* str) {
+    if (str == NULL || *str == '\0') {
+        return allocate_empty_string();
+    }
+    const char* end = str + strlen(str) - 1;
+    while (end >= str && isspace((unsigned char)*end)) end--;
+    if (end < str) {
+        return allocate_empty_string();
+    }
+    size_t len = (size_t)(end - str + 1);
+    char* result = (char*)malloc(len + 1);
+    if (result == NULL) return NULL;
+    memcpy(result, str, len);
+    result[len] = '\0';
+    return result;
+}
+
+int32_t __c_str_count(const char* str, const char* sub) {
+    if (str == NULL || sub == NULL) return 0;
+    size_t sub_len = strlen(sub);
+    if (sub_len == 0) {
+        return (int32_t)strlen(str) + 1;
+    }
+    int32_t count = 0;
+    const char* p = str;
+    while ((p = strstr(p, sub)) != NULL) {
+        count++;
+        p += sub_len;
+    }
+    return count;
+}
+
 bool __c_str_starts_with(const char* str, const char* prefix) {
     if (str == NULL || prefix == NULL) return false;
     size_t len = strlen(prefix);

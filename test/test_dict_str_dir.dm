@@ -1,7 +1,7 @@
 # dream-test: dir
 
 from str import upper, lower, strip, find, replace, startswith, endswith, split, join
-from dict import dict_get, set
+from dict import get, set
 from ops import Display
 
 struct Label:
@@ -17,7 +17,7 @@ def main():
     let chained = values.set("bonus", 8)
     chained.set("answer", 42)
     print("answer" in values)
-    print(dict_get(values, "missing", 7))
+    print(get(values, "missing", 7))
     values["answer"] = 42
     print(values["answer"])
     print(len(values))

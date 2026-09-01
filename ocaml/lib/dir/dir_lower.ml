@@ -131,8 +131,12 @@ and lower_method_call context function_builder environment object_value method_n
           match binding.signature.parameter_types with
           | _ :: parameter_types ->
               List.length parameter_types = List.length lowered_arguments &&
-              List.for_all2 (fun expected actual -> Dir.equal_ty expected actual.ty)
-                parameter_types lowered_arguments
+              List.for_all2 (fun expected actual ->
+                Dir.equal_ty expected actual.ty ||
+                match actual.ty with
+                | Ref actual_unref -> Dir.equal_ty expected actual_unref
+                | _ -> false
+              ) parameter_types lowered_arguments
           | [] -> false
         in
         (match List.find_opt is_matching bindings with
@@ -240,7 +244,10 @@ and lower_string_method context function_builder environment object_value method
   | "upper" -> unary_str_call "__c_str_upper" Str
   | "lower" -> unary_str_call "__c_str_lower" Str
   | "strip" -> unary_str_call "__c_str_strip" Str
+  | "lstrip" -> unary_str_call "__c_str_lstrip" Str
+  | "rstrip" -> unary_str_call "__c_str_rstrip" Str
   | "find" -> binary_str_call "__c_str_find" I32
+  | "count" -> binary_str_call "__c_str_count" I32
   | "startswith" -> binary_str_call "__c_str_starts_with" Bool
   | "endswith" -> binary_str_call "__c_str_ends_with" Bool
   | "isdigit" -> char_test_call "__c_str_is_digit"
@@ -328,7 +335,7 @@ and lower_dict_method context function_builder environment object_value method_n
       emit function_builder (Call (Some value, I32, size_name,
         [Dict (key_type, value_type)], [object_value.operand]));
       { operand = Value value; ty = I32 }
-  | "has" ->
+  | "has" | "contains" ->
       expect_arguments [key_type];
       let function_name = match key_type with
         | I32 -> "__c_dict_has_int"
@@ -368,11 +375,16 @@ and lower_bytes_method context function_builder environment object_value method_
   let lowered_arguments = List.map
     (lower_expr context function_builder environment) arguments in
   match method_name, lowered_arguments with
-  | "length", [] ->
+  | ("length" | "len"), [] ->
       let value = fresh_value function_builder in
       emit function_builder (Call (Some value, I32, "__c_bytes_len",
         [Bytes], [object_value.operand]));
       { operand = Value value; ty = I32 }
+  | "hex", [] ->
+      let value = fresh_value function_builder in
+      emit function_builder (Call (Some value, Str, "__c_bytes_hex",
+        [Bytes], [object_value.operand]));
+      { operand = Value value; ty = Str }
   | "get", [index] ->
       expect_type position I32 index.ty "bytes.get index";
       let value = fresh_value function_builder in
@@ -392,6 +404,21 @@ and lower_bytes_method context function_builder environment object_value method_
         [Bytes], [object_value.operand]));
       { operand = Value value; ty = Str }
   | _ -> fail_at position ("unsupported bytes method " ^ method_name)
+
+and lower_list_method context function_builder environment object_value element_type
+    method_name arguments position =
+  let lowered_arguments = List.map
+    (lower_expr context function_builder environment) arguments in
+  match method_name, lowered_arguments with
+  | ("length" | "len"), [] ->
+      let value = fresh_value function_builder in
+      emit function_builder (ListLength (value, object_value.operand));
+      { operand = Value value; ty = I32 }
+  | "append", [argument] ->
+      expect_type position element_type argument.ty "list append argument";
+      emit function_builder (ListAppend (object_value.operand, argument.operand, element_type));
+      object_value
+  | _ -> fail_at position ("unsupported list method " ^ method_name)
 
 and lower_interface_call context function_builder environment object_value method_name
     arguments position =
@@ -1367,6 +1394,9 @@ and lower_expr context function_builder environment expression =
        | Bytes ->
            lower_bytes_method context function_builder environment object_value
              method_name arguments position
+       | List element_type ->
+           lower_list_method context function_builder environment object_value
+             element_type method_name arguments position
        | actual_type -> fail_at position (Printf.sprintf
            "method call requires a struct, interface, string or bytes value, got %s"
            (Dir.ty_to_string actual_type)))
@@ -1565,6 +1595,7 @@ and lower_expr context function_builder environment expression =
           | Some Str -> true
           | Some Bytes -> true
           | Some (Dict _) -> true
+          | Some (List _) -> true
           | _ -> false) ->
       let object_value = load_variable context function_builder environment variable_name in
       (match object_value.ty with
@@ -1589,6 +1620,9 @@ and lower_expr context function_builder environment expression =
        | Dict _ ->
            lower_dict_method context function_builder environment object_value
              method_name arguments position
+       | List elem_type ->
+           lower_list_method context function_builder environment object_value
+             elem_type method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | ECall (callee, arguments, position) ->
       let lowered_callee = lower_expr context function_builder environment callee in
@@ -1638,6 +1672,9 @@ and lower_expr context function_builder environment expression =
             | Dict _ ->
                 lower_dict_method context function_builder environment object_value
                   field_name [] position
+            | List elem_type ->
+                lower_list_method context function_builder environment object_value
+                  elem_type field_name [] position
             | actual_type -> fail_at position (Printf.sprintf
                 "DIR does not support enum variant %s.%s on %s"
                 variable_name field_name (Dir.ty_to_string actual_type)))
@@ -1700,6 +1737,7 @@ and lower_expr context function_builder environment expression =
           | Some { ty = Str; _ } -> true
           | Some { ty = Bytes; _ } -> true
           | Some { ty = Dict _; _ } -> true
+          | Some { ty = List _; _ } -> true
           | _ -> false) ->
       let object_value = Hashtbl.find environment variable_name in
       (match object_value.ty with
@@ -1724,6 +1762,9 @@ and lower_expr context function_builder environment expression =
        | Dict _ ->
            lower_dict_method context function_builder environment object_value
              method_name arguments position
+       | List elem_type ->
+           lower_list_method context function_builder environment object_value
+             elem_type method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | EEnumVariant (variable_name, method_name, arguments, position)
     when (match variable_type context environment variable_name with
@@ -1739,6 +1780,7 @@ and lower_expr context function_builder environment expression =
           | Some Str -> true
           | Some Bytes -> true
           | Some (Dict _) -> true
+          | Some (List _) -> true
           | _ -> false) ->
       let object_value = load_variable context function_builder environment variable_name in
       (match object_value.ty with
@@ -1763,6 +1805,9 @@ and lower_expr context function_builder environment expression =
        | Dict _ ->
            lower_dict_method context function_builder environment object_value
              method_name arguments position
+       | List elem_type ->
+           lower_list_method context function_builder environment object_value
+             elem_type method_name arguments position
        | _ -> fail_at position "invalid method receiver")
   | EEnumVariant (enum_name, variant_name, arguments, position) ->
       let resolved_enum_type = context.resolve_enum enum_name in
@@ -2665,33 +2710,108 @@ let lower_function context constant_bindings def_info =
   finish_function function_builder parameters
 
 let runtime_externs = [
+  (* --- 基础内置与 I/O --- *)
   { name = "__c_value_to_str"; parameters = [I32; I32; Bool; F64; Str]; return_type = Str };
   { name = "__c_union_to_str"; parameters = [Union [I32; F64; Str; Bool; Bytes]]; return_type = Str };
   { name = "__c_io_write"; parameters = [I32; Str; Str]; return_type = Unit };
+
+  (* --- 字符串操作 (String & UTF-8) --- *)
   { name = "__c_str_concat"; parameters = [Str; Str]; return_type = Str };
   { name = "__c_str_len"; parameters = [Str]; return_type = I32 };
   { name = "__c_str_find"; parameters = [Str; Str]; return_type = I32 };
   { name = "__c_str_upper"; parameters = [Str]; return_type = Str };
   { name = "__c_str_lower"; parameters = [Str]; return_type = Str };
   { name = "__c_str_strip"; parameters = [Str]; return_type = Str };
+  { name = "__c_str_lstrip"; parameters = [Str]; return_type = Str };
+  { name = "__c_str_rstrip"; parameters = [Str]; return_type = Str };
+  { name = "__c_str_count"; parameters = [Str; Str]; return_type = I32 };
   { name = "__c_str_split"; parameters = [Str; Str]; return_type = List Str };
   { name = "__c_str_join"; parameters = [List Str; Str]; return_type = Str };
-  { name = "__c_dict_items_tuples"; parameters = [Dict (I32, I32)]; return_type = List (Tuple [I32; I32]) };
   { name = "__c_str_starts_with"; parameters = [Str; Str]; return_type = Bool };
   { name = "__c_str_ends_with"; parameters = [Str; Str]; return_type = Bool };
   { name = "__c_str_replace"; parameters = [Str; Str; Str]; return_type = Str };
-  { name = "__c_int_floordiv"; parameters = [I32; I32]; return_type = I32 };
-  { name = "__c_float_floordiv"; parameters = [F64; F64]; return_type = F64 };
-  { name = "__c_int_pow"; parameters = [I32; I32]; return_type = I32 };
-  { name = "__c_float_pow"; parameters = [F64; F64]; return_type = F64 };
   { name = "__c_str_is_digit"; parameters = [I32]; return_type = Bool };
   { name = "__c_str_is_alpha"; parameters = [I32]; return_type = Bool };
-  { name = "__c_time_ms"; parameters = []; return_type = I32 };
-  { name = "__c_debug_on"; parameters = []; return_type = Bool };
-  { name = "__c_range_equal"; parameters = [Str; I32; I32; I32; I32]; return_type = Bool };
-  { name = "__c_fnv_hash_range"; parameters = [Str; I32; I32]; return_type = I32 };
-  { name = "__c_range_equals_cstr"; parameters = [Str; I32; I32; Str]; return_type = Bool };
   { name = "__c_str_is_whitespace"; parameters = [I32]; return_type = Bool };
+  { name = "__c_range_equal"; parameters = [Str; I32; I32; I32; I32]; return_type = Bool };
+  { name = "__c_range_equals_cstr"; parameters = [Str; I32; I32; Str]; return_type = Bool };
+  { name = "__c_fnv_hash_range"; parameters = [Str; I32; I32]; return_type = I32 };
+  { name = "__c_utf8_rune_count"; parameters = [Str]; return_type = I32 };
+  { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_utf8_byte_offset"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_rune_to_int"; parameters = [I32]; return_type = I32 };
+  { name = "__c_utf8_encode_rune"; parameters = [I32]; return_type = Bytes };
+  { name = "__c_str_to_bytes"; parameters = [Str]; return_type = Bytes };
+  { name = "__c_bytes_to_str"; parameters = [Bytes]; return_type = Str };
+
+  (* --- 字节序列 (Bytes) --- *)
+  { name = "__c_bytes_len"; parameters = [Bytes]; return_type = I32 };
+  { name = "__c_bytes_get"; parameters = [Bytes; I32]; return_type = I32 };
+  { name = "__c_bytes_slice"; parameters = [Bytes; I32; I32]; return_type = Bytes };
+  { name = "__c_bytes_from_array"; parameters = [List I32]; return_type = Bytes };
+  { name = "__c_bytes_hex"; parameters = [Bytes]; return_type = Str };
+
+  (* --- 字典 (Dict) --- *)
+  { name = "__c_dict_create_int_int"; parameters = [I32]; return_type = Dict (I32, I32) };
+  { name = "__c_dict_create_int_str"; parameters = [I32]; return_type = Dict (I32, Str) };
+  { name = "__c_dict_create_str_int"; parameters = [I32]; return_type = Dict (Str, I32) };
+  { name = "__c_dict_create_str_str"; parameters = [I32]; return_type = Dict (Str, Str) };
+  { name = "__c_dict_create_int_ptr"; parameters = [I32]; return_type = Dict (I32, ClosureEnv []) };
+  { name = "__c_dict_create_str_ptr"; parameters = [I32]; return_type = Dict (Str, ClosureEnv []) };
+  { name = "__c_dict_set_int_int"; parameters = [Dict (I32, I32); I32; I32]; return_type = Unit };
+  { name = "__c_dict_set_int_str"; parameters = [Dict (I32, Str); I32; Str]; return_type = Unit };
+  { name = "__c_dict_set_str_int"; parameters = [Dict (Str, I32); Str; I32]; return_type = Unit };
+  { name = "__c_dict_set_str_str"; parameters = [Dict (Str, Str); Str; Str]; return_type = Unit };
+  { name = "__c_dict_set_int_ptr"; parameters = [Dict (I32, ClosureEnv []); I32; ClosureEnv []]; return_type = Unit };
+  { name = "__c_dict_set_str_ptr"; parameters = [Dict (Str, ClosureEnv []); Str; ClosureEnv []]; return_type = Unit };
+  { name = "__c_dict_get_int_int"; parameters = [Dict (I32, I32); I32]; return_type = I32 };
+  { name = "__c_dict_get_int_str"; parameters = [Dict (I32, Str); I32]; return_type = Str };
+  { name = "__c_dict_get_str_int"; parameters = [Dict (Str, I32); Str]; return_type = I32 };
+  { name = "__c_dict_get_str_str"; parameters = [Dict (Str, Str); Str]; return_type = Str };
+  { name = "__c_dict_get_int_ptr"; parameters = [Dict (I32, ClosureEnv []); I32]; return_type = ClosureEnv [] };
+  { name = "__c_dict_get_str_ptr"; parameters = [Dict (Str, ClosureEnv []); Str]; return_type = ClosureEnv [] };
+  { name = "__c_dict_size_int_int"; parameters = [Dict (I32, I32)]; return_type = I32 };
+  { name = "__c_dict_size_int_str"; parameters = [Dict (I32, Str)]; return_type = I32 };
+  { name = "__c_dict_size_str_int"; parameters = [Dict (Str, I32)]; return_type = I32 };
+  { name = "__c_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
+  { name = "__c_dict_size_int_ptr"; parameters = [Dict (I32, ClosureEnv [])]; return_type = I32 };
+  { name = "__c_dict_size_str_ptr"; parameters = [Dict (Str, ClosureEnv [])]; return_type = I32 };
+  { name = "__c_dict_items_tuples"; parameters = [Dict (I32, I32)]; return_type = List (Tuple [I32; I32]) };
+  { name = "__c_dict_has_int"; parameters = [Dict (I32, ClosureEnv []); I32]; return_type = Bool };
+  { name = "__c_dict_has_str"; parameters = [Dict (Str, ClosureEnv []); Str]; return_type = Bool };
+
+  (* --- 文件系统 (File & Directory) --- *)
+  { name = "__c_file_read"; parameters = [Str]; return_type = Str };
+  { name = "__c_file_write"; parameters = [Str; Str]; return_type = I32 };
+  { name = "__c_file_append"; parameters = [Str; Str]; return_type = I32 };
+  { name = "__c_file_read_bytes"; parameters = [Str]; return_type = Bytes };
+  { name = "__c_file_write_bytes"; parameters = [Str; Bytes]; return_type = I32 };
+  { name = "__c_file_append_bytes"; parameters = [Str; Bytes]; return_type = I32 };
+  { name = "__c_file_exists"; parameters = [Str]; return_type = Bool };
+  { name = "__c_file_delete"; parameters = [Str]; return_type = Bool };
+  { name = "__c_file_is_dir"; parameters = [Str]; return_type = Bool };
+  { name = "__c_file_mkdir"; parameters = [Str]; return_type = Bool };
+  { name = "__c_file_rename"; parameters = [Str; Str]; return_type = Bool };
+  { name = "__c_file_size"; parameters = [Str]; return_type = I32 };
+
+  (* --- 进程与环境 (Process & Env & Compiler) --- *)
+  { name = "__c_process_arg_count"; parameters = []; return_type = I32 };
+  { name = "__c_process_arg"; parameters = [I32]; return_type = Str };
+  { name = "__c_env"; parameters = [Str]; return_type = Str };
+  { name = "__c_build_llvm"; parameters = [Str; Str; Bool]; return_type = I32 };
+
+  (* --- 网络与请求 (Network & HTTP) --- *)
+  { name = "__c_net_connect"; parameters = [Str; I32]; return_type = I32 };
+  { name = "__c_net_write"; parameters = [I32; Str]; return_type = I32 };
+  { name = "__c_net_read"; parameters = [I32; I32]; return_type = Str };
+  { name = "__c_net_close"; parameters = [I32]; return_type = Bool };
+  { name = "__c_http_request"; parameters = [Str; Str; Dict (Str, Str); Str; I32]; return_type = Str };
+
+  (* --- 加密与哈希 (Crypto) --- *)
+  { name = "__c_crypto_sha256"; parameters = [Str]; return_type = Str };
+  { name = "__c_crypto_sha256_bytes"; parameters = [Bytes]; return_type = Str };
+
+  (* --- 联合体与泛型装箱 (Union & Interface) --- *)
   { name = "__c_union_create_int"; parameters = [I32]; return_type = Union [I32] };
   { name = "__c_union_create_float"; parameters = [F64]; return_type = Union [F64] };
   { name = "__c_union_create_str"; parameters = [Str]; return_type = Union [Str] };
@@ -2708,66 +2828,17 @@ let runtime_externs = [
   { name = "__c_union_get_bool"; parameters = [Union [Bool]]; return_type = Bool };
   { name = "__c_union_get_bytes"; parameters = [Union [Bytes]]; return_type = Bytes };
   { name = "__c_union_print_value"; parameters = [Union [I32; F64; Str; Bool; Bytes]]; return_type = Unit };
-  { name = "__c_process_arg_count"; parameters = []; return_type = I32 };
-  { name = "__c_process_arg"; parameters = [I32]; return_type = Str };
-  { name = "__c_env"; parameters = [Str]; return_type = Str };
-  { name = "__c_file_read"; parameters = [Str]; return_type = Str };
-  { name = "__c_file_write"; parameters = [Str; Str]; return_type = I32 };
-  { name = "__c_file_exists"; parameters = [Str]; return_type = Bool };
-  { name = "__c_file_delete"; parameters = [Str]; return_type = Bool };
-  { name = "__c_net_connect"; parameters = [Str; I32]; return_type = I32 };
-  { name = "__c_net_write"; parameters = [I32; Str]; return_type = I32 };
-  { name = "__c_net_read"; parameters = [I32; I32]; return_type = Str };
-  { name = "__c_net_close"; parameters = [I32]; return_type = Bool };
-  { name = "__c_http_request"; parameters = [Str; Str; Dict (Str, Str); Str; I32]; return_type = Str };
-  { name = "__c_build_llvm"; parameters = [Str; Str; Bool]; return_type = I32 };
-  { name = "__c_file_read_bytes"; parameters = [Str]; return_type = Bytes };
-  { name = "__c_file_write_bytes"; parameters = [Str; Bytes]; return_type = I32 };
-  { name = "__c_file_append"; parameters = [Str; Str]; return_type = I32 };
-  { name = "__c_file_append_bytes"; parameters = [Str; Bytes]; return_type = I32 };
-  { name = "__c_crypto_sha256"; parameters = [Str]; return_type = Str };
-  { name = "__c_crypto_sha256_bytes"; parameters = [Bytes]; return_type = Str };
-  { name = "__c_file_is_dir"; parameters = [Str]; return_type = Bool };
-  { name = "__c_file_mkdir"; parameters = [Str]; return_type = Bool };
-  { name = "__c_file_rename"; parameters = [Str; Str]; return_type = Bool };
-  { name = "__c_file_size"; parameters = [Str]; return_type = I32 };
-  { name = "__c_bytes_len"; parameters = [Bytes]; return_type = I32 };
-  { name = "__c_bytes_get"; parameters = [Bytes; I32]; return_type = I32 };
-  { name = "__c_bytes_slice"; parameters = [Bytes; I32; I32]; return_type = Bytes };
-  { name = "__c_bytes_from_array"; parameters = [List I32]; return_type = Bytes };
-  { name = "__c_str_to_bytes"; parameters = [Str]; return_type = Bytes };
-  { name = "__c_bytes_to_str"; parameters = [Bytes]; return_type = Str };
-  { name = "__c_dict_set_int_int"; parameters = [Dict (I32, I32); I32; I32]; return_type = Unit };
-  { name = "__c_dict_set_int_str"; parameters = [Dict (I32, Str); I32; Str]; return_type = Unit };
-  { name = "__c_dict_set_str_int"; parameters = [Dict (Str, I32); Str; I32]; return_type = Unit };
-  { name = "__c_dict_set_str_str"; parameters = [Dict (Str, Str); Str; Str]; return_type = Unit };
-  { name = "__c_dict_set_int_ptr"; parameters = [Dict (I32, ClosureEnv []); I32; ClosureEnv []]; return_type = Unit };
-  { name = "__c_dict_set_str_ptr"; parameters = [Dict (Str, ClosureEnv []); Str; ClosureEnv []]; return_type = Unit };
-  { name = "__c_dict_create_int_int"; parameters = [I32]; return_type = Dict (I32, I32) };
-  { name = "__c_dict_create_int_str"; parameters = [I32]; return_type = Dict (I32, Str) };
-  { name = "__c_dict_create_str_int"; parameters = [I32]; return_type = Dict (Str, I32) };
-  { name = "__c_dict_create_str_str"; parameters = [I32]; return_type = Dict (Str, Str) };
-  { name = "__c_dict_create_int_ptr"; parameters = [I32]; return_type = Dict (I32, ClosureEnv []) };
-  { name = "__c_dict_create_str_ptr"; parameters = [I32]; return_type = Dict (Str, ClosureEnv []) };
-  { name = "__c_dict_get_int_int"; parameters = [Dict (I32, I32); I32]; return_type = I32 };
-  { name = "__c_dict_get_int_str"; parameters = [Dict (I32, Str); I32]; return_type = Str };
-  { name = "__c_dict_get_str_int"; parameters = [Dict (Str, I32); Str]; return_type = I32 };
-  { name = "__c_dict_get_str_str"; parameters = [Dict (Str, Str); Str]; return_type = Str };
-  { name = "__c_dict_get_int_ptr"; parameters = [Dict (I32, ClosureEnv []); I32]; return_type = ClosureEnv [] };
-  { name = "__c_dict_get_str_ptr"; parameters = [Dict (Str, ClosureEnv []); Str]; return_type = ClosureEnv [] };
-  { name = "__c_dict_size_int_int"; parameters = [Dict (I32, I32)]; return_type = I32 };
-  { name = "__c_dict_size_int_str"; parameters = [Dict (I32, Str)]; return_type = I32 };
-  { name = "__c_dict_size_str_int"; parameters = [Dict (Str, I32)]; return_type = I32 };
-  { name = "__c_dict_size_str_str"; parameters = [Dict (Str, Str)]; return_type = I32 };
-  { name = "__c_dict_size_int_ptr"; parameters = [Dict (I32, ClosureEnv [])]; return_type = I32 };
-  { name = "__c_dict_size_str_ptr"; parameters = [Dict (Str, ClosureEnv [])]; return_type = I32 };
-  { name = "__c_dict_has_int"; parameters = [Dict (I32, ClosureEnv []); I32]; return_type = Bool };
-  { name = "__c_dict_has_str"; parameters = [Dict (Str, ClosureEnv []); Str]; return_type = Bool };
-  { name = "__c_utf8_rune_count"; parameters = [Str]; return_type = I32 };
-  { name = "__c_utf8_rune_at"; parameters = [Str; I32]; return_type = I32 };
-  { name = "__c_utf8_byte_offset"; parameters = [Str; I32]; return_type = I32 };
-  { name = "__c_rune_to_int"; parameters = [I32]; return_type = I32 };
-  { name = "__c_utf8_encode_rune"; parameters = [I32]; return_type = Bytes };
+  { name = "__c_interface_box"; parameters = [I32; ClosureEnv []]; return_type = ClosureEnv [] };
+  { name = "__c_interface_obj"; parameters = [ClosureEnv []]; return_type = ClosureEnv [] };
+  { name = "__c_interface_tag"; parameters = [ClosureEnv []]; return_type = I32 };
+
+  (* --- 数学与时间与调试 (Math & Time & Debug) --- *)
+  { name = "__c_int_floordiv"; parameters = [I32; I32]; return_type = I32 };
+  { name = "__c_float_floordiv"; parameters = [F64; F64]; return_type = F64 };
+  { name = "__c_int_pow"; parameters = [I32; I32]; return_type = I32 };
+  { name = "__c_float_pow"; parameters = [F64; F64]; return_type = F64 };
+  { name = "__c_time_ms"; parameters = []; return_type = I32 };
+  { name = "__c_debug_on"; parameters = []; return_type = Bool };
 ]
 
 let lower_program program =

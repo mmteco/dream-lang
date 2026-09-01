@@ -1399,6 +1399,9 @@ def mir_external_type_for_name(name: str, external_id: int) -> int:
         "__c_str_upper",
         "__c_str_lower",
         "__c_str_strip",
+        "__c_str_lstrip",
+        "__c_str_rstrip",
+        "__c_bytes_hex",
         "__c_str_join",
     ]:
         return MIR_TYPE_STR

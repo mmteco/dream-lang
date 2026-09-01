@@ -140,3 +140,32 @@ char* __c_bytes_to_str(dynarray_i32* bytes_arr) {
 
     return result;
 }
+
+/**
+ * __c_bytes_hex: bytes 转 16 进制字符串
+ * Dream 签名: bytes -> str
+ * LLVM 签名: { i32, i32, i8* }* -> i8*
+ */
+char* __c_bytes_hex(dynarray_i32* bytes_arr) {
+    if (bytes_arr == NULL || bytes_arr->length == 0 || bytes_arr->data == NULL) {
+        char* empty = (char*)gc_alloc(1, OBJ_STRING);
+        if (empty == NULL) return NULL;
+        empty[0] = '\0';
+        return empty;
+    }
+
+    const char hex_chars[] = "0123456789abcdef";
+    size_t result_len = (size_t)bytes_arr->length * 2;
+    char* result = (char*)gc_alloc(result_len + 1, OBJ_STRING);
+    if (result == NULL) return NULL;
+
+    for (int32_t i = 0; i < bytes_arr->length; i++) {
+        uint8_t b = (uint8_t)(bytes_arr->data[i] & 0xFF);
+        result[i * 2] = hex_chars[(b >> 4) & 0x0F];
+        result[i * 2 + 1] = hex_chars[b & 0x0F];
+    }
+    result[result_len] = '\0';
+
+    return result;
+}
+

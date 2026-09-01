@@ -1,4 +1,7 @@
-# Path utilities
+# Path utilities and object-oriented Path representation
+
+from ops import Display, Div
+
 
 def is_abs(value: str) -> bool:
     return value.startswith("/")
@@ -92,3 +95,75 @@ def stem(value: str) -> str:
     if suffix == "":
         return name
     return name[:len(name) - len(suffix)]
+
+struct Path:
+    raw: str
+
+    def __init__(raw: str) -> Path:
+        return Path{raw: normalize(raw)}
+
+    def to_string(self) -> str:
+        return self.raw
+
+    def is_absolute(self) -> bool:
+        return is_abs(self.raw)
+
+    def name(self) -> str:
+        return basename(self.raw)
+
+    def stem(self) -> str:
+        return stem(self.raw)
+
+    def suffix(self) -> str:
+        return ext(self.raw)
+
+    def parent(self) -> Path:
+        return Path(dirname(self.raw))
+
+    def joinpath(self, child: str) -> Path:
+        return Path(join(self.raw, child))
+
+    def exists(self) -> bool:
+        return __c_file_exists(self.raw)
+
+    def is_dir(self) -> bool:
+        return __c_file_is_dir(self.raw)
+
+    def is_file(self) -> bool:
+        return __c_file_exists(self.raw) and not __c_file_is_dir(self.raw)
+
+    def size(self) -> int:
+        return __c_file_size(self.raw)
+
+    def read_text(self) -> str:
+        return __c_file_read(self.raw)
+
+    def read_bytes(self) -> bytes:
+        return __c_file_read_bytes(self.raw)
+
+    def write_text(self, content: str) -> Result[int, str]:
+        let written = __c_file_write(self.raw, content)
+        if written == -1:
+            return Err("failed to write file")
+        return Ok(written)
+
+    def write_bytes(self, content: bytes) -> Result[int, str]:
+        let written = __c_file_write_bytes(self.raw, content)
+        if written == -1:
+            return Err("failed to write bytes")
+        return Ok(written)
+
+    def unlink(self) -> bool:
+        return __c_file_delete(self.raw)
+
+    def mkdir(self) -> bool:
+        return __c_file_mkdir(self.raw)
+
+impl Display for Path:
+    def to_string(self) -> str:
+        return self.raw
+
+impl Div[str] for Path:
+    def div(self, other: str) -> Path:
+        return self.joinpath(other)
+

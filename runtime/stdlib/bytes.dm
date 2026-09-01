@@ -1,4 +1,4 @@
-# Byte sequence utilities
+# Byte sequence utilities with a Python-like surface.
 
 from utf8 import encode_rune
 
@@ -27,3 +27,15 @@ def extend(target: list[byte], value: bytes):
 
 def append_rune(target: list[byte], value: rune):
     extend(target, encode_rune(value))
+
+def hex(value: bytes) -> str:
+    let hex_chars = "0123456789abcdef"
+    let result = ""
+    let index = 0
+    while index < len(value):
+        let b = value[index]
+        let high = (b / 16) % 16
+        let low = b % 16
+        result = result + hex_chars[high:high + 1] + hex_chars[low:low + 1]
+        index = index + 1
+    return result

@@ -15,6 +15,18 @@ def lower(value: str) -> str:
 def strip(value: str) -> str:
     return __c_str_strip(value)
 
+def lstrip(value: str) -> str:
+    let index = 0
+    while index < len(value) and (value[index] == ' ' or value[index] == '\t' or value[index] == '\n' or value[index] == '\r'):
+        index = index + 1
+    return value[index:]
+
+def rstrip(value: str) -> str:
+    let index = len(value) - 1
+    while index >= 0 and (value[index] == ' ' or value[index] == '\t' or value[index] == '\n' or value[index] == '\r'):
+        index = index - 1
+    return value[:index + 1]
+
 def find(value: str, sub: str) -> int:
     return __c_str_find(value, sub)
 
@@ -29,6 +41,22 @@ def replace(value: str, old: str, new: str) -> str:
 
 def to_bytes(value: str) -> bytes:
     return __c_str_to_bytes(value)
+
+def encode(value: str) -> bytes:
+    return __c_str_to_bytes(value)
+
+def count(value: str, sub: str) -> int:
+    if len(sub) == 0:
+        return len(value) + 1
+    let result = 0
+    let index = 0
+    while index <= len(value) - len(sub):
+        if value[index:index + len(sub)] == sub:
+            result = result + 1
+            index = index + len(sub)
+        else:
+            index = index + 1
+    return result
 
 def rune_at(value: str, index: int) -> rune:
     return char_at(value, index)
