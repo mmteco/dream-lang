@@ -24,6 +24,7 @@ let compile_program_to_ir input_file =
   Typeck.clear_generic_instances ();
 
   let source = read_file input_file in
+  Module_loader.set_entry_file input_file;
   let ast =
     try
       Module_loader.parse_source source

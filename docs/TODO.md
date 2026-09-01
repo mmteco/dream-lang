@@ -152,7 +152,7 @@
   - [ ] 异步运行时
 
 - [ ] 模块系统
-  - [x] import/from import
+  - [x] import/from import、入口目录自动搜索、相对导入
   - [ ] 包管理器
 
 - [ ] 宏系统

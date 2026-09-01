@@ -351,6 +351,8 @@ let response = get(url)
 
 `import module` 只通过 `module.name` 访问模块成员；`from module import name` 只引入指定成员；`from module import *` 引入模块的公开成员。不同模块可以定义同名函数、常量、全局变量和类型。同一作用域从多个模块导入同名成员时必须报歧义错误，模块依赖形成循环时必须报错。
 
+模块名按点号映射到文件路径，例如 `net.http` 对应 `net/http.dm`。编译入口文件所在目录自动作为第一模块搜索路径，其次使用 `DREAM_MODULE_PATH` 中的目录，最后查找标准库；因此入口文件和其子目录中的用户模块无需设置环境变量。相对导入以当前模块文件所在目录为基准：`from .helper import f` 导入同目录模块，`from ..common import g` 导入上级目录模块。
+
 ### 函数类型
 
 ```python

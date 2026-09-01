@@ -1,6 +1,14 @@
 open Ast
 
 (* 模块路径解析 *)
+let entry_file = ref ""
+
+let set_entry_file path =
+  entry_file := path
+
+let get_entry_file () =
+  !entry_file
+
 let configured_module_paths () =
   match Sys.getenv_opt "DREAM_MODULE_PATH" with
   | None -> []
@@ -9,22 +17,55 @@ let configured_module_paths () =
       |> String.split_on_char ':'
       |> List.filter (fun path -> path <> "")
 
-let resolve_module_path module_path =
-  (* module_path 是 string list，例如 ["file"] 或 ["os", "path"] *)
-  let standard_paths = [
-    "runtime/stdlib";
-    "bootstrap";
-    "."
-  ] in
-  let search_paths = standard_paths @ configured_module_paths () in
-  let rec find_path = function
-    | [] -> None
-    | directory :: rest ->
-        let relative_path = String.concat Filename.dir_sep module_path in
-        let path = Filename.concat directory (relative_path ^ ".dm") in
-        if Sys.file_exists path then Some path else find_path rest
+let split_import_path module_path =
+  let rec split_relative_prefix depth = function
+    | "" :: rest -> split_relative_prefix (depth + 1) rest
+    | components -> depth, components
   in
-  find_path search_paths
+  split_relative_prefix 0 module_path
+
+let parent_directory path depth =
+  let directory = ref (Filename.dirname path) in
+  for _ = 2 to depth do
+    directory := Filename.dirname !directory
+  done;
+  !directory
+
+let module_relative_path components =
+  String.concat Filename.dir_sep components ^ ".dm"
+
+let resolve_module_path ?importer_file module_path =
+  (* 空字符串前缀表示相对导入，例如 [""; "util"] 是 from .util。 *)
+  let relative_depth, components = split_import_path module_path in
+  let relative_path = module_relative_path components in
+  let importer = Option.value importer_file ~default:!entry_file in
+  if relative_depth > 0 then begin
+    let directory = parent_directory importer relative_depth in
+    let path = Filename.concat directory relative_path in
+    if Sys.file_exists path then Some path else None
+  end else begin
+    let module_name = String.concat "." components in
+    if module_name = "prelude" then
+      Some "runtime/stdlib/prelude.dm"
+    else if module_name = "compiler" then
+      Some "runtime/stdlib/compiler.dm"
+    else begin
+      let standard_paths = [
+        "runtime/stdlib";
+        "bootstrap";
+        "."
+      ] in
+      let entry_directory = Filename.dirname importer in
+      let search_paths = entry_directory :: configured_module_paths () @ standard_paths in
+      let rec find_path = function
+        | [] -> None
+        | directory :: rest ->
+            let path = Filename.concat directory relative_path in
+            if Sys.file_exists path then Some path else find_path rest
+      in
+      find_path search_paths
+    end
+  end
 
 (* 读取文件内容 *)
 let read_file filename =
@@ -96,18 +137,27 @@ let parse_module module_path =
           Error (Printf.sprintf "System error: %s" msg)
 
 (* 缓存已加载的模块，避免重复解析 *)
-let module_cache : (string list, program) Hashtbl.t = Hashtbl.create 16
+let module_cache : (string, program) Hashtbl.t = Hashtbl.create 16
 
 (* 加载模块（带缓存） *)
-let load_module module_path =
-  match Hashtbl.find_opt module_cache module_path with
-  | Some ast -> Ok ("(cached)", ast)
+let load_module ?importer_file module_path =
+  match resolve_module_path ?importer_file module_path with
   | None ->
-      match parse_module module_path with
-      | Ok (file_path, ast) ->
-          Hashtbl.add module_cache module_path ast;
-          Ok (file_path, ast)
-      | Error msg -> Error msg
+      let module_name = String.concat "." module_path in
+      Error (Printf.sprintf "Module not found: %s" module_name)
+  | Some file_path ->
+  match Hashtbl.find_opt module_cache file_path with
+  | Some ast -> Ok (file_path, ast)
+  | None ->
+      (try
+        let source = read_file file_path in
+        let ast = parse_source source in
+        Hashtbl.add module_cache file_path ast;
+        Ok (file_path, ast)
+      with
+      | Lexer.LexError msg -> Error (Printf.sprintf "Lexical error in module: %s" msg)
+      | Parser.Error -> Error "Parse error in module"
+      | Sys_error msg -> Error (Printf.sprintf "System error: %s" msg))
 
 (* 导出的符号类型 *)
 type exported_symbol =
@@ -160,38 +210,39 @@ let is_type_symbol = function
   | ExportedEnum _ -> true
   | _ -> false
 
-let dependency_type_imports module_path ast =
+let dependency_type_imports importer_file ast =
   let imported_modules = List.filter_map (function
     | SImport (path, _, _)
     | SFromImport (path, _, _) -> Some path
     | _ -> None
   ) ast in
-  let rec collect visited path =
-    if List.exists (( = ) path) visited then []
-    else
-      match load_module path with
+  let rec collect visited parent_file path =
+      match load_module ~importer_file:parent_file path with
       | Error _ -> []
-      | Ok (_, dependency_ast) ->
-          let own_types = extract_exports dependency_ast
-            |> List.filter is_type_symbol
-            |> List.map (fun symbol -> import_symbol symbol None) in
-          let nested_modules = List.filter_map (function
-            | SImport (nested_path, _, _)
-            | SFromImport (nested_path, _, _) -> Some nested_path
-            | _ -> None
-          ) dependency_ast in
-          let nested_types = List.concat_map (collect (path :: visited)) nested_modules in
-          own_types @ nested_types
+      | Ok (file_path, dependency_ast) ->
+          if List.mem file_path visited then []
+          else begin
+            let own_types = extract_exports dependency_ast
+              |> List.filter is_type_symbol
+              |> List.map (fun symbol -> import_symbol symbol None) in
+            let nested_modules = List.filter_map (function
+              | SImport (nested_path, _, _)
+              | SFromImport (nested_path, _, _) -> Some nested_path
+              | _ -> None
+            ) dependency_ast in
+            let nested_types = List.concat_map (collect (file_path :: visited) file_path) nested_modules in
+            own_types @ nested_types
+          end
   in
-  List.concat_map (collect [module_path]) imported_modules
+  List.concat_map (collect [importer_file] importer_file) imported_modules
 
 (* 从模块导入所有符号 *)
-let import_all_from_module module_path alias =
-  match load_module module_path with
+let import_all_from_module ?importer_file module_path alias =
+  match load_module ?importer_file module_path with
   | Error msg -> Error msg
-  | Ok (_, ast) ->
+  | Ok (file_path, ast) ->
       let exports = extract_exports ast in
-      let dependency_types = dependency_type_imports module_path ast in
+      let dependency_types = dependency_type_imports file_path ast in
       (* 如果有别名，所有符号都使用 "alias.name" 的形式 *)
       let imports = match alias with
         | None -> List.map (fun sym -> import_symbol sym None) exports
@@ -200,12 +251,12 @@ let import_all_from_module module_path alias =
       Ok (dependency_types @ imports)
 
 (* 从模块导入指定符号 *)
-let import_selected_from_module module_path selections =
-  match load_module module_path with
+let import_selected_from_module ?importer_file module_path selections =
+  match load_module ?importer_file module_path with
   | Error msg -> Error msg
-  | Ok (_, ast) ->
+  | Ok (file_path, ast) ->
       let exports = extract_exports ast in
-      let dependency_types = dependency_type_imports module_path ast in
+      let dependency_types = dependency_type_imports file_path ast in
       if List.exists (fun (name, _) -> name = "*") selections then
         Ok (dependency_types @ List.map (fun symbol -> import_symbol symbol None) exports)
       else

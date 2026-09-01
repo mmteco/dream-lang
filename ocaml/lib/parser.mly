@@ -356,8 +356,17 @@ statement:
       { SImport (modules, None, { line = 0; column = 0 }) }
   | IMPORT modules = separated_list(DOT, IDENT) AS alias = IDENT
       { SImport (modules, Some alias, { line = 0; column = 0 }) }
-  | FROM module_path = separated_list(DOT, IDENT) IMPORT names = import_names
+  | FROM module_path = import_module_path IMPORT names = import_names
       { SFromImport (module_path, names, { line = 0; column = 0 }) }
+
+import_module_path:
+  | components = separated_nonempty_list(DOT, IDENT) { components }
+  | depth = relative_import_prefix components = separated_nonempty_list(DOT, IDENT)
+      { List.init depth (fun _ -> "") @ components }
+
+relative_import_prefix:
+  | DOT { 1 }
+  | DOT depth = relative_import_prefix { depth + 1 }
 
 import_names:
   | names = separated_list(COMMA, import_name) { names }

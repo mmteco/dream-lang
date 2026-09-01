@@ -7,6 +7,7 @@ from path import join, normalize, basename, dirname, ext, stem
 from time import monotonic_ms, elapsed_ms
 from http import parse_response
 from utf8 import chr, ord
+from .dream_local_support import local_module_value
 import json
 
 const BASE: int = 3
@@ -149,6 +150,7 @@ def main():
     let explicit_default_value = add_default(10, 20)
     let returned_pair = pair_values(3)
     let function_value = increment
+    let local_module_result = local_module_value()
 
     # 覆盖项参与语义检查，但不改变示例输出。
     identity(positive_remainder)
@@ -174,6 +176,7 @@ def main():
     identity(default_value)
     identity(explicit_default_value)
     identity(returned_pair)
+    identity(local_module_result)
 
     let optional = Some(7)
     let builtin_match = match None:

@@ -184,15 +184,14 @@ let imported_definitions program =
       Ast.SDef definition :: definitions
     end
   in
-  let rec add_module definitions module_path selected_names =
-    let module_key = String.concat "." module_path in
-    if Hashtbl.mem visited_modules module_key then
-      definitions
-    else begin
-      Hashtbl.add visited_modules module_key ();
-    match Module_loader.load_module module_path with
+  let rec add_module definitions importer_file module_path selected_names =
+    match Module_loader.load_module ~importer_file module_path with
     | Error _ -> definitions
-    | Ok (_, module_program) ->
+    | Ok (module_file, module_program) ->
+        if Hashtbl.mem visited_modules module_file then
+          definitions
+        else begin
+          Hashtbl.add visited_modules module_file ();
         let selected_name_set = match selected_names with
           | None | Some ["*"] -> None
           | Some names -> Some (dependency_closed_names module_program names)
@@ -238,24 +237,24 @@ let imported_definitions program =
           | Ast.SImpl (impl_info, position) ->
               Ast.SImpl (impl_info, position) :: definitions
           | Ast.SImport (dependency_path, _, _) ->
-              add_module definitions dependency_path None
+              add_module definitions module_file dependency_path None
           | Ast.SFromImport (dependency_path, _, _) ->
-              add_module definitions dependency_path None
+              add_module definitions module_file dependency_path None
           | _ -> definitions
         ) definitions module_program in
         definitions
-    end
+        end
   in
   let imported = List.fold_left (fun definitions statement ->
     match statement with
     | Ast.SImport (module_path, _, _) ->
-        add_module definitions module_path None
+        add_module definitions (Module_loader.get_entry_file ()) module_path None
     | Ast.SFromImport (module_path, selections, _) ->
         let selected_names =
           if List.exists (fun (name, _) -> name = "*") selections then None
           else Some (List.map fst selections)
         in
-        add_module definitions module_path selected_names
+        add_module definitions (Module_loader.get_entry_file ()) module_path selected_names
     | _ -> definitions
   ) [] program in
   program @ List.rev imported

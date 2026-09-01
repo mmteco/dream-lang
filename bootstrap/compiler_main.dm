@@ -190,6 +190,7 @@ const COMPILE_OUTPUT_LLVM: int = 4
 const COMPILER_CACHE_VERSION: str = "dream-compiler-cache-v2"
 
 let compiler_temp_sequence: list[int] = [0]
+let MODULE_ENTRY_DIR: str = ""
 
 def module_name_component_end(module_name: str, start: int) -> int:
     let end = start
@@ -266,10 +267,69 @@ def is_from_import_token(source: str, kinds: list[int], starts: list[int], ends:
         current_index = current_index - 1
     return false
 
-def module_path(module_name: str) -> str:
+def module_dirname(path: str) -> str:
+    let index = path.len() - 1
+    while index >= 0:
+        if path[index] == '/':
+            if index == 0:
+                return "/"
+            return path[0:index]
+        index = index - 1
+    return "."
+
+def module_join_path(root: str, relative_path: str) -> str:
+    if root == "/":
+        return "/" + relative_path
+    if root == "":
+        return relative_path
+    return root + "/" + relative_path
+
+def module_relative_name(current_name: str, relative_depth: int, child_name: str) -> str:
+    let parent_name = current_name
+    let depth = 0
+    while depth < relative_depth:
+        let separator = parent_name.len() - 1
+        while separator >= 0 and parent_name[separator] != '.':
+            separator = separator - 1
+        if separator < 0:
+            parent_name = ""
+        else:
+            parent_name = parent_name[0:separator]
+        depth = depth + 1
+    if parent_name == "" or child_name == "":
+        if parent_name == "":
+            return child_name
+        return parent_name
+    return parent_name + "." + child_name
+
+def module_relative_path(module_name: str) -> str:
+    let relative_buffer = Buffer()
+    let path_index = 0
+    while path_index < module_name.len():
+        if module_name[path_index] == '.':
+            append(relative_buffer, "/")
+        else:
+            append(relative_buffer, module_name[path_index:path_index + 1])
+        path_index = path_index + 1
+    return relative_buffer.to_str() + ".dm"
+
+def module_path(module_name: str, importer_path: str, relative_depth: int) -> str:
+    let relative_path = module_relative_path(module_name)
+    if relative_depth > 0:
+        let base_dir = module_dirname(importer_path)
+        let parent_depth = 1
+        while parent_depth < relative_depth:
+            base_dir = module_dirname(base_dir)
+            parent_depth = parent_depth + 1
+        return module_join_path(base_dir, relative_path)
+
     switch module_name:
         case "sys":
             return "runtime/stdlib/sys.dm"
+        case "prelude":
+            return "runtime/stdlib/prelude.dm"
+        case "compiler":
+            return "runtime/stdlib/compiler.dm"
         case "compiler_lex":
             return "bootstrap/compiler_lex.dm"
         case "compiler_operator":
@@ -290,15 +350,12 @@ def module_path(module_name: str) -> str:
             return "bootstrap/compiler_llvm_emit.dm"
         case "compiler_main":
             return "bootstrap/compiler_main.dm"
-    let relative_buffer = Buffer()
-    let path_index = 0
-    while path_index < module_name.len():
-        if module_name[path_index] == '.':
-            append(relative_buffer, "/")
-        else:
-            append(relative_buffer, module_name[path_index:path_index + 1])
-        path_index = path_index + 1
-    let relative_path = relative_buffer.to_str()
+
+    let entry_dir = MODULE_ENTRY_DIR
+    if entry_dir.len() > 0:
+        let entry_candidate = module_join_path(entry_dir, relative_path)
+        if exists(entry_candidate):
+            return entry_candidate
     let configured_paths = env("DREAM_MODULE_PATH")
     let path_start = 0
     let path_end = 0
@@ -307,12 +364,7 @@ def module_path(module_name: str) -> str:
         if path_end == path_length or configured_paths[path_end] == ':':
             if path_end > path_start:
                 let root = configured_paths[path_start:path_end]
-                let candidate_buffer = Buffer()
-                append(candidate_buffer, root)
-                append(candidate_buffer, "/")
-                append(candidate_buffer, relative_path)
-                append(candidate_buffer, ".dm")
-                let candidate = candidate_buffer.to_str()
+                let candidate = module_join_path(root, relative_path)
                 if exists(candidate):
                     return candidate
             path_start = path_end + 1
@@ -320,7 +372,6 @@ def module_path(module_name: str) -> str:
     let prefix_buffer = Buffer()
     append(prefix_buffer, "runtime/stdlib/")
     append(prefix_buffer, relative_path)
-    append(prefix_buffer, ".dm")
     return prefix_buffer.to_str()
 
 def module_is_loaded(loaded_modules: str, module_key: str) -> bool:
@@ -417,12 +468,14 @@ def module_name_stem(path: str) -> str:
     return name_buffer.to_str()
 
 # 扫描单文件源码的 import 语句，记录到模块环境列表，未加载模块入队（BFS）
-def scan_module_imports(source: str, file_index: int, loaded_modules: str, queue: list[str],
+def scan_module_imports(source: str, file_index: int, source_path: str, source_module_name: str,
+    loaded_modules: str, queue: list[str], queue_paths: list[str],
     namespace_modules: Buffer, module_ref_starts: list[int], module_ref_ends: list[int],
     module_ref_files: list[int], module_ref_mod_starts: list[int], module_ref_mod_ends: list[int],
     named_symbol_starts: list[int], named_symbol_ends: list[int], named_symbol_files: list[int],
-    named_symbol_mod_starts: list[int], named_symbol_mod_ends: list[int], star_import_files: list[int],
-    star_import_mod_starts: list[int], star_import_mod_ends: list[int]):
+    named_symbol_mod_starts: list[int], named_symbol_mod_ends: list[int], named_symbol_mod_names: list[str],
+    star_import_files: list[int], star_import_mod_starts: list[int], star_import_mod_ends: list[int],
+    star_import_mod_names: list[str]):
     let scan_kinds = []
     let scan_starts = []
     let scan_ends = []
@@ -438,12 +491,21 @@ def scan_module_imports(source: str, file_index: int, loaded_modules: str, queue
         if token_kind(scan_kinds, token_index) == TOKEN_IDENTIFIER and source_equals(source,
             token_start(scan_starts, token_index), token_end(scan_ends, token_index), "from"):
             let module_index = token_index + 1
+            let relative_depth = 0
+            while token_kind(scan_kinds, module_index) == TOKEN_DOT:
+                relative_depth = relative_depth + 1
+                module_index = module_index + 1
             if token_kind(scan_kinds, module_index) == TOKEN_IDENTIFIER:
                 let module_name = parse_module_name(source, scan_kinds, scan_starts, scan_ends, module_index)
+                let resolved_module_name = module_name
+                if relative_depth > 0:
+                    resolved_module_name = module_relative_name(source_module_name, relative_depth, module_name)
                 let module_name_end_index = module_name_match_end(source, scan_kinds, scan_starts, scan_ends,
                     module_index, module_name)
-                if not module_is_loaded(loaded_modules, module_path(module_name)):
-                    append(queue, module_name)
+                let imported_path = module_path(module_name, source_path, relative_depth)
+                if not module_is_loaded(loaded_modules, imported_path):
+                    append(queue, resolved_module_name)
+                    append(queue_paths, imported_path)
                 let import_keyword_index = module_name_end_index + 1
                 while token_kind(scan_kinds, import_keyword_index) not in [TOKEN_IDENTIFIER, TOKEN_EOF]:
                     import_keyword_index = import_keyword_index + 1
@@ -458,6 +520,7 @@ def scan_module_imports(source: str, file_index: int, loaded_modules: str, queue
                         append(star_import_files, file_index)
                         append(star_import_mod_starts, token_start(scan_starts, module_index))
                         append(star_import_mod_ends, token_end(scan_ends, module_name_end_index))
+                        append(star_import_mod_names, resolved_module_name)
                     else:
                         let symbol_list_index = 0
                         while symbol_list_index < len(symbol_starts):
@@ -466,6 +529,8 @@ def scan_module_imports(source: str, file_index: int, loaded_modules: str, queue
                             append(named_symbol_files, file_index)
                             append(named_symbol_mod_starts, token_start(scan_starts, module_index))
                             append(named_symbol_mod_ends, token_end(scan_ends, module_name_end_index))
+                            let named_module_name = resolved_module_name + ""
+                            append(named_symbol_mod_names, named_module_name)
                             symbol_list_index = symbol_list_index + 1
         if (
             token_kind(scan_kinds, token_index) == TOKEN_IDENTIFIER and
@@ -475,8 +540,10 @@ def scan_module_imports(source: str, file_index: int, loaded_modules: str, queue
             let module_index = token_index + 1
             if token_kind(scan_kinds, module_index) == TOKEN_IDENTIFIER:
                 let module_name = parse_module_name(source, scan_kinds, scan_starts, scan_ends, module_index)
-                if not module_is_loaded(loaded_modules, module_path(module_name)):
+                let imported_path = module_path(module_name, source_path, 0)
+                if not module_is_loaded(loaded_modules, imported_path):
                     append(queue, module_name)
+                    append(queue_paths, imported_path)
                 if not module_is_loaded(namespace_modules.to_str(), module_name):
                     append(namespace_modules, module_name)
                     append(namespace_modules, "\n")
@@ -517,10 +584,13 @@ def scan_module_imports(source: str, file_index: int, loaded_modules: str, queue
 
 def load_imported_source(source: str, source_path: str, file_packages: list[int], file_starts: list[int],
     file_ends: list[int], file_paths: Buffer, file_names: list[str], final_source: Buffer) -> bool:
+    MODULE_ENTRY_DIR = module_dirname(source_path)
+    let entry_module_name = module_name_stem(source_path)
     let source_with_prelude = source
     let imported_source = Buffer()
     let loaded_modules = ""
     let namespace_modules = Buffer()
+    let queue_paths: list[str] = []
     let module_ref_starts: list[int] = []
     let module_ref_ends: list[int] = []
     let module_ref_files: list[int] = []
@@ -531,25 +601,33 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     let named_symbol_files: list[int] = []
     let named_symbol_mod_starts: list[int] = []
     let named_symbol_mod_ends: list[int] = []
+    let named_symbol_mod_names: list[str] = []
     let star_import_files: list[int] = []
     let star_import_mod_starts: list[int] = []
     let star_import_mod_ends: list[int] = []
+    let star_import_mod_names: list[str] = []
     let queue: list[str] = []
-    scan_module_imports(source_with_prelude, -1, loaded_modules, queue, namespace_modules, module_ref_starts,
+    scan_module_imports(source_with_prelude, -1, source_path, entry_module_name, loaded_modules, queue, queue_paths,
+        namespace_modules, module_ref_starts,
         module_ref_ends, module_ref_files, module_ref_mod_starts, module_ref_mod_ends, named_symbol_starts,
-        named_symbol_ends, named_symbol_files, named_symbol_mod_starts, named_symbol_mod_ends, star_import_files,
-        star_import_mod_starts, star_import_mod_ends)
+        named_symbol_ends, named_symbol_files, named_symbol_mod_starts, named_symbol_mod_ends,
+        named_symbol_mod_names, star_import_files, star_import_mod_starts, star_import_mod_ends,
+        star_import_mod_names)
     if source_path != "runtime/stdlib/prelude.dm":
         append(star_import_files, -1)
         append(star_import_mod_starts, 0)
         append(star_import_mod_ends, 0)
         let prelude_module_name = "pre" + "lude"
-        append(queue, prelude_module_name)
+        append(star_import_mod_names, prelude_module_name)
+        let prelude_queue_name = prelude_module_name + ""
+        append(queue, prelude_queue_name)
+        let prelude_path = module_path(prelude_module_name, source_path, 0)
+        append(queue_paths, prelude_path)
     let queue_head = 0
     while queue_head < len(queue):
         let module_name = queue[queue_head]
+        let imported_path = queue_paths[queue_head]
         queue_head = queue_head + 1
-        let imported_path = module_path(module_name)
         if module_is_loaded(loaded_modules, imported_path):
             continue
         let module_text = Buffer()
@@ -563,15 +641,19 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
         append(loaded_buffer, imported_path)
         append(loaded_buffer, "\n")
         loaded_modules = loaded_buffer.to_str()
-        scan_module_imports(module_text.to_str(), module_file_index, loaded_modules, queue, namespace_modules,
-            module_ref_starts, module_ref_ends, module_ref_files, module_ref_mod_starts, module_ref_mod_ends,
+        scan_module_imports(module_text.to_str(), module_file_index, imported_path, module_name, loaded_modules,
+            queue, queue_paths, namespace_modules, module_ref_starts, module_ref_ends, module_ref_files,
+            module_ref_mod_starts, module_ref_mod_ends,
             named_symbol_starts, named_symbol_ends, named_symbol_files, named_symbol_mod_starts,
-            named_symbol_mod_ends, star_import_files, star_import_mod_starts, star_import_mod_ends)
+            named_symbol_mod_ends, named_symbol_mod_names, star_import_files, star_import_mod_starts,
+            star_import_mod_ends, star_import_mod_names)
         # 每个模块隐式注入 prelude（与入口一致；prelude 自身不注入）
         if module_name != "prelude":
             append(star_import_files, module_file_index)
             append(star_import_mod_starts, 0)
             append(star_import_mod_ends, 0)
+            let prelude_module_name = "pre" + "lude"
+            append(star_import_mod_names, prelude_module_name)
     let entry_file_index = len(file_starts)
     let entry_base = imported_source.to_str().len()
     let has_loaded_modules = len(loaded_modules) != 0
@@ -685,18 +767,12 @@ def load_imported_source(source: str, source_path: str, file_packages: list[int]
     let named_symbol_mods: list[int] = []
     record_index = 0
     while record_index < len(named_symbol_mod_starts):
-        let module_name = final_text[named_symbol_mod_starts[record_index]:named_symbol_mod_ends[record_index]]
-        append(named_symbol_mods, module_env_file_index(file_names, module_name))
+        append(named_symbol_mods, module_env_file_index(file_names, named_symbol_mod_names[record_index]))
         record_index = record_index + 1
     let star_import_mods: list[int] = []
     record_index = 0
     while record_index < len(star_import_mod_starts):
-        let module_name = final_text[star_import_mod_starts[record_index]:star_import_mod_ends[record_index]]
-        let resolved = module_env_file_index(file_names, module_name)
-        # 手动记录的 prelude 星号导入（哨兵区间，转换后区间不再为 0）解析失败即视为 prelude
-        if resolved < 0 and star_import_mod_starts[record_index] == star_import_mod_ends[record_index]:
-            resolved = module_env_file_index(file_names, "prelude")
-        append(star_import_mods, resolved)
+        append(star_import_mods, module_env_file_index(file_names, star_import_mod_names[record_index]))
         record_index = record_index + 1
     module_env_build(file_names, module_ref_starts, module_ref_ends, module_ref_files, module_ref_mods,
         named_symbol_starts, named_symbol_ends, named_symbol_files, named_symbol_mods, star_import_files,

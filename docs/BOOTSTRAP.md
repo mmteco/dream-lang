@@ -39,7 +39,7 @@ Stage 0: OCaml compiler
 - `make bootstrap-build` 产物（无 DEBUG）与 `DEBUG=1` 行为一致，均走新管线。
 - 标准库网络基础已接入：`runtime/stdlib/net.dm` 的 `Connection` 支持阻塞式 TCP 连接、`write`、`read`、`read_n` 和 `close`，Stage 2 可直接编译运行。
 - `runtime/stdlib/http.dm` 已接入基于 libcurl 的 HTTP/HTTPS GET/POST、状态码、headers 和 body 解析；运行时支持超时、重定向、压缩和自定义请求头，回归测试使用不联网的错误路径。
-- bootstrap 模块解析已按文件建立可见性环境：支持 `import module.name`、显式 `from module import name` 和星号导入；跨模块同名符号允许，同一作用域导入歧义和依赖循环会在编译期报错。
+- bootstrap 模块解析已按文件建立可见性环境：支持 `import module.name`、显式 `from module import name`、星号导入和 `from .module import name` 相对导入；入口文件目录自动优先加入搜索路径，`DREAM_MODULE_PATH` 仅作为可选的后备搜索路径。跨模块同名符号允许，同一作用域导入歧义和依赖循环会在编译期报错。
 
 本次自举打通修复的关键问题：
 
@@ -207,6 +207,8 @@ make bootstrap-output STAGE3=1
 测试输入固定为 `examples/lang_full_dream.dm`，按 AST、HIR、MIR、LIR、LLVM 顺序生成并分析输出。脚本报告每层的结构数量、控制流/指令数量、运行时调用和潜在 `llvm.trap`；LLVM 输出还会经过 `clang` 语法验证。输出会保留在 `tmp/bootstrap_output/`，便于继续查看上下文，不做阶段间字节一致性断言。
 
 测试脚本会设置 `DREAM_COMPILER_CACHE_NAMESPACE`，将不同 bootstrap 阶段的缓存隔离。该环境变量默认不设置，普通编译仍使用默认缓存命名空间。
+
+模块路径回归可单独运行：`fish scripts/module_path_test.fish`。它不设置 `DREAM_MODULE_PATH`，验证入口目录搜索和嵌套相对导入。
 
 ## 调试与测试
 
