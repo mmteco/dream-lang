@@ -17,7 +17,7 @@ Stage1 (Dream 编译器，由 OCaml 编译)
     ↓ 自举编译
 Stage2 (Dream 编译器，由 Dream 编译)
     ↓ 保存
-tmp/bootstrap_history/stage2_<version>
+~/.dream/versions/dream_<version>
 ```
 
 ## 工作流程
@@ -32,7 +32,7 @@ fish scripts/bootstrap_manager.fish bootstrap
 
 ### 2. 保存工作版本
 
-Bootstrap 成功后自动保存 stage2 到 `tmp/bootstrap_history/`：
+Bootstrap 成功后自动保存 stage2 到 `~/.dream/versions/`：
 
 ```fish
 # 自动保存（时间戳命名）
@@ -120,10 +120,10 @@ fish scripts/bootstrap_manager.fish compile test/example.dm
 
 ## 保存位置
 
-- **历史版本**：`tmp/bootstrap_history/stage2_<version>`
-- **当前链接**：`tmp/stage2_current` → 指向当前版本
+- **历史版本**：`~/.dream/versions/dream_<version>`
+- **当前链接**：`~/.dream/bin/dream` → 指向当前版本
 
-历史版本保存在 `tmp/bootstrap_history/` 目录。
+历史版本保存在 `~/.dream/versions/` 目录。
 
 ## 回滚流程
 

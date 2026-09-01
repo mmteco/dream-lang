@@ -4,8 +4,9 @@
 
 set script_dir (dirname (status --current-filename))
 set root_dir (realpath "$script_dir/..")
-set history_dir "$root_dir/tmp/bootstrap_history"
-set current_link "$root_dir/tmp/stage2_current"
+set dream_home (test -n "$DREAM_HOME"; and echo "$DREAM_HOME"; or echo "$HOME/.dream")
+set history_dir "$dream_home/versions"
+set current_link "$dream_home/bin/dream"
 
 function show_help
     echo "用法: bootstrap_manager <命令>"
@@ -32,7 +33,7 @@ function save_version
     end
 
     mkdir -p "$history_dir"
-    set version_path "$history_dir/stage2_$version_name"
+    set version_path "$history_dir/dream_$version_name"
 
     cp "$root_dir/tmp/stage2" "$version_path"
     chmod +x "$version_path"
@@ -51,7 +52,7 @@ function use_version
         return 1
     end
 
-    set version_path "$history_dir/stage2_$version_name"
+    set version_path "$history_dir/dream_$version_name"
     if not test -f "$version_path"
         echo "错误: 版本不存在: $version_name" >&2
         echo "可用版本:" >&2
@@ -69,10 +70,10 @@ function list_versions
         return 0
     end
 
-    echo "本地版本 (tmp/bootstrap_history/):"
-    for version_file in "$history_dir"/stage2_*
+    echo "已保存版本 ($history_dir):"
+    for version_file in "$history_dir"/dream_*
         if test -f "$version_file"
-            set version_name (basename "$version_file" | string replace 'stage2_' '')
+            set version_name (basename "$version_file" | string replace 'dream_' '')
             set is_current ""
             if test -L "$current_link"
                 set current_target (realpath "$current_link")
@@ -81,15 +82,22 @@ function list_versions
                     set is_current " (当前)"
                 end
             end
-            # 从文件名解析日期时间
-            set date_part (echo "$version_name" | cut -d'_' -f1)
-            set time_part (echo "$version_name" | cut -d'_' -f2)
-            set formatted_date (echo "$date_part" | sed 's/\(....\)\(..\)\(..\)/\1-\2-\3/')
-            set formatted_time (echo "$time_part" | sed 's/\(..\)\(..\)\(..\)/\1:\2:\3/')
-            echo "  $version_name$is_current - $formatted_date $formatted_time"
+            if string match -r '^\d{8}_\d{6}$' "$version_name" >/dev/null
+                set date_part (echo "$version_name" | cut -d'_' -f1)
+                set time_part (echo "$version_name" | cut -d'_' -f2)
+                set formatted_date (echo "$date_part" | sed 's/\(....\)\(..\)\(..\)/\1-\2-\3/')
+                set formatted_time (echo "$time_part" | sed 's/\(..\)\(..\)\(..\)/\1:\2:\3/')
+                echo "  $version_name$is_current - $formatted_date $formatted_time"
+            else
+                set mod_time (date -r "$version_file" "+%Y-%m-%d %H:%M:%S" 2>/dev/null; or echo "")
+                if test -n "$mod_time"
+                    echo "  $version_name$is_current - $mod_time"
+                else
+                    echo "  $version_name$is_current"
+                end
+            end
         end
     end
-
 end
 
 function show_current
@@ -99,7 +107,7 @@ function show_current
     end
 
     set current_target (realpath "$current_link")
-    set version_name (basename "$current_target" | string replace 'stage2_' '')
+    set version_name (basename "$current_target" | string replace 'dream_' '')
     echo "当前版本: $version_name"
     echo "路径: $current_target"
 end
