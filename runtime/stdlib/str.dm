@@ -27,7 +27,7 @@ def endswith(value: str, suffix: str) -> bool:
 def replace(value: str, old: str, new: str) -> str:
     return __c_str_replace(value, old, new)
 
-def encode(value: str) -> bytes:
+def to_bytes(value: str) -> bytes:
     return __c_str_to_bytes(value)
 
 def rune_at(value: str, index: int) -> rune:

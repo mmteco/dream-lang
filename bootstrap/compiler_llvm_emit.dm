@@ -25,6 +25,7 @@ from compiler_lir_model import (
     LIR_TYPE_DYNAMIC,
     LIR_TYPE_STR,
     LIR_TYPE_LIST,
+    LIR_TYPE_LIST_PTR,
     LIR_TYPE_BYTES,
     LIR_TYPE_DICT,
     LIR_TYPE_TUPLE,
@@ -1970,7 +1971,7 @@ def llvm_emit_instruction(program: LirProgram, offset: int, output: Buffer):
     if opcode in [LIR_OP_RUNTIME_CALL, LIR_OP_CALL, LIR_OP_AGGREGATE, LIR_OP_EXTRACT, LIR_OP_ENUM, LIR_OP_CLOSURE,
         LIR_OP_BOUNDS_CHECK]:
         let runtime_id = program.records[offset + 8]
-        if runtime_id == LIR_RUNTIME_NONE:
+        if runtime_id == LIR_RUNTIME_NONE or (runtime_id < 0 and program.records[offset + 7] == 1):
             runtime_id = LIR_RUNTIME_DYNAMIC
         if runtime_id == LIR_RUNTIME_FUNCTION_CALL:
             # 函数值间接调用：operand0 = 函数索引，经函数指针表取地址后统一签名调用

@@ -4,7 +4,7 @@ RUNTIME_DIR ?= runtime/c
 STAGE3 ?= 0
 
 .DEFAULT_GOAL := build
-.PHONY: build clean run test runtime-check check bootstrap bootstrap-verify bootstrap-build compile repro-diff help
+.PHONY: build clean run test runtime-check check bootstrap bootstrap-output bootstrap-verify bootstrap-build compile repro-diff help
 
 help:
 	@echo "Dream 语言编译器 - 可用命令:"
@@ -15,6 +15,8 @@ help:
 	@echo "  make runtime-check - 运行 runtime 常规测试和 UBSan 测试"
 	@echo "  make check       - 运行完整构建、测试和自举验证"
 	@echo "  make bootstrap   - 执行 Stage 0 → Stage 1 → Stage 2 验证"
+	@echo "  make bootstrap-output - 分析 lang_full_dream 各阶段输出"
+	@echo "  make bootstrap-output LEVELS=hir,lir - 只分析指定阶段"
 	@echo "  make bootstrap STAGE3=1 - 额外执行 Stage 2 → Stage 3 固定点验证"
 	@echo "  make bootstrap-build FILE=path/to/file.dm - 使用 Stage 2 bootstrapped 编译器构建"
 	@echo "  make bootstrap-verify - 验证已生成的自举 LLVM 文件"
@@ -43,6 +45,7 @@ check: build
 	$(MAKE) test
 	$(MAKE) runtime-check
 	$(MAKE) bootstrap
+	$(MAKE) bootstrap-output
 
 # 运行所有示例测试
 test: build
@@ -51,6 +54,10 @@ test: build
 # 执行自举：Stage 0 生成 Stage 1，后续阶段继续编译自身并验证固定点。
 bootstrap: build
 	$(FISH) scripts/bootstrap.fish $(if $(filter 0 false no,$(STAGE3)),--skip-stage3,)
+
+# 使用 lang_full_dream.dm 验证 AST/HIR/MIR/LIR/LLVM 的稳定输出。
+bootstrap-output: build
+	$(FISH) scripts/bootstrap_output_test.fish $(if $(LEVELS),--levels $(LEVELS),) $(if $(filter 0 false no,$(STAGE3)),,--with-stage3)
 
 # 验证自举各阶段生成的 LLVM 文本，并保留失败上下文。
 bootstrap-verify:

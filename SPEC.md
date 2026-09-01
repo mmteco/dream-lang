@@ -337,7 +337,22 @@ def f() -> int:
     return answer
 ```
 
+### 模块导入
+
+模块按 Python 风格提供独立的顶层命名空间：
+
+```python
+import json
+let value = json.loads(text)
+
+from net.http import get
+let response = get(url)
+```
+
+`import module` 只通过 `module.name` 访问模块成员；`from module import name` 只引入指定成员；`from module import *` 引入模块的公开成员。不同模块可以定义同名函数、常量、全局变量和类型。同一作用域从多个模块导入同名成员时必须报歧义错误，模块依赖形成循环时必须报错。
+
 ### 函数类型
+
 ```python
 def add(a: int, b: int) -> int:
     return a + b
@@ -1426,7 +1441,6 @@ main()
    - 枚举类型（已有语法和类型检查，缺少代码生成）
    - Match 表达式（已有基础实现，缺少枚举精确匹配）
    - 暂不支持异常处理
-   - 暂不支持模块导入
 
 4. **内置函数限制**
    - `len()` 只能用于局部数组变量
@@ -1447,6 +1461,12 @@ main()
 ## 未来规划
 
 参见 [TODO.md](TODO.md) 了解详细的开发计划。
+
+## 编译器阶段输出测试
+
+Bootstrap 输出分析固定使用 `examples/lang_full_dream.dm`，按 AST、HIR、MIR、LIR 和 LLVM 顺序生成输出并报告各层结构、控制流、类型/布局、运行时调用和潜在 trap。Stage 1、Stage 2 及可选的 Stage 3 各自独立分析；LLVM 输出必须通过 LLVM/Clang 语法验证。输出保留在 `tmp/bootstrap_output/`，供开发调试查看。
+
+`DREAM_COMPILER_CACHE_NAMESPACE` 是测试专用的可选缓存命名空间。未设置时使用默认命名空间，不改变普通编译行为；阶段输出测试为不同编译器设置独立命名空间，避免共享缓存掩盖阶段间差异。
 
 主要方向:
 - 动态大小数组/列表

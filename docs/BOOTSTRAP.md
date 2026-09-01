@@ -39,6 +39,7 @@ Stage 0: OCaml compiler
 - `make bootstrap-build` 产物（无 DEBUG）与 `DEBUG=1` 行为一致，均走新管线。
 - 标准库网络基础已接入：`runtime/stdlib/net.dm` 的 `Connection` 支持阻塞式 TCP 连接、`write`、`read`、`read_n` 和 `close`，Stage 2 可直接编译运行。
 - `runtime/stdlib/http.dm` 已接入基于 libcurl 的 HTTP/HTTPS GET/POST、状态码、headers 和 body 解析；运行时支持超时、重定向、压缩和自定义请求头，回归测试使用不联网的错误路径。
+- bootstrap 模块解析已按文件建立可见性环境：支持 `import module.name`、显式 `from module import name` 和星号导入；跨模块同名符号允许，同一作用域导入歧义和依赖循环会在编译期报错。
 
 本次自举打通修复的关键问题：
 
@@ -193,6 +194,19 @@ AST → 类型检查后 AST → 单态化 → DreamIR（类型化 CFG/SSA）→ 
 ```
 
 任一步失败必须保留诊断到 `tmp/`（`tmp/stageN-input.dm`、`tmp/stageN-output.dir`、`tmp/stageN-output.ll`、`tmp/stageN-error.log`、`tmp/bootstrap-manifest.json`），不能散落在仓库根目录或覆盖源文件。
+
+阶段输出分析：
+
+```fish
+# 先确保 tmp/stage1 和 tmp/stage2 已经存在；该命令不会重跑完整 bootstrap
+make bootstrap-output
+make bootstrap-output LEVELS=hir,lir
+make bootstrap-output STAGE3=1
+```
+
+测试输入固定为 `examples/lang_full_dream.dm`，按 AST、HIR、MIR、LIR、LLVM 顺序生成并分析输出。脚本报告每层的结构数量、控制流/指令数量、运行时调用和潜在 `llvm.trap`；LLVM 输出还会经过 `clang` 语法验证。输出会保留在 `tmp/bootstrap_output/`，便于继续查看上下文，不做阶段间字节一致性断言。
+
+测试脚本会设置 `DREAM_COMPILER_CACHE_NAMESPACE`，将不同 bootstrap 阶段的缓存隔离。该环境变量默认不设置，普通编译仍使用默认缓存命名空间。
 
 ## 调试与测试
 

@@ -1,5 +1,64 @@
 from utf8 import ord
+from compiler_hir_model import (
+    HirProgram,
+    hir_record_count,
+    hir_record_offset,
+    hir_value_offset,
+    HIR_OP_ASSIGN,
+    HIR_OP_BINARY,
+    HIR_OP_BREAK,
+    HIR_OP_CALL,
+    HIR_OP_CONTINUE,
+    HIR_OP_DICT,
+    HIR_OP_ENUM,
+    HIR_OP_FIELD,
+    HIR_OP_FOR,
+    HIR_OP_IF,
+    HIR_OP_INDEX,
+    HIR_OP_LAMBDA,
+    HIR_OP_LET,
+    HIR_OP_LIST,
+    HIR_OP_LITERAL,
+    HIR_OP_LOCAL,
+    HIR_OP_MATCH,
+    HIR_OP_NONE,
+    HIR_OP_RETURN,
+    HIR_OP_SEQUENCE,
+    HIR_OP_SLICE,
+    HIR_OP_STRUCT,
+    HIR_OP_TUPLE,
+    HIR_OP_UNARY,
+    HIR_OP_WHILE,
+    HIR_RECORD_BLOCK,
+    HIR_RECORD_EXPRESSION,
+    HIR_RECORD_FUNCTION,
+    HIR_RECORD_GLOBAL,
+    HIR_RECORD_MODULE,
+    HIR_RECORD_PATTERN,
+    HIR_SIGNATURE_PARAM_BASE,
+    HIR_SIGNATURE_PARAM_COUNT,
+    HIR_SIGNATURE_PARAM_SIZE,
+    HIR_SIGNATURE_RETURN_TYPE,
+    HIR_TYPE_BYTES,
+    HIR_TYPE_CLOSURE,
+    HIR_TYPE_DICT,
+    HIR_TYPE_DYNAMIC,
+    HIR_TYPE_ENUM,
+    HIR_TYPE_FUNCTION,
+    HIR_TYPE_INTERFACE,
+    HIR_TYPE_LIST,
+    HIR_TYPE_LIST_INT,
+    HIR_TYPE_STR,
+    HIR_TYPE_STRUCT,
+    HIR_TYPE_TUPLE,
+    HIR_TYPE_UNION,
+    HIR_VALUE_BLOCK,
+    HIR_VALUE_INT,
+    HIR_VALUE_NODE,
+    HIR_VALUE_NONE
+)
 from compiler_operator import (
+    IR_OPERATOR_ADD,
     IR_OPERATOR_EQ,
     IR_OPERATOR_NE,
     IR_OPERATOR_LT,
@@ -12,6 +71,7 @@ from compiler_operator import (
 )
 from compiler_lex import (
     source_ranges_equal,
+    find_type_declaration_index,
     find_struct_declaration_index,
     is_identifier_start,
     is_identifier_continue,
@@ -31,13 +91,27 @@ from compiler_lex import (
     STRUCT_FIELD_VALUE_TYPE_DECLS,
     STRUCT_DECLARATION_STARTS,
     STRUCT_DECLARATION_ENDS,
+    FUNC_FILES,
+    CONSTANT_FILES,
+    GLOBAL_FILES,
+    module_candidate_files,
+    module_env_file_at,
+    TokenStream,
     lex,
+    parse_integer,
     token_kind,
     token_start,
     token_end,
+    line_indent,
+    TOKEN_EOF,
+    TOKEN_NEWLINE,
     TOKEN_IDENTIFIER,
     TOKEN_INTEGER,
     TOKEN_RUNE,
+    TOKEN_STRING,
+    TOKEN_FLOAT,
+    TOKEN_TRUE,
+    TOKEN_FALSE,
     TOKEN_MINUS,
     TOKEN_COLON,
     TOKEN_COMMA,
@@ -48,7 +122,11 @@ from compiler_lex import (
     TOKEN_CLOSE_PAREN,
     TOKEN_OPEN_BRACE,
     TOKEN_CLOSE_BRACE,
-    TOKEN_DOT
+    TOKEN_DOT,
+    ASSIGNMENT_FORM_LOCAL,
+    ASSIGNMENT_FORM_INDEX,
+    ASSIGNMENT_FORM_FIELD,
+    ASSIGNMENT_FORM_INDEX_TARGET
 )
 from compiler_external import (
     external_id_from_name,
@@ -60,6 +138,9 @@ from compiler_external import (
     EXTERNAL_RETURN_POINTER,
     EXTERNAL_RETURN_STRING,
     EXTERNAL_ID_LEN,
+    EXTERNAL_ID_DICT_CREATE_STR_STR,
+    EXTERNAL_ID_DICT_ITEMS_TUPLES,
+    EXTERNAL_ID_STR_TO_BYTES,
     EXTERNAL_ID_STRING_FIND,
     EXTERNAL_ID_STRING_UPPER,
     EXTERNAL_ID_STRING_LOWER,
@@ -68,6 +149,19 @@ from compiler_external import (
     EXTERNAL_ID_STRING_STARTS_WITH,
     EXTERNAL_ID_STRING_ENDS_WITH,
     EXTERNAL_ID_STRING_REPLACE,
+    EXTERNAL_ID_ENUM_CREATE_SIMPLE,
+    EXTERNAL_ID_ENUM_CREATE_INT,
+    EXTERNAL_ID_ENUM_CREATE_FLOAT,
+    EXTERNAL_ID_ENUM_CREATE_STRING,
+    EXTERNAL_ID_ENUM_CREATE_BOOL,
+    EXTERNAL_ID_ENUM_GET_TAG,
+    EXTERNAL_ID_ENUM_GET_INT,
+    EXTERNAL_ID_ENUM_GET_FLOAT,
+    EXTERNAL_ID_ENUM_GET_STRING,
+    EXTERNAL_ID_ENUM_GET_BOOL,
+    EXTERNAL_ID_INTERFACE_BOX,
+    EXTERNAL_ID_INTERFACE_OBJ,
+    EXTERNAL_ID_INTERFACE_TAG,
     EXTERNAL_ID_ENUM_CREATE_TUPLE_PTR,
     EXTERNAL_ID_ENUM_GET_DATA
 )
@@ -245,6 +339,7 @@ struct MirLowerState:
     func_return_struct_decls: list[int]
     func_param_counts: list[int]
     func_param_types: list[int]
+    func_receiver_flags: list[int]
     value_enum_flags: list[int]
     value_struct_declarations: list[int]
     impl_func_indexes: list[int]
@@ -512,12 +607,22 @@ def mir_find_symbol_value(state: MirLowerState, source_start: int, source_end: i
         symbol_index = symbol_index - 1
     return -1
 
-def mir_find_constant_index(state: MirLowerState, source_start: int, source_end: int) -> int:
+def mir_find_constant_index(state: MirLowerState, source_start: int, source_end: int, caller_offset: int) -> int:
+    let candidate_files: list[int] = []
+    if module_candidate_files(caller_offset, state.source, source_start, source_end, candidate_files) != 0:
+        return -1
     let constant_index = len(state.constants.starts) - 1
     while constant_index >= 0:
         let constant_start = mir_int_list_get(state.constants.starts, constant_index)
         let constant_end = mir_int_list_get(state.constants.ends, constant_index)
-        if state.source[source_start:source_end] == state.source[constant_start:constant_end]:
+        let is_visible = false
+        if constant_index < len(CONSTANT_FILES):
+            let candidate_index = 0
+            while candidate_index < len(candidate_files):
+                if candidate_files[candidate_index] == CONSTANT_FILES[constant_index]:
+                    is_visible = true
+                candidate_index = candidate_index + 1
+        if is_visible and state.source[source_start:source_end] == state.source[constant_start:constant_end]:
             return constant_index
         constant_index = constant_index - 1
     return -1
@@ -580,7 +685,10 @@ def mir_lower_default_argument(state: MirLowerState, default_token: int) -> int:
         literal_end)
     return value_id
 
-def mir_find_global_node(hir: HirProgram, source: str, source_start: int, source_end: int) -> int:
+def mir_find_global_node(hir: HirProgram, source: str, source_start: int, source_end: int, caller_offset: int) -> int:
+    let candidate_files: list[int] = []
+    if module_candidate_files(caller_offset, source, source_start, source_end, candidate_files) != 0:
+        return -1
     let record_id = hir_record_count(hir.records) - 1
     while record_id >= 0:
         let offset = hir_record_offset(record_id)
@@ -590,21 +698,37 @@ def mir_find_global_node(hir: HirProgram, source: str, source_start: int, source
             hir.records[offset] == HIR_RECORD_GLOBAL and
             source[source_start:source_end] == source[hir.records[offset + 9]:hir.records[offset + 10]]
         ):
-            if hir.records[offset + 6] > 0:
-                let value_offset = hir_value_offset(hir.records[offset + 5])
-                if hir.values[value_offset] == HIR_VALUE_NODE:
-                    return hir.values[value_offset + 1]
+            let definition_file = module_env_file_at(hir.records[offset + 9])
+            let candidate_index = 0
+            while candidate_index < len(candidate_files):
+                if candidate_files[candidate_index] == definition_file:
+                    if hir.records[offset + 6] > 0:
+                        let value_offset = hir_value_offset(hir.records[offset + 5])
+                        if hir.values[value_offset] == HIR_VALUE_NODE:
+                            return hir.values[value_offset + 1]
+                    return -1
+                candidate_index = candidate_index + 1
             return -1
         record_id = record_id - 1
     return -1
 
 # 按名字查全局变量 slot；未收集到时返回 -1
-def mir_global_slot(state: MirLowerState, source_start: int, source_end: int) -> int:
+def mir_global_slot(state: MirLowerState, source_start: int, source_end: int, caller_offset: int) -> int:
+    let candidate_files: list[int] = []
+    if module_candidate_files(caller_offset, state.source, source_start, source_end, candidate_files) != 0:
+        return -1
     let slot = 0
     while slot < len(state.global_names) / 2:
         let global_name_start = state.global_names[slot * 2]
         let global_name_end = state.global_names[slot * 2 + 1]
-        if state.source[source_start:source_end] == state.source[global_name_start:global_name_end]:
+        let is_visible = false
+        if slot < len(GLOBAL_FILES):
+            let candidate_index = 0
+            while candidate_index < len(candidate_files):
+                if candidate_files[candidate_index] == GLOBAL_FILES[slot]:
+                    is_visible = true
+                candidate_index = candidate_index + 1
+        if is_visible and state.source[source_start:source_end] == state.source[global_name_start:global_name_end]:
             return slot
         slot = slot + 1
     return -1
@@ -869,15 +993,34 @@ def mir_impl_interface_accepts(interface_type: int, value_type: int, literal_for
         return value_type == MIR_TYPE_BYTES
     return False
 
-def mir_find_function(state: MirLowerState, source_start: int, source_end: int) -> int:
+def mir_function_has_struct_receiver(state: MirLowerState, function_index: int) -> bool:
+    if function_index < 0 or function_index >= len(state.func_receiver_flags):
+        return false
+    return mir_int_list_get(state.func_receiver_flags, function_index) != 0
+
+def mir_find_function(state: MirLowerState, source_start: int, source_end: int, caller_offset: int) -> int:
     let name = state.source[source_start:source_end]
-    if name == "str" or name in prelude_all_names or external_id_from_name(name) >= 0:
+    if name in ["print", "eprintln", "eprint", "str"] or external_id_from_name(name) >= 0:
+        return -1
+    let candidate_files: list[int] = []
+    if module_candidate_files(caller_offset, state.source, source_start, source_end, candidate_files) != 0:
         return -1
     let func_index = 0
     while func_index < len(state.functions.starts):
         let func_start = mir_int_list_get(state.functions.starts, func_index)
         let func_end = mir_int_list_get(state.functions.ends, func_index)
-        if state.source[source_start:source_end] == state.source[func_start:func_end]:
+        let is_visible = false
+        if func_index < len(FUNC_FILES):
+            let candidate_index = 0
+            while candidate_index < len(candidate_files):
+                if candidate_files[candidate_index] == FUNC_FILES[func_index]:
+                    is_visible = true
+                candidate_index = candidate_index + 1
+        if (
+            is_visible and
+            state.source[source_start:source_end] == state.source[func_start:func_end] and
+            not mir_function_has_struct_receiver(state, func_index)
+        ):
             return func_index
         func_index = func_index + 1
     return -1
@@ -887,9 +1030,9 @@ def mir_find_method_function(state: MirLowerState, source_start: int, source_end
     let method_index = 0
     let fallback_index = -1
     while method_index < len(state.functions.starts):
-        if state.source[source_start:source_end] == state.source[
-            mir_int_list_get(state.functions.starts, method_index):mir_int_list_get(state.functions.ends, method_index)
-        ]:
+        let candidate_start = mir_int_list_get(state.functions.starts, method_index)
+        let candidate_end = mir_int_list_get(state.functions.ends, method_index)
+        if state.source[source_start:source_end] == state.source[candidate_start:candidate_end]:
             let parameter_count = 0
             if method_index < len(state.func_param_counts):
                 parameter_count = mir_int_list_get(state.func_param_counts, method_index)
@@ -912,7 +1055,7 @@ def mir_interface_id(state: MirLowerState, name_start: int, name_end: int) -> in
         type_start < name_end and
         (state.source[type_start] == ':' or
         state.source[type_start] == ' ' or
-        state.source[type_start] == ASCII_TAB)
+        state.source[type_start] == '\t')
     ):
         type_start = type_start + 1
     if type_start >= name_end:
@@ -1128,7 +1271,8 @@ def mir_func_return_struct_decl(hir: HirProgram, state: MirLowerState, func_inde
                                 hir.values[struct_name_end_offset] == HIR_VALUE_INT
                             ):
                                 declaration_index = find_struct_declaration_index(state.source,
-                                    hir.values[struct_name_start_offset + 1], hir.values[struct_name_end_offset + 1])
+                                    hir.values[struct_name_start_offset + 1], hir.values[struct_name_end_offset + 1],
+                                    hir.values[struct_name_start_offset + 1])
                         if declaration_index >= 0:
                             return declaration_index
                     scan_id = scan_id + 1
@@ -1155,6 +1299,9 @@ def mir_lower_iterator_contains(hir: HirProgram, node_id: int, state: MirLowerSt
     let offset = hir_record_offset(node_id)
     let payload_start = hir.records[offset + 5]
     if hir.records[offset + 6] < 3:
+        return -1
+    let operator_offset = hir_value_offset(payload_start)
+    if hir.values[operator_offset] != HIR_VALUE_INT or hir.values[operator_offset + 1] != IR_OPERATOR_IN:
         return -1
     let left_offset = hir_value_offset(payload_start + 1)
     let right_offset = hir_value_offset(payload_start + 2)
@@ -1273,38 +1420,35 @@ def mir_external_type(external_id: int) -> int:
     return MIR_TYPE_PTR
 
 def mir_external_type_for_name(name: str, external_id: int) -> int:
-    let dict_names: list[str] = [
+    if name == "__c_str_split":
+        return MIR_TYPE_LIST_PTR
+    if name == "__c_dict_items_tuples":
+        return MIR_TYPE_LIST_PTR
+    if name in [
         "__c_dict_create_int_int",
         "__c_dict_create_int_str",
         "__c_dict_create_str_int",
         "__c_dict_create_str_str",
         "__c_dict_create_int_ptr",
         "__c_dict_create_str_ptr",
-    ]
-    let bytes_names: list[str] = [
+    ]:
+        return MIR_TYPE_DICT
+    if name in [
         "__c_file_read_bytes",
         "__c_bytes_from_array",
         "__c_bytes_slice",
         "__c_str_to_bytes",
         "__c_utf8_encode_rune",
-    ]
-    let string_names: list[str] = [
+    ]:
+        return MIR_TYPE_BYTES
+    if name in [
         "__c_bytes_to_str",
         "__c_str_concat",
         "__c_str_upper",
         "__c_str_lower",
         "__c_str_strip",
         "__c_str_join",
-    ]
-    if name == "__c_str_split":
-        return MIR_TYPE_LIST_PTR
-    if name == "__c_dict_items_tuples":
-        return MIR_TYPE_LIST_PTR
-    if name in dict_names:
-        return MIR_TYPE_DICT
-    if name in bytes_names:
-        return MIR_TYPE_BYTES
-    if name in string_names:
+    ]:
         return MIR_TYPE_STR
     return mir_external_type(external_id)
 
@@ -1346,26 +1490,29 @@ def mir_lower_tuple_let(hir: HirProgram, node_id: int, state: MirLowerState) -> 
     let tuple_value = mir_lower_hir_node(hir, hir.values[value_offset + 1], state)
     if tuple_value < 0:
         return -1
-    let source_start = hir.records[offset + 3]
-    let source_end = hir.records[offset + 4]
-    let cursor = source_start
-    let source_length = state.source.len()
-    while cursor < source_end and cursor < source_length and state.source[cursor] != '(':
-        cursor = cursor + 1
-    if cursor >= source_end or cursor >= source_length:
+    let tuple_name_start_value = hir_value_offset(payload_start)
+    let tuple_name_end_value = hir_value_offset(payload_start + 1)
+    if hir.values[tuple_name_start_value] != HIR_VALUE_INT or hir.values[tuple_name_end_value] != HIR_VALUE_INT:
         return tuple_value
-    cursor = cursor + 1
+    let tuple_name_start = hir.values[tuple_name_start_value + 1]
+    let tuple_name_end = hir.values[tuple_name_end_value + 1]
+    let kinds: list[int] = []
+    let starts: list[int] = []
+    let ends: list[int] = []
+    lex(TokenStream{
+        src: state.source,
+        kinds: kinds,
+        starts: starts,
+        ends: ends
+    })
     let element_index = 0
-    while cursor < source_end and cursor < source_length and state.source[cursor] != ')':
-        while cursor < source_end and cursor < source_length and not is_identifier_start(ord(state.source[cursor])):
+    let cursor = tuple_name_start
+    while cursor < tuple_name_end and token_kind(kinds, cursor) != TOKEN_EOF:
+        if token_kind(kinds, cursor) != TOKEN_IDENTIFIER:
             cursor = cursor + 1
-        if cursor >= source_end or cursor >= source_length or state.source[cursor] == ')':
-            break
-        let name_start = cursor
-        cursor = cursor + 1
-        while cursor < source_end and cursor < source_length and is_identifier_continue(ord(state.source[cursor])):
-            cursor = cursor + 1
-        let name_end = cursor
+            continue
+        let name_start = token_start(starts, cursor)
+        let name_end = token_end(ends, cursor)
         let result_value = mir_int_list_get(state.next_value, 0)
         mir_int_list_set(state.next_value, 0, mir_int_list_get(state.next_value, 0) + 1)
         let operand_start = mir_value_count(state.values)
@@ -1376,6 +1523,7 @@ def mir_lower_tuple_let(hir: HirProgram, node_id: int, state: MirLowerState) -> 
             name_start, name_end)
         mir_bind_symbol(state, name_start, name_end, result_value)
         element_index = element_index + 1
+        cursor = cursor + 1
     return tuple_value
 
 def mir_copy_symbols(source: list[int]) -> list[int]:
@@ -1505,7 +1653,7 @@ def mir_dict_value_type_declaration(source: str, type_start: int, type_end: int)
                 value_start = value_start + 1
             while value_end > value_start and (source[value_end - 1] == ' ' or source[value_end - 1] == ']'):
                 value_end = value_end - 1
-            return find_type_declaration_index(source, value_start, value_end)
+            return find_type_declaration_index(source, value_start, value_end, value_start)
         cursor = cursor + 1
     return -1
 
@@ -1518,7 +1666,7 @@ def mir_func_return_dict_value_declaration(state: MirLowerState, function_index:
         if state.source[cursor] == '-' and state.source[cursor + 1] == '>':
             let type_start = cursor + 2
             let type_end = type_start
-            while type_end < source_end and state.source[type_end] != ':' and state.source[type_end] != '\n':
+            while type_end < source_end and state.source[type_end] not in [':', '\n']:
                 type_end = type_end + 1
             while type_end > type_start and state.source[type_end - 1] == ' ':
                 type_end = type_end - 1
@@ -1627,7 +1775,8 @@ def mir_index_result_type(hir: HirProgram, node_id: int, state: MirLowerState) -
     let base_node_offset = hir_record_offset(base_node_id)
     if hir.records[base_node_offset + 1] == HIR_OP_LOCAL:
         # 全局 list 变量索引读取：bootstrap 全局 list 均为 list[int]
-        let global_slot = mir_global_slot(state, hir.records[base_node_offset + 3], hir.records[base_node_offset + 4])
+        let global_slot = mir_global_slot(state, hir.records[base_node_offset + 3], hir.records[base_node_offset + 4],
+            hir.records[base_node_offset + 3])
         if global_slot >= 0 and global_slot < len(state.global_types):
             if mir_int_list_get(state.global_types, global_slot) == MIR_TYPE_LIST:
                 return MIR_TYPE_I32
@@ -1958,7 +2107,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
     if opcode == HIR_OP_LOCAL:
         let local_value = mir_find_symbol_value(state, hir.records[offset + 3], hir.records[offset + 4])
         if local_value < 0:
-            let constant_index = mir_find_constant_index(state, hir.records[offset + 3], hir.records[offset + 4])
+            let constant_index = mir_find_constant_index(state, hir.records[offset + 3], hir.records[offset + 4],
+                hir.records[offset + 3])
             if constant_index >= 0:
                 local_value = mir_int_list_get(state.next_value, 0)
                 mir_int_list_set(state.next_value, 0, mir_int_list_get(state.next_value, 0) + 1)
@@ -1971,12 +2121,14 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                 mir_state_append_instruction_source(state, MIR_OP_CONST,
                     mir_type_from_constant(mir_int_list_get(state.constants.types,
                     constant_index)), local_value, operand_start, 1, constant_start, constant_end)
-        let global_slot = mir_global_slot(state, hir.records[offset + 3], hir.records[offset + 4])
+        let global_slot = mir_global_slot(state, hir.records[offset + 3], hir.records[offset + 4],
+            hir.records[offset + 3])
         if local_value < 0 and global_slot >= 0:
             if global_slot < len(state.global_value_cache):
                 local_value = mir_int_list_get(state.global_value_cache, global_slot)
         if local_value < 0 and global_slot < 0:
-            let global_node = mir_find_global_node(hir, state.source, hir.records[offset + 3], hir.records[offset + 4])
+            let global_node = mir_find_global_node(hir, state.source, hir.records[offset + 3], hir.records[offset + 4],
+                hir.records[offset + 3])
             if global_node >= 0:
                 local_value = mir_lower_hir_node(hir, global_node, state)
         if local_value < 0 and global_slot >= 0:
@@ -2011,7 +2163,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                 return local_value
         if local_value < 0 and global_slot < 0:
             # 标识符是具名函数：生成函数引用值（调用点据此静态展开直接调用）
-            let named_function = mir_find_function(state, hir.records[offset + 3], hir.records[offset + 4])
+            let named_function = mir_find_function(state, hir.records[offset + 3], hir.records[offset + 4],
+                hir.records[offset + 3])
             if named_function >= 0:
                 local_value = mir_int_list_get(state.next_value, 0)
                 mir_int_list_set(state.next_value, 0, local_value + 1)
@@ -2147,11 +2300,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                     if (
                         ann_start > 0 and
                         ann_end > ann_start and
-                        annotation != "list[int]" and
-                        annotation != "list[byte]" and
-                        annotation != "list[rune]" and
-                        annotation != "list[bool]" and
-                        annotation != "list[float]"
+                        annotation not in ["list[int]", "list[byte]", "list[rune]", "list[bool]", "list[float]"]
                     ):
                         mir_promote_list_type(state, initializer, MIR_TYPE_LIST_PTR)
                     if annotation[0:5] == "dict[":
@@ -2201,7 +2350,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
             let name_start_offset = hir_value_offset(payload_start)
             let name_end_offset = hir_value_offset(payload_start + 1)
             # 全局变量赋值 → GLOBAL_STORE；其余按局部绑定
-            let global_slot = mir_global_slot(state, hir.values[name_start_offset + 1], hir.values[name_end_offset + 1])
+            let global_slot = mir_global_slot(state, hir.values[name_start_offset + 1], hir.values[name_end_offset + 1],
+                hir.records[offset + 3])
             if global_slot >= 0:
                 let store_start = mir_value_count(state.values)
                 mir_append_operand(state.values, MIR_OPERAND_INT, global_slot)
@@ -2228,7 +2378,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
             if collection_value < 0:
                 # 全局列表的索引赋值：先 GLOBAL_LOAD
                 let global_slot = mir_global_slot(state, hir.values[collection_start_offset + 1],
-                    hir.values[collection_end_offset + 1])
+                    hir.values[collection_end_offset + 1], hir.values[collection_start_offset + 1])
                 if global_slot >= 0:
                     if global_slot < len(state.global_value_cache):
                         collection_value = mir_int_list_get(state.global_value_cache, global_slot)
@@ -2373,7 +2523,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                         callee_name_end = hir.records[callee_record_offset + 4]
                         callee_name_text = state.source[callee_name_start:callee_name_end]
                         direct_function = mir_find_function(state, hir.records[callee_record_offset + 3],
-                            hir.records[callee_record_offset + 4])
+                            hir.records[callee_record_offset + 4], hir.records[callee_record_offset + 3])
                         if direct_function >= 0:
                             if direct_function < len(state.functions.returns):
                                 call_type = mir_int_list_get(state.functions.returns, direct_function)
@@ -2392,7 +2542,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
         let constructor_declaration = -1
         let constructor_function = -1
         if method_target_id < 0 and callee_name_start >= 0:
-            constructor_declaration = find_struct_declaration_index(state.source, callee_name_start, callee_name_end)
+            constructor_declaration = find_struct_declaration_index(state.source, callee_name_start, callee_name_end,
+                callee_name_start)
             if constructor_declaration >= 0:
                 constructor_function = mir_find_struct_method(state, constructor_declaration, "__init__")
                 if constructor_function < 0:
@@ -2414,7 +2565,8 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
             method_name_start = hir.values[method_name_start_offset + 1]
             method_name_end = hir.values[method_name_end_offset + 1]
             callee_name_text = state.source[method_name_start:method_name_end]
-            direct_function = mir_find_function(state, method_name_start, method_name_end)
+            direct_function = mir_find_function(state, method_name_start, method_name_end,
+                method_name_start)
             if direct_function >= 0:
                 if direct_function < len(state.functions.returns):
                     call_type = mir_int_list_get(state.functions.returns, direct_function)
@@ -2468,13 +2620,13 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                         call_type = MIR_TYPE_STR
                 # 接口方法调用：目标为接口 box（struct_decl <= -2）时按 tag 分派 impl
                 let target_decl = mir_state_struct_declaration(state, target_value)
-                let method_function = mir_find_method_function(state, method_name_start, method_name_end,
-                    target_decl)
-                if method_function >= 0:
-                    direct_function = method_function
-                    if direct_function < len(state.functions.returns):
-                        call_type = mir_int_list_get(state.functions.returns, direct_function)
                 if target_decl >= 0:
+                    let method_function = mir_find_method_function(state, method_name_start, method_name_end,
+                        target_decl)
+                    if method_function >= 0:
+                        direct_function = method_function
+                        if direct_function < len(state.functions.returns):
+                            call_type = mir_int_list_get(state.functions.returns, direct_function)
                     let impl_method = mir_find_struct_method(state, target_decl, callee_name_text)
                     if impl_method >= 0:
                         direct_function = impl_method
@@ -2524,7 +2676,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                 return display_result
             mir_int_list_set(state.hir_value_map, node_id, -1)
             return -1
-        if method_target_id < 0 and callee_name_text in prelude_all_names:
+        if method_target_id < 0 and callee_name_text in ["print", "eprintln", "eprint", "str"]:
             let valid_arguments = len(argument_values) == 1
             if callee_name_text == "print":
                 valid_arguments = len(argument_values) == 1 or len(argument_values) == 3
@@ -2748,7 +2900,7 @@ def mir_lower_hir_node(hir: HirProgram, node_id: int, state: MirLowerState) -> i
         let declaration_index = mir_hir_node_struct_declaration(hir, node_id)
         if declaration_index < 0:
             declaration_index = find_struct_declaration_index(state.source, hir.records[offset + 3],
-                hir.records[offset + 4])
+                hir.records[offset + 4], hir.records[offset + 3])
         let struct_payload_start = hir.records[offset + 5]
         let struct_payload_count = hir.records[offset + 6]
         if struct_payload_count >= 5:
@@ -3701,7 +3853,8 @@ def mir_expand_pattern(hir: HirProgram, pattern_id: int, subject: int, state: Mi
     if opcode == HIR_OP_LOCAL:
         # 命名常量标签（如 case ASCII_PLUS:）按常量值生成比较；
         # 未命中常量池的标识符才是绑定模式（枚举/列表载荷变量）
-        let constant_index = mir_find_constant_index(state, hir.records[offset + 3], hir.records[offset + 4])
+        let constant_index = mir_find_constant_index(state, hir.records[offset + 3], hir.records[offset + 4],
+            hir.records[offset + 3])
         if constant_index >= 0:
             let constant_type = mir_type_from_constant(mir_int_list_get(state.constants.types, constant_index))
             if constant_type == MIR_TYPE_I32:
@@ -3823,7 +3976,8 @@ def mir_expand_pattern(hir: HirProgram, pattern_id: int, subject: int, state: Mi
         let type_name_end = hir.values[hir_value_offset(payload_start + 1) + 1]
         let field_token_start = hir.values[hir_value_offset(payload_start + 2) + 1]
         let field_token_end = hir.values[hir_value_offset(payload_start + 3) + 1]
-        let declaration_index = find_struct_declaration_index(state.source, type_name_start, type_name_end)
+        let declaration_index = find_struct_declaration_index(state.source, type_name_start, type_name_end,
+            type_name_start)
         if declaration_index >= 0:
             let scan_token = field_token_start
             while scan_token < field_token_end:
@@ -4233,8 +4387,11 @@ def mir_analyze_lambda(hir: HirProgram, node_id: int, state: MirLowerState) -> i
                         already_collected = true
                     dedup_index = dedup_index + 1
                 if not is_explicit_parameter and not already_collected:
-                    if mir_find_function(state, name_start, name_end) < 0 and mir_find_constant_index(state, name_start,
-                        name_end) < 0:
+                    let is_named_function = mir_find_function(state, name_start, name_end,
+                        name_start) >= 0
+                    let is_named_constant = mir_find_constant_index(state, name_start, name_end,
+                        name_start) >= 0
+                    if not is_named_function and not is_named_constant:
                         let outer_value = mir_find_symbol_value(state, name_start, name_end)
                         if outer_value >= 0:
                             append(capture_name_starts, name_start)
@@ -4997,6 +5154,7 @@ def mir_model_build_program(hir_records: list[int], hir_values: list[int], hir_s
         func_return_struct_decls: func_return_struct_decls,
         func_param_counts: [],
         func_param_types: [],
+        func_receiver_flags: [],
         value_enum_flags: [],
         value_struct_declarations: [],
         impl_func_indexes: impl_func_indexes,
@@ -5025,6 +5183,30 @@ def mir_model_build_program(hir_records: list[int], hir_values: list[int], hir_s
         global_types: global_types,
         global_value_cache: global_value_cache
     }
+    let parameter_scan_id = 0
+    while parameter_scan_id < hir_record_count(hir_records):
+        let parameter_scan_offset = hir_record_offset(parameter_scan_id)
+        if hir_records[parameter_scan_offset] == HIR_RECORD_FUNCTION:
+            let signature_start = hir_records[parameter_scan_offset + 7]
+            let parameter_count = mir_hir_signature_value(hir_values, signature_start, HIR_SIGNATURE_PARAM_COUNT)
+            append(state.func_param_counts, parameter_count)
+            let has_receiver = 0
+            if parameter_count > 0:
+                let receiver_name_start = mir_hir_signature_value(hir_values, signature_start,
+                    HIR_SIGNATURE_PARAM_BASE + 1)
+                let receiver_name_end = mir_hir_signature_value(hir_values, signature_start,
+                    HIR_SIGNATURE_PARAM_BASE + 2)
+                if source[receiver_name_start:receiver_name_end] == "self":
+                    has_receiver = 1
+            append(state.func_receiver_flags, has_receiver)
+            let parameter_index = 0
+            while parameter_index < parameter_count:
+                let metadata_index = HIR_SIGNATURE_PARAM_BASE + parameter_index * HIR_SIGNATURE_PARAM_SIZE
+                let parameter_type = mir_type_from_hir(mir_hir_signature_value(hir_values, signature_start,
+                    metadata_index))
+                append(state.func_param_types, parameter_type)
+                parameter_index = parameter_index + 1
+        parameter_scan_id = parameter_scan_id + 1
     mir_enum_scan_declarations(state)
     let func_index = 0
     let hir_record_id = 0
@@ -5071,15 +5253,6 @@ def mir_model_build_program(hir_records: list[int], hir_values: list[int], hir_s
             let signature_start = mir_value_count(values)
             let signature_offset = hir_records[hir_offset + 7]
             let parameter_count = mir_append_func_signature(hir_values, signature_offset, values)
-            # 参数类型表：供调用点 str→bytes 参数转换
-            append(state.func_param_counts, parameter_count)
-            let param_type_index = 0
-            while param_type_index < parameter_count:
-                let metadata_index = HIR_SIGNATURE_PARAM_BASE + param_type_index * HIR_SIGNATURE_PARAM_SIZE
-                let param_type = mir_type_from_hir(mir_hir_signature_value(hir_values, signature_offset,
-                    metadata_index))
-                append(state.func_param_types, param_type)
-                param_type_index = param_type_index + 1
             let signature_count = mir_value_count(values) - signature_start
             let func_opcode = 0
             if source[hir_records[hir_offset + 9]:hir_records[hir_offset + 10]] == "main":
@@ -5127,9 +5300,10 @@ def mir_model_build_program(hir_records: list[int], hir_values: list[int], hir_s
                 if func_index < len(state.parameter_offsets):
                     collected_parameter_index = mir_int_list_get(state.parameter_offsets,
                         func_index) + parameter_index
-                let bound_decl = -1
+                let bound_decl = mir_hir_signature_value(hir_values, hir_records[hir_offset + 7], metadata_index + 4)
                 if collected_parameter_index >= 0 and collected_parameter_index < len(state.parameter_struct_decls):
-                    bound_decl = mir_int_list_get(state.parameter_struct_decls, collected_parameter_index)
+                    if bound_decl < 0:
+                        bound_decl = mir_int_list_get(state.parameter_struct_decls, collected_parameter_index)
                 if (
                     parameter_type == MIR_TYPE_INTERFACE or
                     bound_decl < 0

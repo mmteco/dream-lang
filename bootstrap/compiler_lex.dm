@@ -1,4 +1,5 @@
 from utf8 import ord
+from str import startswith
 
 const TOKEN_EOF: int = 0
 const TOKEN_INTEGER: int = 1
@@ -1056,7 +1057,7 @@ def enclosing_self_struct_declaration(tokens: TokenStream, func_name_start: int)
             let declaration_name = source[token_start(starts, scan_index):token_end(ends, scan_index)]
             if declaration_name == "struct" and token_kind(kinds, scan_index + 1) == TOKEN_IDENTIFIER:
                 return find_struct_declaration_index(source, token_start(starts, scan_index + 1), token_end(ends,
-                    scan_index + 1))
+                    scan_index + 1), token_start(starts, scan_index))
             if declaration_name == "impl":
                 let interface_index = scan_index + 1
                 let target_keyword_index = interface_index + 1
@@ -1065,7 +1066,7 @@ def enclosing_self_struct_declaration(tokens: TokenStream, func_name_start: int)
                         target_keyword_index)]
                     if target_keyword == "for" and token_kind(kinds, target_keyword_index + 1) == TOKEN_IDENTIFIER:
                         return find_type_declaration_index(source, token_start(starts, target_keyword_index + 1),
-                            token_end(ends, target_keyword_index + 1))
+                            token_end(ends, target_keyword_index + 1), token_start(starts, target_keyword_index))
                     target_keyword_index = target_keyword_index + 1
                 return -1
             if declaration_name in ["interface", "def"]:
@@ -1526,6 +1527,34 @@ let ENUM_DECLARATION_ENDS = []
 let INTERFACE_DECLARATION_STARTS = []
 let INTERFACE_DECLARATION_ENDS = []
 
+# 模块命名空间环境：per-module 可见性解析的核心数据（模块级全局 list，
+# 编译器单线程单次编译；struct 值语义下全局字段赋值不可靠，故用全局 list 重新赋值模式）
+let MODULE_ENV_MODULE_REF_STARTS: list[int] = []
+let MODULE_ENV_MODULE_REF_ENDS: list[int] = []
+let MODULE_ENV_MODULE_REF_FILES: list[int] = []
+let MODULE_ENV_MODULE_REF_MODS: list[int] = []
+let MODULE_ENV_NAMED_SYMBOL_STARTS: list[int] = []
+let MODULE_ENV_NAMED_SYMBOL_ENDS: list[int] = []
+let MODULE_ENV_NAMED_SYMBOL_FILES: list[int] = []
+let MODULE_ENV_NAMED_SYMBOL_MODS: list[int] = []
+let MODULE_ENV_STAR_IMPORT_FILES: list[int] = []
+let MODULE_ENV_STAR_IMPORT_MODS: list[int] = []
+let MODULE_ENV_VISIBLE_STARTS: list[int] = []
+let MODULE_ENV_VISIBLE_FILES: list[int] = []
+let MODULE_ENV_ENTRY_FILE: list[int] = [0]
+let MODULE_ENV_PRELUDE_FILE: list[int] = [-1]
+
+# 顶层符号归属数组：符号下标 → 所在文件下标（build_module_attribution 填充）
+let FUNC_FILES: list[int] = []
+let CONSTANT_FILES: list[int] = []
+let GLOBAL_FILES: list[int] = []
+let STRUCT_FILES: list[int] = []
+let ENUM_FILES: list[int] = []
+let INTERFACE_FILES: list[int] = []
+
+# 模块解析错误计数（未解析裸名 / 歧义导入等）
+let module_error_count: list[int] = [0]
+
 def collect_declared_types(tokens: TokenStream):
     let source = tokens.src
     let kinds = tokens.kinds
@@ -1632,7 +1661,7 @@ def struct_field_value_type_declaration(tokens: TokenStream, type_index: int) ->
                 return -1
             let value_start = token_start(starts, value_index)
             let value_end = token_end(ends, value_index)
-            return find_type_declaration_index(source, value_start, value_end)
+            return find_type_declaration_index(source, value_start, value_end, value_start)
         cursor = cursor + 1
     return -1
 
@@ -1652,7 +1681,7 @@ def struct_field_type_declaration(tokens: TokenStream, type_index: int) -> int:
         type_end = type_end - 1
     if type_end <= type_start:
         return -1
-    return find_type_declaration_index(source, type_start, type_end)
+    return find_type_declaration_index(source, type_start, type_end, type_start)
 
 def collect_struct_fields(tokens: TokenStream):
     let source = tokens.src
@@ -1698,54 +1727,94 @@ def collect_struct_fields(tokens: TokenStream):
                     cursor = cursor + 1
         declaration_index = declaration_index + 1
 
-def find_struct_declaration_index(source: str, name_start: int, name_end: int) -> int:
-    let declaration_index = 0
-    while declaration_index < len(STRUCT_DECLARATION_STARTS):
-        if source_ranges_equal(source, STRUCT_DECLARATION_STARTS[declaration_index],
-            STRUCT_DECLARATION_ENDS[declaration_index], name_start, name_end):
-            return declaration_index
-        declaration_index = declaration_index + 1
+# 解析调用点的候选文件列表（own → named 导入 → star 导入展开）
+# 返回 0 正常（out_files 有序候选）；1 歧义（已报错）
+def module_candidate_files(caller_offset: int, source: str, name_start: int, name_end: int,
+    out_files: list[int]) -> int:
+    let caller_file = module_env_file_at(caller_offset)
+    if caller_file < 0:
+        caller_file = 0
+    let resolve_status = module_resolve(caller_file, source, name_start, name_end, out_files)
+    if resolve_status != 0:
+        return resolve_status
+    let prelude_file = MODULE_ENV_PRELUDE_FILE[0]
+    if prelude_file < 0:
+        return 0
+    let candidate_index = 0
+    while candidate_index < len(out_files):
+        if out_files[candidate_index] == prelude_file:
+            return 0
+        candidate_index = candidate_index + 1
+    append(out_files, prelude_file)
+    return 0
+
+def find_struct_declaration_index(source: str, name_start: int, name_end: int, caller_offset: int) -> int:
+    let candidate_files: list[int] = []
+    if module_candidate_files(caller_offset, source, name_start, name_end, candidate_files) != 0:
+        return -1
+    let candidate_index = 0
+    while candidate_index < len(candidate_files):
+        let target_file = candidate_files[candidate_index]
+        let declaration_index = 0
+        while declaration_index < len(STRUCT_DECLARATION_STARTS):
+            if (
+                STRUCT_FILES[declaration_index] == target_file and
+                source_ranges_equal(source, STRUCT_DECLARATION_STARTS[declaration_index],
+                    STRUCT_DECLARATION_ENDS[declaration_index], name_start, name_end)
+            ):
+                return declaration_index
+            declaration_index = declaration_index + 1
+        candidate_index = candidate_index + 1
     return -1
 
-def find_type_declaration_index(source: str, name_start: int, name_end: int) -> int:
-    let struct_index = find_struct_declaration_index(source, name_start, name_end)
+def find_type_declaration_index(source: str, name_start: int, name_end: int, caller_offset: int) -> int:
+    let struct_index = find_struct_declaration_index(source, name_start, name_end, caller_offset)
     if struct_index >= 0:
         return struct_index
-    let enum_index = 0
-    while enum_index < len(ENUM_DECLARATION_STARTS):
-        if source_ranges_equal(source, ENUM_DECLARATION_STARTS[enum_index], ENUM_DECLARATION_ENDS[enum_index],
-            name_start, name_end):
-            return len(STRUCT_DECLARATION_STARTS) + enum_index
-        enum_index = enum_index + 1
+    let candidate_files: list[int] = []
+    if module_candidate_files(caller_offset, source, name_start, name_end, candidate_files) != 0:
+        return -1
+    let candidate_index = 0
+    while candidate_index < len(candidate_files):
+        let target_file = candidate_files[candidate_index]
+        let enum_index = 0
+        while enum_index < len(ENUM_DECLARATION_STARTS):
+            if (
+                ENUM_FILES[enum_index] == target_file and
+                source_ranges_equal(source, ENUM_DECLARATION_STARTS[enum_index],
+                    ENUM_DECLARATION_ENDS[enum_index], name_start, name_end)
+            ):
+                return len(STRUCT_DECLARATION_STARTS) + enum_index
+            enum_index = enum_index + 1
+        candidate_index = candidate_index + 1
     return -1
 
 def source_type_is_struct(tokens: TokenStream, type_start: int, type_end: int) -> bool:
     let source = tokens.src
-    let declaration_index = 0
-    while declaration_index < len(STRUCT_DECLARATION_STARTS):
-        if source_ranges_equal(source, STRUCT_DECLARATION_STARTS[declaration_index],
-            STRUCT_DECLARATION_ENDS[declaration_index], type_start, type_end):
-            return true
-        declaration_index = declaration_index + 1
-    return false
+    return find_struct_declaration_index(source, type_start, type_end, type_start) >= 0
 
 def source_type_is_enum(source: str, type_start: int, type_end: int) -> bool:
-    let declaration_index = 0
-    while declaration_index < len(ENUM_DECLARATION_STARTS):
-        if source_ranges_equal(source, ENUM_DECLARATION_STARTS[declaration_index],
-            ENUM_DECLARATION_ENDS[declaration_index], type_start, type_end):
-            return true
-        declaration_index = declaration_index + 1
-    return false
+    let declaration_index = find_type_declaration_index(source, type_start, type_end, type_start)
+    return declaration_index >= len(STRUCT_DECLARATION_STARTS) and declaration_index >= 0
 
 def source_type_is_interface(tokens: TokenStream, type_start: int, type_end: int) -> bool:
     let source = tokens.src
-    let declaration_index = 0
-    while declaration_index < len(INTERFACE_DECLARATION_STARTS):
-        if source_ranges_equal(source, INTERFACE_DECLARATION_STARTS[declaration_index],
-            INTERFACE_DECLARATION_ENDS[declaration_index], type_start, type_end):
-            return true
-        declaration_index = declaration_index + 1
+    let candidate_files: list[int] = []
+    if module_candidate_files(type_start, source, type_start, type_end, candidate_files) != 0:
+        return false
+    let candidate_index = 0
+    while candidate_index < len(candidate_files):
+        let target_file = candidate_files[candidate_index]
+        let declaration_index = 0
+        while declaration_index < len(INTERFACE_DECLARATION_STARTS):
+            if (
+                INTERFACE_FILES[declaration_index] == target_file and
+                source_ranges_equal(source, INTERFACE_DECLARATION_STARTS[declaration_index],
+                    INTERFACE_DECLARATION_ENDS[declaration_index], type_start, type_end)
+            ):
+                return true
+            declaration_index = declaration_index + 1
+        candidate_index = candidate_index + 1
     return false
 
 def parameter_type_from_range(tokens: TokenStream, type_start: int, type_end: int) -> int:
@@ -2244,6 +2313,358 @@ def collect_global_lets(tokens: TokenStream, globals: GlobalTable) -> int:
                 token_index = assignment_index
         token_index = token_index + 1
     return len(global_let_name_starts)
+
+def report_duplicate_symbol(source: str, name_start: int, name_end: int):
+    eprint("Error: duplicate top-level symbol '")
+    eprint(source[name_start:name_end])
+    eprintln("'")
+
+def module_error_report(message: str):
+    module_error_count[0] = module_error_count[0] + 1
+    eprint("Error: ")
+    eprintln(message)
+
+def module_error_count_get() -> int:
+    return module_error_count[0]
+
+def module_entry_file() -> int:
+    return MODULE_ENV_ENTRY_FILE[0]
+
+# 解析 from 语句 import 关键字后的符号列表，返回 1 表示 * 通配、0 表示按名列表
+def parse_import_symbols(source: str, kinds: list[int], starts: list[int], ends: list[int],
+    symbol_index: int, symbol_starts: list[int], symbol_ends: list[int]) -> int:
+    let current_index = symbol_index
+    let parenthesis_depth = 0
+    while token_kind(kinds, current_index) != TOKEN_EOF:
+        let kind = token_kind(kinds, current_index)
+        if kind == TOKEN_MULTIPLY:
+            return 1
+        if kind == TOKEN_IDENTIFIER:
+            append(symbol_starts, token_start(starts, current_index))
+            append(symbol_ends, token_end(ends, current_index))
+            current_index = current_index + 1
+        elif kind == TOKEN_OPEN_PAREN:
+            parenthesis_depth = parenthesis_depth + 1
+            current_index = current_index + 1
+        elif kind == TOKEN_CLOSE_PAREN:
+            if parenthesis_depth > 0:
+                parenthesis_depth = parenthesis_depth - 1
+                if parenthesis_depth == 0:
+                    return 0
+            current_index = current_index + 1
+        elif kind == TOKEN_NEWLINE:
+            if parenthesis_depth == 0:
+                return 0
+            current_index = current_index + 1
+        else:
+            current_index = current_index + 1
+    return 0
+
+# 类型归属与文件范围全局（类型解析在 collect 早期就要用，故独立构建）
+let MODULE_ENV_FILE_STARTS: list[int] = []
+let MODULE_ENV_FILE_ENDS: list[int] = []
+
+def module_env_file_at(offset: int) -> int:
+    return get_file_at_offset(MODULE_ENV_FILE_STARTS, MODULE_ENV_FILE_ENDS, offset)
+
+def build_type_attribution(file_starts: list[int], file_ends: list[int]):
+    MODULE_ENV_FILE_STARTS = file_starts
+    MODULE_ENV_FILE_ENDS = file_ends
+    STRUCT_FILES = []
+    let struct_index = 0
+    while struct_index < len(STRUCT_DECLARATION_STARTS):
+        append(STRUCT_FILES, get_file_at_offset(file_starts, file_ends, STRUCT_DECLARATION_STARTS[struct_index]))
+        struct_index = struct_index + 1
+    ENUM_FILES = []
+    let enum_index = 0
+    while enum_index < len(ENUM_DECLARATION_STARTS):
+        append(ENUM_FILES, get_file_at_offset(file_starts, file_ends, ENUM_DECLARATION_STARTS[enum_index]))
+        enum_index = enum_index + 1
+    INTERFACE_FILES = []
+    let interface_index = 0
+    while interface_index < len(INTERFACE_DECLARATION_STARTS):
+        append(INTERFACE_FILES, get_file_at_offset(file_starts, file_ends,
+            INTERFACE_DECLARATION_STARTS[interface_index]))
+        interface_index = interface_index + 1
+
+# 值符号归属数组：函数/常量/全局下标 → 所在文件下标（collect 之后调用一次）
+def build_module_attribution(func_starts: list[int], constant_starts: list[int], global_starts: list[int],
+    file_starts: list[int], file_ends: list[int]):
+    FUNC_FILES = []
+    let func_index = 0
+    while func_index < len(func_starts):
+        append(FUNC_FILES, get_file_at_offset(file_starts, file_ends, func_starts[func_index]))
+        func_index = func_index + 1
+    CONSTANT_FILES = []
+    let constant_index = 0
+    while constant_index < len(constant_starts):
+        append(CONSTANT_FILES, get_file_at_offset(file_starts, file_ends, constant_starts[constant_index]))
+        constant_index = constant_index + 1
+    GLOBAL_FILES = []
+    let global_index = 0
+    while global_index < len(global_starts):
+        append(GLOBAL_FILES, get_file_at_offset(file_starts, file_ends, global_starts[global_index]))
+        global_index = global_index + 1
+
+def module_env_file_index(file_names: list[str], module_name: str) -> int:
+    let file_index = 0
+    while file_index < len(file_names):
+        if file_names[file_index] == module_name:
+            return file_index
+        file_index = file_index + 1
+    return -1
+
+# 构建模块环境：填入 MODULE_ENV 并展开每文件的 star 可见文件列表
+def module_env_build(file_names: list[str], module_ref_starts: list[int], module_ref_ends: list[int],
+    module_ref_files: list[int], module_ref_mods: list[int], named_symbol_starts: list[int],
+    named_symbol_ends: list[int], named_symbol_files: list[int], named_symbol_mods: list[int],
+    star_import_files: list[int], star_import_mods: list[int], entry_file: int):
+    MODULE_ENV_MODULE_REF_STARTS = module_ref_starts
+    MODULE_ENV_MODULE_REF_ENDS = module_ref_ends
+    MODULE_ENV_MODULE_REF_FILES = module_ref_files
+    MODULE_ENV_MODULE_REF_MODS = module_ref_mods
+    MODULE_ENV_NAMED_SYMBOL_STARTS = named_symbol_starts
+    MODULE_ENV_NAMED_SYMBOL_ENDS = named_symbol_ends
+    MODULE_ENV_NAMED_SYMBOL_FILES = named_symbol_files
+    MODULE_ENV_NAMED_SYMBOL_MODS = named_symbol_mods
+    MODULE_ENV_STAR_IMPORT_FILES = star_import_files
+    MODULE_ENV_STAR_IMPORT_MODS = star_import_mods
+    MODULE_ENV_ENTRY_FILE[0] = entry_file
+    let file_count = len(file_names)
+    let prelude_file = module_env_file_index(file_names, "prelude")
+    MODULE_ENV_PRELUDE_FILE[0] = prelude_file
+    if not module_env_validate_cycles(file_count, module_ref_files, module_ref_mods, named_symbol_files,
+        named_symbol_mods, star_import_files, star_import_mods, prelude_file):
+        module_error_report("module dependency cycle")
+    MODULE_ENV_VISIBLE_STARTS = []
+    MODULE_ENV_VISIBLE_FILES = []
+    let file_index = 0
+    while file_index < file_count:
+        append(MODULE_ENV_VISIBLE_STARTS, len(MODULE_ENV_VISIBLE_FILES))
+        append(MODULE_ENV_VISIBLE_FILES, file_index)
+        let star_index = 0
+        while star_index < len(star_import_files):
+            if star_import_files[star_index] == file_index:
+                let queue = []
+                let queue_head = 0
+                append(queue, star_import_mods[star_index])
+                let seen = []
+                while queue_head < len(queue):
+                    let current = queue[queue_head]
+                    queue_head = queue_head + 1
+                    let already_seen = false
+                    let seen_index = 0
+                    while seen_index < len(seen):
+                        if seen[seen_index] == current:
+                            already_seen = true
+                        seen_index = seen_index + 1
+                    if already_seen:
+                        continue
+                    append(seen, current)
+                    let already_visible = false
+                    let visible_index = 0
+                    while visible_index < len(MODULE_ENV_VISIBLE_FILES):
+                        if MODULE_ENV_VISIBLE_FILES[visible_index] == current:
+                            already_visible = true
+                        visible_index = visible_index + 1
+                    if not already_visible:
+                        append(MODULE_ENV_VISIBLE_FILES, current)
+                    let dependency_index = 0
+                    while dependency_index < len(named_symbol_files):
+                        if named_symbol_files[dependency_index] == current:
+                            append(queue, named_symbol_mods[dependency_index])
+                        dependency_index = dependency_index + 1
+                    dependency_index = 0
+                    while dependency_index < len(star_import_files):
+                        if star_import_files[dependency_index] == current:
+                            append(queue, star_import_mods[dependency_index])
+                        dependency_index = dependency_index + 1
+            star_index = star_index + 1
+        file_index = file_index + 1
+
+# 解析裸名到候选文件列表（有序：own → named 导入 → star 导入展开）
+# 返回 0 正常（out_files 有序候选）；1 歧义（named 导入同名多目标，已报错）
+def module_resolve(caller_file: int, source: str, name_start: int, name_end: int, out_files: list[int]) -> int:
+    if caller_file < 0 or caller_file >= len(MODULE_ENV_VISIBLE_STARTS):
+        return 1
+    let module_ref_index = 0
+    while module_ref_index < len(MODULE_ENV_MODULE_REF_FILES):
+        if (
+            MODULE_ENV_MODULE_REF_FILES[module_ref_index] == caller_file and
+            MODULE_ENV_MODULE_REF_ENDS[module_ref_index] + 1 == name_start
+        ):
+            append(out_files, MODULE_ENV_MODULE_REF_MODS[module_ref_index])
+            return 0
+        module_ref_index = module_ref_index + 1
+    append(out_files, caller_file)
+    let named_target = -1
+    let named_index = 0
+    while named_index < len(MODULE_ENV_NAMED_SYMBOL_FILES):
+        let is_owner = MODULE_ENV_NAMED_SYMBOL_FILES[named_index] == caller_file
+        let is_name = source_ranges_equal(source, name_start, name_end, MODULE_ENV_NAMED_SYMBOL_STARTS[named_index],
+            MODULE_ENV_NAMED_SYMBOL_ENDS[named_index])
+        if is_owner and is_name:
+            let target = MODULE_ENV_NAMED_SYMBOL_MODS[named_index]
+            if named_target >= 0 and target != named_target:
+                if module_error_count[0] == 0:
+                    module_error_report("ambiguous import: '" + source[name_start:name_end] + "'")
+                return 1
+            named_target = target
+        named_index = named_index + 1
+    if named_target >= 0:
+        append(out_files, named_target)
+        return 0
+    let visible_start = MODULE_ENV_VISIBLE_STARTS[caller_file] + 1
+    let visible_end = len(MODULE_ENV_VISIBLE_FILES)
+    if caller_file + 1 < len(MODULE_ENV_VISIBLE_STARTS):
+        visible_end = MODULE_ENV_VISIBLE_STARTS[caller_file + 1]
+    let visible_index = visible_start
+    while visible_index < visible_end:
+        append(out_files, MODULE_ENV_VISIBLE_FILES[visible_index])
+        visible_index = visible_index + 1
+    return 0
+
+def module_graph_has_cycle(file_index: int, states: list[int], module_ref_files: list[int],
+    module_ref_mods: list[int], named_symbol_files: list[int], named_symbol_mods: list[int],
+    star_import_files: list[int], star_import_mods: list[int], prelude_file: int) -> bool:
+    if file_index < 0 or file_index >= len(states):
+        return false
+    if states[file_index] == 1:
+        return true
+    if states[file_index] == 2:
+        return false
+    states[file_index] = 1
+    let dependency_index = 0
+    while dependency_index < len(module_ref_files):
+        if module_ref_files[dependency_index] == file_index:
+            let target_file = module_ref_mods[dependency_index]
+            if target_file >= 0 and target_file != prelude_file:
+                if module_graph_has_cycle(target_file, states, module_ref_files, module_ref_mods,
+                    named_symbol_files, named_symbol_mods, star_import_files, star_import_mods, prelude_file):
+                    return true
+        dependency_index = dependency_index + 1
+    dependency_index = 0
+    while dependency_index < len(named_symbol_files):
+        if named_symbol_files[dependency_index] == file_index:
+            let target_file = named_symbol_mods[dependency_index]
+            if target_file >= 0 and target_file != prelude_file:
+                if module_graph_has_cycle(target_file, states, module_ref_files, module_ref_mods,
+                    named_symbol_files, named_symbol_mods, star_import_files, star_import_mods, prelude_file):
+                    return true
+        dependency_index = dependency_index + 1
+    dependency_index = 0
+    while dependency_index < len(star_import_files):
+        if star_import_files[dependency_index] == file_index:
+            let target_file = star_import_mods[dependency_index]
+            if target_file >= 0 and target_file != prelude_file:
+                if module_graph_has_cycle(target_file, states, module_ref_files, module_ref_mods,
+                    named_symbol_files, named_symbol_mods, star_import_files, star_import_mods, prelude_file):
+                    return true
+        dependency_index = dependency_index + 1
+    states[file_index] = 2
+    return false
+
+def module_env_validate_cycles(file_count: int, module_ref_files: list[int], module_ref_mods: list[int],
+    named_symbol_files: list[int], named_symbol_mods: list[int], star_import_files: list[int],
+    star_import_mods: list[int], prelude_file: int) -> bool:
+    let states: list[int] = []
+    let state_index = 0
+    while state_index < file_count:
+        append(states, 0)
+        state_index = state_index + 1
+    let file_index = 0
+    while file_index < file_count:
+        if module_graph_has_cycle(file_index, states, module_ref_files, module_ref_mods, named_symbol_files,
+            named_symbol_mods, star_import_files, star_import_mods, prelude_file):
+            return false
+        file_index = file_index + 1
+    return true
+
+# 顶层符号查重（模块内唯一）：per-module 命名空间下跨文件同名符号互不干扰，
+# 只检查同一文件内重复；同文件同名函数视为合法重载，其余同名报错
+def validate_top_level_symbols(tokens: TokenStream, file_starts: list[int], file_ends: list[int]) -> bool:
+    let source = tokens.src
+    let kinds = tokens.kinds
+    let starts = tokens.starts
+    let ends = tokens.ends
+    let symbol_name_starts: list[int] = []
+    let symbol_name_ends: list[int] = []
+    let symbol_hashes: list[int] = []
+    let symbol_is_funcs: list[int] = []
+    let symbol_offsets: list[int] = []
+    let interface_indent = -1
+    let interface_header_end = -1
+    let token_index = 0
+    while token_kind(kinds, token_index) != TOKEN_EOF:
+        let kind = token_kind(kinds, token_index)
+        let name_index = -1
+        let is_func = false
+        if kind == TOKEN_DEF:
+            let indent = line_indent(source, token_start(starts, token_index))
+            if interface_indent < 0 and indent == 0:
+                name_index = token_index + 1
+                is_func = true
+        elif kind == TOKEN_CONST:
+            name_index = token_index + 1
+        elif kind == TOKEN_LET and line_indent(source, token_start(starts, token_index)) == 0:
+            name_index = token_index + 1
+        elif kind == TOKEN_IDENTIFIER:
+            let keyword_start = token_start(starts, token_index)
+            let keyword_end = token_end(ends, token_index)
+            let keyword_length = keyword_end - keyword_start
+            if interface_indent >= 0 and token_index > interface_header_end:
+                if line_indent(source, keyword_start) <= interface_indent:
+                    interface_indent = -1
+            if (
+                keyword_length == 9 and
+                source_equals(source, keyword_start, keyword_end, "interface") and
+                token_kind(kinds, token_index + 1) == TOKEN_IDENTIFIER and
+                token_kind(kinds, token_index + 2) == TOKEN_COLON
+            ):
+                interface_indent = line_indent(source, keyword_start)
+                let header_scan = token_index + 1
+                while token_kind(kinds, header_scan) not in [TOKEN_COLON, TOKEN_NEWLINE, TOKEN_EOF]:
+                    header_scan = header_scan + 1
+                interface_header_end = header_scan
+            if (
+                (keyword_length == 6 and source_equals(source, keyword_start, keyword_end, "struct")) or
+                (keyword_length == 4 and source_equals(source, keyword_start, keyword_end, "enum")) or
+                (keyword_length == 9 and source_equals(source, keyword_start, keyword_end, "interface"))
+            ):
+                name_index = token_index + 1
+        if name_index >= 0 and token_kind(kinds, name_index) == TOKEN_IDENTIFIER:
+            append(symbol_name_starts, token_start(starts, name_index))
+            append(symbol_name_ends, token_end(ends, name_index))
+            append(symbol_hashes, __c_fnv_hash_range(source, token_start(starts, name_index),
+                token_end(ends, name_index)))
+            if is_func:
+                append(symbol_is_funcs, 1)
+            else:
+                append(symbol_is_funcs, 0)
+            append(symbol_offsets, token_start(starts, name_index))
+        token_index = token_index + 1
+    let symbol_index = 1
+    while symbol_index < len(symbol_hashes):
+        let previous_index = 0
+        while previous_index < symbol_index:
+            if (
+                symbol_hashes[previous_index] == symbol_hashes[symbol_index] and
+                source_ranges_equal(source, symbol_name_starts[previous_index], symbol_name_ends[previous_index],
+                    symbol_name_starts[symbol_index], symbol_name_ends[symbol_index])
+            ):
+                let previous_is_func = symbol_is_funcs[previous_index] == 1
+                let current_is_func = symbol_is_funcs[symbol_index] == 1
+                if previous_is_func and current_is_func:
+                    previous_index = previous_index + 1
+                    continue
+                let previous_file = get_file_at_offset(file_starts, file_ends, symbol_offsets[previous_index])
+                let current_file = get_file_at_offset(file_starts, file_ends, symbol_offsets[symbol_index])
+                if previous_file == current_file:
+                    report_duplicate_symbol(source, symbol_name_starts[symbol_index], symbol_name_ends[symbol_index])
+                    return false
+            previous_index = previous_index + 1
+        symbol_index = symbol_index + 1
+    return true
 
 def func_parameter_default(name_start: int, name_end: int, parameter_number: int, context: ParseContext) -> int:
     let func_index = find_function(context.src, name_start, name_end, context.fn_starts, context.fn_ends)

@@ -15,6 +15,7 @@
   - [x] list[str] 类型支持（get_pointer + 槽偏移）、tuple 解包指针元素（返回类型注解解析）
   - [x] ord 身份函数、字符串索引/比较、bool 与 int 混合比较
   - [x] 性能优化：`__c_range_equal`（范围 memcmp 比较）、struct 声明哈希定位、`__c_fnv_hash_range` 预收集；lower 8.1s → 2.7s（约 3 倍提速）
+- [x] 基于 `examples/lang_full_dream.dm` 建立 AST/HIR/MIR/LIR/LLVM 分阶段输出分析，并隔离 Stage 1/2/3 测试缓存命名空间
 - [ ] 冻结 bootstrap 语法子集，增加语法边界和行为回归协议
 - [ ] 用 Dream 重写完整 lexer、parser、typechecker 和 DIR compiler
 - [ ] 完成真正的完整编译器自举，而不只验证 bootstrap/compiler.dm 切片

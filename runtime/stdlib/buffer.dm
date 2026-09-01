@@ -3,6 +3,9 @@ from ops import Append
 struct Buffer:
     data: list[byte]
 
+    def __init__() -> Buffer:
+        return Buffer{data: []}
+
     def new() -> Buffer:
         return Buffer{data: []}
 

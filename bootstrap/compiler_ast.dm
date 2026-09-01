@@ -3,6 +3,7 @@
 # 子节点区间 [child_start, child_end) 可走查:从 child_start 循环 ast_next_node 直到 child_end
 
 from compiler_lex import (
+    ParseContext,
     parse_integer,
     TOKEN_EOF,
     TOKEN_INTEGER,
@@ -80,7 +81,11 @@ from compiler_lex import (
     TOKEN_SHL_ASSIGN,
     TOKEN_SHR_ASSIGN,
     TOKEN_PIPE,
-    TOKEN_FLOORDIVIDE_ASSIGN
+    TOKEN_FLOORDIVIDE_ASSIGN,
+    ASSIGNMENT_FORM_LOCAL,
+    ASSIGNMENT_FORM_INDEX,
+    ASSIGNMENT_FORM_FIELD,
+    ASSIGNMENT_FORM_INDEX_TARGET
 )
 
 # kind 编号按类别分组,组内连续,组间留空便于未来插入:
@@ -724,14 +729,16 @@ def ast_parse_primary(context: ParseContext, index: int, ast: list[int]) -> (int
         let tuple_scan_done = false
         let tuple_has_comma = false
         while not tuple_scan_done and token_kind(kinds, tuple_scan_index) != TOKEN_EOF:
-            if token_kind(kinds, tuple_scan_index) == TOKEN_OPEN_PAREN:
+            let scan_kind = token_kind(kinds, tuple_scan_index)
+            if scan_kind in [TOKEN_OPEN_PAREN, TOKEN_OPEN_BRACKET, TOKEN_OPEN_BRACE]:
                 tuple_scan_depth = tuple_scan_depth + 1
-            if token_kind(kinds, tuple_scan_index) == TOKEN_CLOSE_PAREN:
-                if tuple_scan_depth == 0:
+            if scan_kind in [TOKEN_CLOSE_PAREN, TOKEN_CLOSE_BRACKET, TOKEN_CLOSE_BRACE]:
+                if tuple_scan_depth == 0 and scan_kind == TOKEN_CLOSE_PAREN:
                     tuple_scan_done = true
-                if tuple_scan_depth > 0:
+                elif tuple_scan_depth > 0:
                     tuple_scan_depth = tuple_scan_depth - 1
-            if token_kind(kinds, tuple_scan_index) == TOKEN_COMMA and tuple_scan_depth == 0:
+            # 列表/字典字面量内的逗号不是元组分隔符，需处于所有括号顶层
+            if scan_kind == TOKEN_COMMA and tuple_scan_depth == 0:
                 tuple_has_comma = true
             if not tuple_scan_done:
                 tuple_scan_index = tuple_scan_index + 1
@@ -1057,11 +1064,13 @@ def ast_parse_return_statement(context: ParseContext, index: int, body_end: int,
         let scan_depth = 1
         let has_comma = false
         while scan_index < body_end and scan_depth > 0:
-            if token_kind(kinds, scan_index) == TOKEN_OPEN_PAREN:
+            let scan_kind = token_kind(kinds, scan_index)
+            if scan_kind in [TOKEN_OPEN_PAREN, TOKEN_OPEN_BRACKET, TOKEN_OPEN_BRACE]:
                 scan_depth = scan_depth + 1
-            if token_kind(kinds, scan_index) == TOKEN_CLOSE_PAREN:
+            if scan_kind in [TOKEN_CLOSE_PAREN, TOKEN_CLOSE_BRACKET, TOKEN_CLOSE_BRACE]:
                 scan_depth = scan_depth - 1
-            if scan_depth == 1 and token_kind(kinds, scan_index) == TOKEN_COMMA:
+            # 列表/字典字面量内的逗号不构成元组返回，需处于外层括号内的顶层
+            if scan_depth == 1 and scan_kind == TOKEN_COMMA:
                 has_comma = true
             scan_index = scan_index + 1
         if has_comma:
